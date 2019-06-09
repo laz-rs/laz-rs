@@ -6,4 +6,5 @@ pub mod compressors;
 pub mod formats;
 pub mod packers;
 pub mod las;
+pub mod errors;
 

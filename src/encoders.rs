@@ -129,6 +129,16 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.base = 0;
+        self.length = decoders::AC_MAX_LENGTH;
+        self.out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
+        self.out_byte = self.out_buffer.as_mut_ptr();
+        self.end_byte = unsafe {
+            self.out_buffer.as_ptr().offset((2 * AC_BUFFER_SIZE) as isize)
+        };
+    }
+
     pub fn done(&mut self) {
         println!("Encoder::done() -> length: {}", self.length);
         // done encoding: set final data bytes

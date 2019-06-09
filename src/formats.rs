@@ -107,6 +107,10 @@ impl<W: Write> RecordCompressor<W> {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.encoder.reset();
+    }
+
     pub fn into_stream(self) -> W {
         self.encoder.into_stream()
     }
