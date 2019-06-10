@@ -28,8 +28,6 @@
 ===============================================================================
 */
 
-
-
 use std::io::Read;
 
 use crate::decoders;
@@ -45,16 +43,16 @@ const COMPRESS_ONLY_K: bool = false;
 pub struct IntegerDecompressor {
     k: u32,
 
-    bits: u32,
+    //bits: u32,
 
     contexts: u32,
     bits_high: u32,
-    range: u32,
+    //range: u32,
 
     corr_bits: u32,
     corr_range: u32,
     corr_min: i32,
-    corr_max: i32,
+    //corr_max: i32,
 
     m_bits: Vec<models::ArithmeticModel>,
     m_corrector0: models::ArithmeticBitModel,
@@ -66,7 +64,7 @@ impl IntegerDecompressor {
         let mut corr_bits: u32;
         let corr_range: u32;
         let corr_min: i32;
-        let corr_max: i32;
+        //let corr_max: i32;
 
         if range != 0 {
             // the corrector's significant bits and range
@@ -82,31 +80,30 @@ impl IntegerDecompressor {
             }
             // the corrector must fall into this interval
             corr_min = -(corr_range as i32 / 2);
-            corr_max = (corr_min + corr_range as i32 - 1) as i32;
+            //corr_max = (corr_min + corr_range as i32 - 1) as i32;
         } else if bits != 0 && (bits < 32) {
             corr_bits = bits;
             corr_range = 1u32 << bits;
             // the corrector must fall into this interval
             corr_min = -(corr_range as i32 / 2);
-            corr_max = (corr_min + corr_range as i32 - 1) as i32;
+            //corr_max = (corr_min + corr_range as i32 - 1) as i32;
         } else {
             corr_bits = 32;
             corr_range = 0;
             // the corrector must fall into this interval
             corr_min = std::i32::MIN;
-            corr_max = std::i32::MAX;
+            //corr_max = std::i32::MAX;
         }
         println!("Decompressor built!");
         Self {
             k: 0,
-            bits,
+            //bits,
             contexts,
             bits_high,
-            range,
+            //range,
             corr_bits,
             corr_range,
             corr_min,
-            corr_max,
             m_bits: vec![],
             m_corrector0: models::ArithmeticBitModel::new(),
             m_corrector: vec![],
@@ -122,25 +119,32 @@ impl IntegerDecompressor {
             println!("Decompressor init started");
             for i in 0..self.contexts {
                 println!("context n: {} / {}", i, self.contexts);
-                self.m_bits.push(models::ArithmeticModel::new(
-                    self.corr_bits + 1,
-                    false,
-                    &[],
-                ));
+                self.m_bits
+                    .push(models::ArithmeticModel::new(self.corr_bits + 1, false, &[]));
             }
 
             // mcorrector0 is already initialized
             if !COMPRESS_ONLY_K {
                 for i in 1..=self.corr_bits {
-                    let v = if i <= self.bits_high { 1 << i } else { 1 << self.bits_high };
-                    self.m_corrector.push(models::ArithmeticModel::new(v, false, &[]));
+                    let v = if i <= self.bits_high {
+                        1 << i
+                    } else {
+                        1 << self.bits_high
+                    };
+                    self.m_corrector
+                        .push(models::ArithmeticModel::new(v, false, &[]));
                 }
             }
             println!("Decompressor inited!");
         }
     }
 
-    pub fn decompress<T: Read>(&mut self, dec: &mut decoders::ArithmeticDecoder<T>, pred: i32, context: u32) -> i32 {
+    pub fn decompress<T: Read>(
+        &mut self,
+        dec: &mut decoders::ArithmeticDecoder<T>,
+        pred: i32,
+        context: u32,
+    ) -> i32 {
         let m_bit = &mut self.m_bits[context as usize];
         //--- read corrector ---//
         let mut real = pred + {
@@ -149,13 +153,16 @@ impl IntegerDecompressor {
             self.k = dec.decode_symbol(m_bit);
             // decode the exact location of the corrector within the interval
             if COMPRESS_ONLY_K {
-                if self.k != 0 { // then c is either smaller than 0 or bigger than 1
+                if self.k != 0 {
+                    // then c is either smaller than 0 or bigger than 1
                     if self.k < 32 {
                         c = dec.read_bits(self.k) as i32;
-                        if c >= (1 << (self.k - 1)) as i32 {// if c is in the interval [ 2^(k-1)  ...  + 2^k - 1 ]
+                        if c >= (1 << (self.k - 1)) as i32 {
+                            // if c is in the interval [ 2^(k-1)  ...  + 2^k - 1 ]
                             // so we translate c back into the interval [ 2^(k-1) + 1  ...  2^k ] by adding 1
                             c += 1;
-                        } else {// otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
+                        } else {
+                            // otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
                             // so we translate c back into the interval [ - (2^k - 1)  ...  - (2^(k-1)) ] by subtracting (2^k - 1)
                             c -= ((1 << self.k) - 1) as i32;
                         }
@@ -165,18 +172,23 @@ impl IntegerDecompressor {
                 } else {
                     c = dec.read_bit() as i32;
                 }
-            } // COMPRESS_ONLY_K
+            }
+            // COMPRESS_ONLY_K
             else {
-                if self.k != 0 {// then c is either smaller than 0 or bigger than 1
+                if self.k != 0 {
+                    // then c is either smaller than 0 or bigger than 1
                     if self.k < 32 {
-                        if self.k <= self.bits_high { // for small k we can do this in one step
+                        if self.k <= self.bits_high {
+                            // for small k we can do this in one step
                             // decompress c with the range coder
-                            c = dec.decode_symbol(&mut self.m_corrector[(self.k - 1) as usize]) as i32;
+                            c = dec.decode_symbol(&mut self.m_corrector[(self.k - 1) as usize])
+                                as i32;
                         } else {
                             // for larger k we need to do this in two steps
                             let k1 = self.k - self.bits_high;
                             // decompress higher bits with table
-                            c = dec.decode_symbol(&mut self.m_corrector[(self.k - 1) as usize]) as i32;
+                            c = dec.decode_symbol(&mut self.m_corrector[(self.k - 1) as usize])
+                                as i32;
                             let c1 = dec.read_bits(k1);
                             // put the corrector back together
                             c = (c << k1 as i32) | c1 as i32;
@@ -186,7 +198,8 @@ impl IntegerDecompressor {
                         if c >= (1 << (self.k - 1)) as i32 {
                             // so we translate c back into the interval [ 2^(k-1) + 1  ...  2^k ] by adding 1
                             c += 1;
-                        } else {// otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
+                        } else {
+                            // otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
                             // so we translate c back into the interval [ - (2^k - 1)  ...  - (2^(k-1)) ] by subtracting (2^k - 1)
                             println!("K: {}", self.k);
                             c -= ((1 << self.k) - 1) as i32;
@@ -197,11 +210,10 @@ impl IntegerDecompressor {
                 } else {
                     c = dec.decode_bit(&mut self.m_corrector0) as i32;
                 }
-            }// COMPRESS_ONLY_K
+            } // COMPRESS_ONLY_K
             c
         };
         //--- read corrector ---//
-
 
         if real < 0 {
             real += self.corr_range as i32;
@@ -211,19 +223,26 @@ impl IntegerDecompressor {
         real
     }
 
-    pub fn read_corrector<T: Read>(&mut self, dec: &mut decoders::ArithmeticDecoder<T>, m_bits: &mut models::ArithmeticModel) -> i32 {
+    pub fn read_corrector<T: Read>(
+        &mut self,
+        dec: &mut decoders::ArithmeticDecoder<T>,
+        m_bits: &mut models::ArithmeticModel,
+    ) -> i32 {
         let mut c: i32;
         // decode within which interval the corrector is falling
         self.k = dec.decode_symbol(m_bits);
         // decode the exact location of the corrector within the interval
         if COMPRESS_ONLY_K {
-            if self.k != 0 { // then c is either smaller than 0 or bigger than 1
+            if self.k != 0 {
+                // then c is either smaller than 0 or bigger than 1
                 if self.k < 32 {
                     c = dec.read_bits(self.k) as i32;
-                    if c >= (1 << (self.k - 1)) as i32 {// if c is in the interval [ 2^(k-1)  ...  + 2^k - 1 ]
+                    if c >= (1 << (self.k - 1)) as i32 {
+                        // if c is in the interval [ 2^(k-1)  ...  + 2^k - 1 ]
                         // so we translate c back into the interval [ 2^(k-1) + 1  ...  2^k ] by adding 1
                         c += 1;
-                    } else {// otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
+                    } else {
+                        // otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
                         // so we translate c back into the interval [ - (2^k - 1)  ...  - (2^(k-1)) ] by subtracting (2^k - 1)
                         c -= ((1 << self.k) - 1) as i32;
                     }
@@ -233,11 +252,14 @@ impl IntegerDecompressor {
             } else {
                 c = dec.read_bit() as i32;
             }
-        } // COMPRESS_ONLY_K
+        }
+        // COMPRESS_ONLY_K
         else {
-            if self.k != 0 {// then c is either smaller than 0 or bigger than 1
+            if self.k != 0 {
+                // then c is either smaller than 0 or bigger than 1
                 if self.k < 32 {
-                    if self.k <= self.bits_high { // for small k we can do this in one step
+                    if self.k <= self.bits_high {
+                        // for small k we can do this in one step
                         // decompress c with the range coder
                         c = dec.decode_symbol(&mut self.m_corrector[(self.k - 1) as usize]) as i32;
                     } else {
@@ -254,7 +276,8 @@ impl IntegerDecompressor {
                     if c >= (1 << self.k - 1) as i32 {
                         // so we translate c back into the interval [ 2^(k-1) + 1  ...  2^k ] by adding 1
                         c += 1;
-                    } else {// otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
+                    } else {
+                        // otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
                         // so we translate c back into the interval [ - (2^k - 1)  ...  - (2^(k-1)) ] by subtracting (2^k - 1)
                         c -= ((1 << self.k) - 1) as i32;
                     }
@@ -264,11 +287,10 @@ impl IntegerDecompressor {
             } else {
                 c = dec.decode_bit(&mut self.m_corrector0) as i32;
             }
-        }// COMPRESS_ONLY_K
+        } // COMPRESS_ONLY_K
         c
     }
 }
-
 
 pub struct IntegerDecompressorBuilder {
     bits: u32,
@@ -301,17 +323,3 @@ impl IntegerDecompressorBuilder {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_init() {
-        let mut decompressor = IntegerDecompressorBuilder::new().bits(13).build();
-        assert_eq!(decompressor.bits, 13);
-        assert_eq!(decompressor.contexts, DEFAULT_CONTEXTS);
-        assert_eq!(decompressor.bits_high, DEFAULT_BITS_HIGH);
-        assert_eq!(decompressor.range, DEFAULT_RANGE);
-        decompressor.init();
-    }
-}

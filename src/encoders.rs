@@ -87,9 +87,6 @@
 //                                                                           -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-
-
-
 use std::io::Write;
 
 use crate::decoders;
@@ -116,9 +113,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let mut out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
         let out_byte = out_buffer.as_mut_ptr();
 
-        let end_byte = unsafe {
-            out_buffer.as_ptr().offset((2 * AC_BUFFER_SIZE) as isize)
-        };
+        let end_byte = unsafe { out_buffer.as_ptr().offset((2 * AC_BUFFER_SIZE) as isize) };
         Self {
             out_buffer,
             out_byte,
@@ -135,7 +130,9 @@ impl<T: Write> ArithmeticEncoder<T> {
         self.out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
         self.out_byte = self.out_buffer.as_mut_ptr();
         self.end_byte = unsafe {
-            self.out_buffer.as_ptr().offset((2 * AC_BUFFER_SIZE) as isize)
+            self.out_buffer
+                .as_ptr()
+                .offset((2 * AC_BUFFER_SIZE) as isize)
         };
     }
 
@@ -163,12 +160,21 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
         self.renorm_enc_interval();
 
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().offset((2 * AC_BUFFER_SIZE) as isize) };
+        let endbuffer = unsafe {
+            self.out_buffer
+                .as_mut_ptr()
+                .offset((2 * AC_BUFFER_SIZE) as isize)
+        };
         if self.end_byte != endbuffer {
             unsafe {
-                assert!((self.out_byte as *const u8) < self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize));
+                assert!(
+                    (self.out_byte as *const u8)
+                        < self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize)
+                );
                 let slc: &[u8] = std::slice::from_raw_parts(
-                    self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize), AC_BUFFER_SIZE);
+                    self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize),
+                    AC_BUFFER_SIZE,
+                );
                 self.out_stream.write_all(&slc).unwrap();
             }
         }
@@ -195,7 +201,10 @@ impl<T: Write> ArithmeticEncoder<T> {
 
         // product l x p0
         let x = model.bit_0_prob * (self.length >> models::BM_LENGTH_SHIFT);
-        println!("bit_0_prob: {}, length: {} => x: {}", model.bit_0_prob, self.length, x);
+        println!(
+            "bit_0_prob: {}, length: {} => x: {}",
+            model.bit_0_prob, self.length, x
+        );
         //update interval
         if sym == 0 {
             self.length = x;
@@ -222,7 +231,10 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     pub fn encode_symbol(&mut self, model: &mut models::ArithmeticModel, sym: u32) {
-        println!("\nencode_symbol -> length: {}, symbol: {}, last symbol: {}", self.length, sym, model.last_symbol);
+        println!(
+            "\nencode_symbol -> length: {}, symbol: {}, last symbol: {}",
+            self.length, sym, model.last_symbol
+        );
         debug_assert!(sym <= model.last_symbol);
 
         let x;
@@ -231,8 +243,8 @@ impl<T: Write> ArithmeticEncoder<T> {
         //compute products
         if sym == model.last_symbol {
             x = model.distribution[sym as usize] * (self.length >> DM_LENGTH_SHIFT);
-            self.base = self.base.wrapping_add(x);// update interval
-            self.length -= x;// no product needed
+            self.base = self.base.wrapping_add(x); // update interval
+            self.length -= x; // no product needed
         } else {
             self.length >>= DM_LENGTH_SHIFT;
             println!("length: {}", self.length);
@@ -240,13 +252,17 @@ impl<T: Write> ArithmeticEncoder<T> {
             self.base = self.base.wrapping_add(x);
             //self.base += x;
             self.length = model.distribution[(sym + 1) as usize] * self.length - x;
-            println!("length: {}, sym + 1: {}, model.distrib: {}", self.length, sym + 1, model.distribution[(sym + 1) as usize]);
+            println!(
+                "length: {}, sym + 1: {}, model.distrib: {}",
+                self.length,
+                sym + 1,
+                model.distribution[(sym + 1) as usize]
+            );
         }
 
         if init_base > self.base {
             self.propagate_carry();
         }
-        println!("AYAYA: {}", self.length);
         if self.length < AC_MIN_LENGTH {
             self.renorm_enc_interval();
         }
@@ -257,7 +273,6 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
         println!("length at end of encoder symbol: {}", self.length);
     }
-
 
     /* Encode a bit without modelling  */
     // again sym is a bool
@@ -326,7 +341,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let init_base = self.base;
         self.length >>= 16;
 
-        self.base += sym as u32 * self.length;
+        self.base = self.base.wrapping_add(sym as u32 * self.length);
         // overflow = carry
         if init_base > self.base {
             self.propagate_carry();
@@ -360,11 +375,13 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn propagate_carry(&mut self) {
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().offset((2 * AC_BUFFER_SIZE) as isize) };
+        let endbuffer = unsafe {
+            self.out_buffer
+                .as_mut_ptr()
+                .offset((2 * AC_BUFFER_SIZE) as isize)
+        };
         let mut b = if self.out_byte as *const u8 == self.out_buffer.as_ptr() {
-            unsafe {
-                endbuffer.offset(-1)
-            }
+            unsafe { endbuffer.offset(-1) }
         } else {
             unsafe { self.out_byte.offset(-1) }
         };
@@ -373,7 +390,11 @@ impl<T: Write> ArithmeticEncoder<T> {
             while *b == 0xFFu8 {
                 *b = 0;
                 if b as *const u8 == self.out_buffer.as_ptr() {
-                    b = self.out_buffer.as_mut_ptr().offset((2 * AC_BUFFER_SIZE) as isize).offset(-1);
+                    b = self
+                        .out_buffer
+                        .as_mut_ptr()
+                        .offset((2 * AC_BUFFER_SIZE) as isize)
+                        .offset(-1);
                 } else {
                     b = b.offset(-1);
                 }
@@ -386,9 +407,17 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn renorm_enc_interval(&mut self) {
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().offset((2 * AC_BUFFER_SIZE) as isize) };
+        let endbuffer = unsafe {
+            self.out_buffer
+                .as_mut_ptr()
+                .offset((2 * AC_BUFFER_SIZE) as isize)
+        };
         loop {
-            println!("ArithmeticEncoder::renorm_enc_interval: {} -> {}", self.length, self.length << 8);
+            println!(
+                "ArithmeticEncoder::renorm_enc_interval: {} -> {}",
+                self.length,
+                self.length << 8
+            );
             assert!(self.out_buffer.as_ptr() <= self.out_byte);
             assert!(self.out_byte < endbuffer);
             assert!((self.out_byte as *const u8) < self.end_byte);
@@ -412,7 +441,11 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn manage_out_buffer(&mut self) {
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().offset((2 * AC_BUFFER_SIZE) as isize) };
+        let endbuffer = unsafe {
+            self.out_buffer
+                .as_mut_ptr()
+                .offset((2 * AC_BUFFER_SIZE) as isize)
+        };
         if self.out_byte == endbuffer {
             self.out_byte = self.out_buffer.as_mut_ptr();
         }

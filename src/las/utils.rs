@@ -24,15 +24,15 @@
 ===============================================================================
 */
 
-
 use num_traits::Zero;
 use std::ops::{BitAnd, BitXor};
 
 #[inline]
 pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
-    where T: BitXor + BitAnd,
-          <T as BitXor>::Output: BitAnd,
-         <<T as BitXor>::Output as BitAnd>::Output: PartialEq<u16>
+where
+    T: BitXor + BitAnd,
+    <T as BitXor>::Output: BitAnd,
+    <<T as BitXor>::Output as BitAnd>::Output: PartialEq<u16>,
 {
     ((value ^ other) & flag) != 0u16
 }
@@ -129,7 +129,7 @@ pub const NUMBER_RETURN_MAP: [[u8; 8]; 8] = [
     [11, 6, 7, 8, 9, 13, 13, 12],
     [10, 10, 11, 12, 13, 14, 14, 13],
     [9, 10, 11, 12, 13, 14, 15, 14],
-    [8, 9, 10, 11, 12, 13, 14, 15]
+    [8, 9, 10, 11, 12, 13, 14, 15],
 ];
 
 // for LAS files with the return (r) and the number (n) of
@@ -156,7 +156,7 @@ pub const NUMBER_RETURN_LEVEL: [[u8; 8]; 8] = [
     [4, 3, 2, 1, 0, 1, 2, 3],
     [5, 4, 3, 2, 1, 0, 1, 2],
     [6, 5, 4, 3, 2, 1, 0, 1],
-    [7, 6, 5, 4, 3, 2, 1, 0]
+    [7, 6, 5, 4, 3, 2, 1, 0],
 ];
 
 #[inline]

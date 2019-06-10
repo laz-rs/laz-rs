@@ -4,16 +4,17 @@ use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use i32;
-use laz::*;
 use laz::encoders::ArithmeticEncoder;
-use laz::formats::{IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor, RecordDecompressor};
+use laz::formats::{
+    IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor, RecordDecompressor,
+};
+use laz::*;
 
 unsafe fn to_slice<T>(value: &T) -> &[u8] {
     let p: *const T = value;
     let bp: *const u8 = p as *const _;
     std::slice::from_raw_parts(bp, std::mem::size_of::<T>())
 }
-
 
 #[test]
 fn test_i32_compression_decompression() {
@@ -71,7 +72,6 @@ fn test_u32_compression_decompression() {
     }
 }
 
-
 #[test]
 fn test_compress_decompress_simple_struct() {
     struct MyPoint {
@@ -101,7 +101,10 @@ fn test_compress_decompress_simple_struct() {
     let mut buf = vec![0u8; 4 + 2];
     for i in 0..1000 {
         let mut cursor = Cursor::new(&mut buf);
-        let p = MyPoint { a: i + 50000, b: (i + 1000) as i16 };
+        let p = MyPoint {
+            a: i + 50000,
+            b: (i + 1000) as i16,
+        };
         p.write_to(&mut cursor);
         compressor.compress(&buf);
     }

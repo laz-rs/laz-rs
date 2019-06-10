@@ -1,6 +1,6 @@
-use std::io::{Cursor, Read, Write};
+use std::io::{Read, Write};
 
-use num_traits::{AsPrimitive, PrimInt, zero, Zero};
+use num_traits::{zero, AsPrimitive, PrimInt, Zero};
 
 use crate::compressors;
 use crate::decoders;
@@ -11,10 +11,8 @@ use crate::packers::Packable;
 pub trait FieldDecompressor<R: Read> {
     fn size_of_field(&self) -> usize;
 
-    fn decompress_with(
-        &mut self, decoder: &mut decoders::ArithmeticDecoder<R>, buf: &mut [u8]);
+    fn decompress_with(&mut self, decoder: &mut decoders::ArithmeticDecoder<R>, buf: &mut [u8]);
 }
-
 
 pub struct RecordDecompressor<R: Read> {
     fields: Vec<Box<dyn FieldDecompressor<R>>>,
@@ -55,7 +53,6 @@ impl<R: Read> RecordDecompressor<R> {
         }
     }
 
-
     pub fn into_stream(self) -> R {
         self.decoder.into_stream()
     }
@@ -69,16 +66,12 @@ impl<R: Read> RecordDecompressor<R> {
 pub trait FieldCompressor<W: Write> {
     fn size_of_field(&self) -> usize;
 
-    fn compress_with(
-        &mut self, encoder: &mut encoders::ArithmeticEncoder<W>, buf: &[u8],
-    );
+    fn compress_with(&mut self, encoder: &mut encoders::ArithmeticEncoder<W>, buf: &[u8]);
 }
-
 
 pub struct RecordCompressor<W: Write> {
     field_compressors: Vec<Box<dyn FieldCompressor<W>>>,
     encoder: encoders::ArithmeticEncoder<W>,
-    first_compression: bool,
 }
 
 impl<W: Write> RecordCompressor<W> {
@@ -86,7 +79,6 @@ impl<W: Write> RecordCompressor<W> {
         Self {
             field_compressors: vec![],
             encoder,
-            first_compression: false,
         }
     }
 
@@ -95,7 +87,11 @@ impl<W: Write> RecordCompressor<W> {
     }
 
     pub fn compress(&mut self, input: &[u8]) {
-        let record_size = self.field_compressors.iter().map(|f| f.size_of_field()).sum();
+        let record_size = self
+            .field_compressors
+            .iter()
+            .map(|f| f.size_of_field())
+            .sum();
         if input.len() < record_size {
             panic!("Input buffer to small")
         }
@@ -119,7 +115,6 @@ impl<W: Write> RecordCompressor<W> {
         self.encoder.done()
     }
 }
-
 
 struct StandardDiffMethod<T: Zero + Copy> {
     have_value: bool,
@@ -149,7 +144,6 @@ impl<T: Zero + Copy> StandardDiffMethod<T> {
     }
 }
 
-
 pub struct IntegerFieldDecompressor<IntType: Zero + Copy + PrimInt> {
     decompressor_inited: bool,
     decompressor: decompressors::IntegerDecompressor,
@@ -160,35 +154,54 @@ impl<IntType: Zero + Copy + PrimInt> IntegerFieldDecompressor<IntType> {
     pub fn new() -> Self {
         Self {
             decompressor_inited: false,
-            decompressor: decompressors::IntegerDecompressorBuilder::new().bits(std::mem::size_of::<IntType>() as u32 * 8).build(),
+            decompressor: decompressors::IntegerDecompressorBuilder::new()
+                .bits(std::mem::size_of::<IntType>() as u32 * 8)
+                .build(),
             diff_method: StandardDiffMethod::<IntType>::new(),
         }
     }
 }
 
 impl<IntType, R> FieldDecompressor<R> for IntegerFieldDecompressor<IntType>
-    where i32: num_traits::cast::AsPrimitive<IntType>,
-          IntType: Zero + Copy + PrimInt + Packable + AsPrimitive<i32> + AsPrimitive<<IntType as Packable>::Type>,
-          <IntType as Packable>::Type: AsPrimitive<IntType>,
-          R: Read
+where
+    i32: num_traits::cast::AsPrimitive<IntType>,
+    IntType: Zero
+        + Copy
+        + PrimInt
+        + Packable
+        + AsPrimitive<i32>
+        + AsPrimitive<<IntType as Packable>::Type>,
+    <IntType as Packable>::Type: AsPrimitive<IntType>,
+    R: Read,
 {
     fn size_of_field(&self) -> usize {
         std::mem::size_of::<IntType>()
     }
 
     fn decompress_with(
-        &mut self, mut decoder: &mut decoders::ArithmeticDecoder<R>, mut buf: &mut [u8]) where Self: Sized {
+        &mut self,
+        mut decoder: &mut decoders::ArithmeticDecoder<R>,
+        mut buf: &mut [u8],
+    ) where
+        Self: Sized,
+    {
         if !self.decompressor_inited {
             self.decompressor.init();
         }
 
         let r: IntType = if self.diff_method.have_value() {
-            let v = self.decompressor.decompress(&mut decoder, self.diff_method.value().as_(), 0).as_();
+            let v = self
+                .decompressor
+                .decompress(&mut decoder, self.diff_method.value().as_(), 0)
+                .as_();
             IntType::pack(v.as_(), &mut buf);
             v
         } else {
             // this is probably the first time we're reading stuff, read the record as is
-            decoder.in_stream().read_exact(&mut buf[0..std::mem::size_of::<IntType>()]).unwrap();
+            decoder
+                .in_stream()
+                .read_exact(&mut buf[0..std::mem::size_of::<IntType>()])
+                .unwrap();
             IntType::unpack(&buf).as_()
         };
         self.diff_method.push(r);
@@ -205,17 +218,22 @@ impl<IntType: Zero + Copy + PrimInt> IntegerFieldCompressor<IntType> {
     pub fn new() -> Self {
         Self {
             compressor_inited: false,
-            compressor: compressors::IntegerCompressor::new(std::mem::size_of::<IntType>() as u32 * 8, 1, 8, 0),
+            compressor: compressors::IntegerCompressor::new(
+                std::mem::size_of::<IntType>() as u32 * 8,
+                1,
+                8,
+                0,
+            ),
             diff_method: StandardDiffMethod::<IntType>::new(),
         }
     }
 }
 
-
 impl<IntType, W> FieldCompressor<W> for IntegerFieldCompressor<IntType>
-    where IntType: Zero + Copy + PrimInt + Packable + 'static + AsPrimitive<i32>,
-          <IntType as Packable>::Type: AsPrimitive<IntType>,
-          W: Write
+where
+    IntType: Zero + Copy + PrimInt + Packable + 'static + AsPrimitive<i32>,
+    <IntType as Packable>::Type: AsPrimitive<IntType>,
+    W: Write,
 {
     fn size_of_field(&self) -> usize {
         std::mem::size_of::<IntType>()
@@ -228,7 +246,12 @@ impl<IntType, W> FieldCompressor<W> for IntegerFieldCompressor<IntType>
         }
         // Let the differ decide what values we're going to push
         if self.diff_method.have_value() {
-            self.compressor.compress(&mut encoder, self.diff_method.value().as_(), this_val.as_(), 0);
+            self.compressor.compress(
+                &mut encoder,
+                self.diff_method.value().as_(),
+                this_val.as_(),
+                0,
+            );
         } else {
             // differ is not ready for us to start encoding values
             // for us, so we need to write raw into
@@ -241,28 +264,19 @@ impl<IntType, W> FieldCompressor<W> for IntegerFieldCompressor<IntType>
 
 #[cfg(test)]
 mod test {
-    use std::io::{Cursor, Seek, SeekFrom};
+    use std::io::{Seek, SeekFrom};
 
     use super::*;
 
     #[test]
-    fn t() {
-        let decoder = decoders::ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new()));
-        let mut mdr = RecordDecompressor::new(decoder);
-
-        let i32_field_decompressor = IntegerFieldDecompressor::<i32>::new();
-        mdr.add_field(i32_field_decompressor);
-    }
-
-    #[test]
     fn dyna() {
-        let mut stream = std::io::Cursor::new(Vec::<u8>::new());
+        let stream = std::io::Cursor::new(Vec::<u8>::new());
 
-        let mut encoder = encoders::ArithmeticEncoder::new(stream);
+        let encoder = encoders::ArithmeticEncoder::new(stream);
         let mut compressor = RecordCompressor::new(encoder);
         compressor.done();
 
-        let mut stream = compressor.into_stream();
+        let stream = compressor.into_stream();
         let data = stream.into_inner();
 
         assert_eq!(&data, &[1u8, 0u8, 0u8, 0u8]);
@@ -270,15 +284,15 @@ mod test {
 
     #[test]
     fn dyna2() {
-        let mut stream = std::io::Cursor::new(Vec::<u8>::new());
+        let stream = std::io::Cursor::new(Vec::<u8>::new());
 
-        let mut encoder = encoders::ArithmeticEncoder::new(stream);
+        let encoder = encoders::ArithmeticEncoder::new(stream);
         let mut compressor = RecordCompressor::new(encoder);
         compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
         compressor.compress(&[0u8, 0u8, 0u8, 0u8]);
         compressor.done();
 
-        let mut stream = compressor.into_stream();
+        let stream = compressor.into_stream();
         let data = stream.into_inner();
 
         assert_eq!(&data, &[0u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 0u8]);
@@ -286,9 +300,9 @@ mod test {
 
     #[test]
     fn dyna3() {
-        let mut stream = std::io::Cursor::new(Vec::<u8>::new());
+        let stream = std::io::Cursor::new(Vec::<u8>::new());
 
-        let mut encoder = encoders::ArithmeticEncoder::new(stream);
+        let encoder = encoders::ArithmeticEncoder::new(stream);
         let mut compressor = RecordCompressor::new(encoder);
         compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
         compressor.compress(&[17u8, 42u8, 35u8, 1u8]);
@@ -299,7 +313,10 @@ mod test {
 
         let mut read_from_stream = [0u8; 8];
         stream.read_exact(&mut read_from_stream).unwrap();
-        assert_eq!(&read_from_stream, &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]);
+        assert_eq!(
+            &read_from_stream,
+            &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]
+        );
 
         let data = stream.into_inner();
         assert_eq!(&data, &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]);

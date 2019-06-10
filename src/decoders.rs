@@ -87,8 +87,7 @@
 //                                                                           -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-
-
+use byteorder::ReadBytesExt;
 use std::io::Read;
 
 use crate::models;
@@ -98,7 +97,6 @@ use crate::models::DM_LENGTH_SHIFT;
 pub const AC_MAX_LENGTH: u32 = 0xFFFFFFFF;
 // maximum AC interval length
 pub const AC_MIN_LENGTH: u32 = 0x01000000;
-
 
 pub struct ArithmeticDecoder<T: Read> {
     in_stream: T,
@@ -155,7 +153,10 @@ impl<T: Read> ArithmeticDecoder<T> {
     }
 
     pub fn decode_symbol(&mut self, model: &mut models::ArithmeticModel) -> u32 {
-        println!("\nArthmeticDecoder::decode_symbol -> length: {}", self.length);
+        println!(
+            "\nArthmeticDecoder::decode_symbol -> length: {}, value: {}",
+            self.length, self.value
+        );
         let mut sym;
         let mut n;
         let mut x;
@@ -169,10 +170,15 @@ impl<T: Read> ArithmeticDecoder<T> {
 
             sym = model.decoder_table[t as usize]; // initial decision based on table look-up
             n = model.decoder_table[t as usize + 1] + 1;
-            println!("table: {:?}, len: {}", model.decoder_table, model.decoder_table.len());
+            println!(
+                "table: {:?}, len: {}",
+                model.decoder_table,
+                model.decoder_table.len()
+            );
             println!("t: {}, sym: {}, n: {}", t, sym, n);
 
-            while n > sym + 1 {// finish with bisection search
+            while n > sym + 1 {
+                // finish with bisection search
                 let k = (sym + n) >> 1;
                 if model.distribution[k as usize] > dv {
                     n = k;
@@ -182,7 +188,10 @@ impl<T: Read> ArithmeticDecoder<T> {
             }
 
             // compute products
-            println!("sym: {}, model.distribution: {}", sym, model.distribution[sym as usize]);
+            println!(
+                "sym: {}, model.distribution: {}",
+                sym, model.distribution[sym as usize]
+            );
             x = model.distribution[sym as usize] * self.length;
             if sym != model.last_symbol {
                 y = model.distribution[sym as usize + 1] * self.length;
@@ -215,7 +224,11 @@ impl<T: Read> ArithmeticDecoder<T> {
         self.value -= x;
         self.length = y - x;
 
-        println!("length {} should renorm: {}", self.length, self.length < AC_MIN_LENGTH);
+        println!(
+            "length {} should renorm: {}",
+            self.length,
+            self.length < AC_MIN_LENGTH
+        );
         if self.length < AC_MIN_LENGTH {
             self.renorm_dec_interval()
         }
@@ -225,7 +238,10 @@ impl<T: Read> ArithmeticDecoder<T> {
         if model.symbols_until_update == 0 {
             model.update();
         }
-        println!("length at end of decode symbol: {}", self.length);
+        println!(
+            "length at end of decode symbol: {} -> symbol: {}",
+            self.length, sym
+        );
         sym
     }
 
@@ -312,10 +328,8 @@ impl<T: Read> ArithmeticDecoder<T> {
     //TODO readFloat, readDouble
     fn renorm_dec_interval(&mut self) {
         println!("ArithmeticDecoder::renorm_dec_interval()");
-        let mut byte = [0u8; 1];
         loop {
-            self.in_stream.read_exact(&mut byte).unwrap();
-            self.value = (self.value << 8) | byte[0] as u32;
+            self.value = (self.value << 8) | self.in_stream.read_u8().unwrap() as u32;
             self.length <<= 8;
             if self.length >= AC_MIN_LENGTH {
                 break;

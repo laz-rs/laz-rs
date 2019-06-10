@@ -28,7 +28,6 @@
 ===============================================================================
 */
 
-
 use std::io::Write;
 
 use crate::encoders;
@@ -121,20 +120,35 @@ impl IntegerCompressor {
     pub fn init(&mut self) {
         if self.m_bits.is_empty() {
             for _i in 0..self.contexts {
-                self.m_bits.push(models::ArithmeticModel::new(self.corr_bits + 1, false, &[]));
+                self.m_bits
+                    .push(models::ArithmeticModel::new(self.corr_bits + 1, false, &[]));
             }
 
             if !COMPRESS_ONLY_K {
                 for i in 1..=self.corr_bits {
-                    let v = if i <= self.bits_high { 1 << i } else { 1 << self.bits_high };
-                    self.m_corrector.push(models::ArithmeticModel::new(v, false, &[]))
+                    let v = if i <= self.bits_high {
+                        1 << i
+                    } else {
+                        1 << self.bits_high
+                    };
+                    self.m_corrector
+                        .push(models::ArithmeticModel::new(v, false, &[]))
                 }
             }
         }
     }
 
-    pub fn compress<T: Write>(&mut self, encoder: &mut encoders::ArithmeticEncoder<T>, pred: i32, real: i32, context: u32) {
-        println!("IntegerCompressor::compress(), pred: {}, real: {}, context: {}", pred, real, context);
+    pub fn compress<T: Write>(
+        &mut self,
+        encoder: &mut encoders::ArithmeticEncoder<T>,
+        pred: i32,
+        real: i32,
+        context: u32,
+    ) {
+        println!(
+            "IntegerCompressor::compress(), pred: {}, real: {}, context: {}",
+            pred, real, context
+        );
         // the corrector will be within the interval [ - (corr_range - 1)  ...  + (corr_range - 1) ]
         let mut corr = real - pred;
         // we fold the corrector into the interval [ corr_min  ...  corr_max ]
@@ -147,7 +161,6 @@ impl IntegerCompressor {
         let m_bit = &mut self.m_bits[context as usize];
         let mut c = corr;
         //===== start of "writeCorrector ==============================================*/
-
         let mut c1: u32;
 
         // find the tightest interval [ - (2^k - 1)  ...  + (2^k) ] that contains c
@@ -168,25 +181,31 @@ impl IntegerCompressor {
         if COMPRESS_ONLY_K {
             //TODO
         } else {
-            if self.k != 0 {// then c is either smaller than 0 or bigger than 1
+            if self.k != 0 {
+                // then c is either smaller than 0 or bigger than 1
                 assert!(c != 0 && c != 1);
                 if self.k < 32 {
                     // translate the corrector c into the k-bit interval [ 0 ... 2^k - 1 ]
-                    if c < 0 // then c is in the interval [ - (2^k - 1)  ...  - (2^(k-1)) ]
+                    if c < 0
+                    // then c is in the interval [ - (2^k - 1)  ...  - (2^(k-1)) ]
                     {
                         // so we translate c into the interval [ 0 ...  + 2^(k-1) - 1 ] by adding (2^k - 1)
                         c += ((1 << self.k) - 1) as i32;
-                    } else // then c is in the interval [ 2^(k-1) + 1  ...  2^k ]
+                    } else
+                    // then c is in the interval [ 2^(k-1) + 1  ...  2^k ]
                     {
                         // so we translate c into the interval [ 2^(k-1) ...  + 2^k - 1 ] by subtracting 1
                         c -= 1;
                     }
 
-                    if self.k <= self.bits_high // for small k we code the interval in one step
+                    if self.k <= self.bits_high
+                    // for small k we code the interval in one step
                     {
                         // compress c with the range coder
-                        encoder.encode_symbol(&mut self.m_corrector[(self.k - 1) as usize], c as u32);
-                    } else // for larger k we need to code the interval in two steps
+                        encoder
+                            .encode_symbol(&mut self.m_corrector[(self.k - 1) as usize], c as u32);
+                    } else
+                    // for larger k we need to code the interval in two steps
                     {
                         // figure out how many lower bits there are
                         let k1 = self.k - self.bits_high;
@@ -195,7 +214,8 @@ impl IntegerCompressor {
                         // c represents the highest bits_high bits
                         c = c >> k1 as i32;
                         // compress the higher bits using a context table
-                        encoder.encode_symbol(&mut self.m_corrector[(self.k - 1) as usize], c as u32);
+                        encoder
+                            .encode_symbol(&mut self.m_corrector[(self.k - 1) as usize], c as u32);
                         // store the lower k1 bits raw
                         encoder.write_bits(k1, c1);
                     }

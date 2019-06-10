@@ -1,13 +1,11 @@
 use std::io::{Read, Write};
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::decoders::ArithmeticDecoder;
 use crate::encoders::ArithmeticEncoder;
-use crate::formats::{RecordDecompressor, RecordCompressor};
-use crate::errors::Errors;
+use crate::formats::{RecordCompressor, RecordDecompressor};
 use crate::las;
-use std::convert::TryFrom;
 
 const SUPPORTED_VERSION: u32 = 2;
 const DEFAULT_CHUNK_SIZE: usize = 5000;
@@ -27,6 +25,13 @@ impl Version {
             revision: src.read_u16::<LittleEndian>()?,
         })
     }
+
+    fn write_to<W: Write>(&self, dst: &mut W) -> std::io::Result<()> {
+        dst.write_u8(self.major)?;
+        dst.write_u8(self.minor)?;
+        dst.write_u16::<LittleEndian>(self.revision)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -37,7 +42,7 @@ pub enum LazItemType {
     //6
     GpsTime,
     //7
-    RGB12,//8
+    RGB12, //8
 }
 
 impl From<LazItemType> for u16 {
@@ -50,7 +55,6 @@ impl From<LazItemType> for u16 {
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct LazItem {
@@ -70,7 +74,7 @@ impl LazItem {
             6 => LazItemType::Point10,
             7 => LazItemType::GpsTime,
             8 => LazItemType::RGB12,
-            _ => panic!("Unknown LazItem type: {}", item_type)
+            _ => panic!("Unknown LazItem type: {}", item_type),
         };
         Ok(Self {
             item_type,
@@ -78,13 +82,17 @@ impl LazItem {
             version: src.read_u16::<LittleEndian>()?,
         })
     }
-    fn item_type(&self) -> LazItemType {
-        self.item_type
+
+    fn write_to<W: Write>(&self, dst: &mut W) -> std::io::Result<()> {
+        dst.write_u16::<LittleEndian>(self.item_type.into())?;
+        dst.write_u16::<LittleEndian>(self.size)?;
+        dst.write_u16::<LittleEndian>(self.version)?;
+        Ok(())
     }
 }
 
 pub struct LazItemRecordBuilder {
-    items: Vec<LazItem>
+    items: Vec<LazItemType>,
 }
 
 impl LazItemRecordBuilder {
@@ -93,25 +101,27 @@ impl LazItemRecordBuilder {
     }
 
     pub fn add_item(&mut self, item_type: LazItemType) -> &mut Self {
-        let size = match item_type {
-            LazItemType::Byte(n) => n,
-            LazItemType::Point10 => 20,
-            LazItemType::GpsTime => 8,
-            LazItemType::RGB12 => 6,
-        };
-
-        self.items.push(
-            LazItem {
-                item_type,
-                size,
-                version: SUPPORTED_VERSION as u16,
-            }
-        );
+        self.items.push(item_type);
         self
     }
 
-    pub fn build(self) -> Vec<LazItem> {
+    pub fn build(&self) -> Vec<LazItem> {
         self.items
+            .iter()
+            .map(|item_type| {
+                let size = match *item_type {
+                    LazItemType::Byte(n) => n,
+                    LazItemType::Point10 => 20,
+                    LazItemType::GpsTime => 8,
+                    LazItemType::RGB12 => 6,
+                };
+                LazItem {
+                    item_type: *item_type,
+                    size,
+                    version: SUPPORTED_VERSION as u16,
+                }
+            })
+            .collect()
     }
 }
 
@@ -122,6 +132,14 @@ fn read_laz_items_from<R: Read>(mut src: &mut R) -> std::io::Result<Vec<LazItem>
         items.push(LazItem::read_from(&mut src)?)
     }
     Ok(items)
+}
+
+fn write_laz_items_to<W: Write>(laz_items: &Vec<LazItem>, mut dst: &mut W) -> std::io::Result<()> {
+    dst.write_u16::<LittleEndian>(laz_items.len() as u16)?;
+    for item in laz_items {
+        item.write_to(&mut dst)?;
+    }
+    Ok(())
 }
 
 pub enum CompressorType {
@@ -149,7 +167,6 @@ pub struct LazVlr {
 
     items: Vec<LazItem>,
 }
-
 
 impl LazVlr {
     pub fn new() -> Self {
@@ -193,17 +210,28 @@ impl LazVlr {
         })
     }
 
+    pub fn write_to<W: Write>(&self, mut dst: &mut W) -> std::io::Result<()> {
+        dst.write_u16::<LittleEndian>(self.compressor.into())?;
+        dst.write_u16::<LittleEndian>(self.coder)?;
+        self.version.write_to(&mut dst)?;
+        dst.write_u32::<LittleEndian>(self.options)?;
+        dst.write_u32::<LittleEndian>(self.chunk_size)?;
+        dst.write_i64::<LittleEndian>(self.number_of_special_evlrs)?;
+        dst.write_i64::<LittleEndian>(self.offset_to_special_evlrs)?;
+        write_laz_items_to(&self.items, &mut dst)?;
+        Ok(())
+    }
+
     pub fn compressor_type(&self) -> Option<CompressorType> {
         match self.compressor {
             0 => Some(CompressorType::None),
             1 => Some(CompressorType::PointWise),
             2 => Some(CompressorType::PointWiseChunked),
             3 => Some(CompressorType::LayeredChunked),
-            _ => None
+            _ => None,
         }
     }
 }
-
 
 pub struct LasZipDecompressor<R: Read> {
     vlr: LazVlr,
@@ -211,23 +239,30 @@ pub struct LasZipDecompressor<R: Read> {
     chunk_points_read: u32,
 }
 
-
 impl<R: Read> LasZipDecompressor<R> {
     //TODO FIXME WOW FIND A BETTER NAME WTF
-    pub fn new_1(mut source: R, laszip_vlr_record_data: &[u8]) -> Self {
+    pub fn new_1(source: R, laszip_vlr_record_data: &[u8]) -> Self {
         let vlr = LazVlr::from_buffer(laszip_vlr_record_data).unwrap();
         Self::new(source, vlr)
     }
 
     //TODO add point_size as params to have some check later
-    pub fn new(mut source: R, vlr: LazVlr) -> Self {
+    pub fn new(source: R, vlr: LazVlr) -> Self {
         let mut record_decompressor = RecordDecompressor::new(ArithmeticDecoder::new(source));
         for record_item in &vlr.items {
             match record_item.item_type {
-                LazItemType::Byte(_) => record_decompressor.add_field(las::extra_bytes::ExtraBytesDecompressor::new(record_item.size as usize)),
-                LazItemType::Point10 => record_decompressor.add_field(las::point10::Point10Decompressor::new()),
-                LazItemType::GpsTime => record_decompressor.add_field(las::gps::GpsTimeDecompressor::new()),
-                LazItemType::RGB12 => record_decompressor.add_field(las::rgb::RGBDecompressor::new()),
+                LazItemType::Byte(_) => record_decompressor.add_field(
+                    las::extra_bytes::ExtraBytesDecompressor::new(record_item.size as usize),
+                ),
+                LazItemType::Point10 => {
+                    record_decompressor.add_field(las::point10::Point10Decompressor::new())
+                }
+                LazItemType::GpsTime => {
+                    record_decompressor.add_field(las::gps::GpsTimeDecompressor::new())
+                }
+                LazItemType::RGB12 => {
+                    record_decompressor.add_field(las::rgb::RGBDecompressor::new())
+                }
             }
         }
         Self {
@@ -263,19 +298,22 @@ pub struct LasZipCompressor<W: Write> {
 // TODO chunkTable
 impl<W: Write> LasZipCompressor<W> {
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Self {
-        let mut record_compressor = RecordCompressor::new(
-            ArithmeticEncoder::new(output));
+        let mut record_compressor = RecordCompressor::new(ArithmeticEncoder::new(output));
         for item in &items {
+            println!("====> ITEM: {:?}", item);
             match item.item_type {
-                LazItemType::Byte(count) =>
-                    record_compressor.add_field_compressor(
-                        las::extra_bytes::ExtraBytesCompressor::new(count as usize)),
-                LazItemType::Point10 =>
-                    record_compressor.add_field_compressor(las::point10::Point10Compressor::new()),
-                LazItemType::GpsTime =>
-                    record_compressor.add_field_compressor(las::gps::GpsTimeCompressor::new()),
-                LazItemType::RGB12 =>
+                LazItemType::Byte(count) => record_compressor.add_field_compressor(
+                    las::extra_bytes::ExtraBytesCompressor::new(count as usize),
+                ),
+                LazItemType::Point10 => {
+                    record_compressor.add_field_compressor(las::point10::Point10Compressor::new())
+                }
+                LazItemType::GpsTime => {
+                    record_compressor.add_field_compressor(las::gps::GpsTimeCompressor::new())
+                }
+                LazItemType::RGB12 => {
                     record_compressor.add_field_compressor(las::rgb::RGBCompressor::new())
+                }
             }
         }
         let vlr = LazVlr::from_laz_items(items);
@@ -291,7 +329,7 @@ impl<W: Write> LasZipCompressor<W> {
     pub fn compress_one(&mut self, input: &[u8]) {
         if self.first_point {
             //TODO borrow stream and write emtpy chunk offset size
-            //self.record_compressor.
+            //self.record_compressor.reset();
             self.first_point = false;
         }
 
@@ -309,5 +347,37 @@ impl<W: Write> LasZipCompressor<W> {
     pub fn done(&mut self) {
         self.record_compressor.done();
         //TODO write chunktable
+    }
+
+    pub fn vlr(&self) -> &LazVlr {
+        &self.vlr
+    }
+
+    pub fn into_stream(self) -> W {
+        self.record_compressor.into_stream()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_can_write_laz_vlr() {
+        let vlr = LazVlr::new();
+        let mut out = Cursor::new(Vec::<u8>::new());
+        vlr.write_to(&mut out).unwrap();
+    }
+
+    #[test]
+    fn test_create_laz_items() {
+        assert_eq!(
+            LazItemRecordBuilder::new()
+                .add_item(LazItemType::Point10)
+                .build()
+                .len(),
+            1
+        );
     }
 }

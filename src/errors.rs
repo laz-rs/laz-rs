@@ -1,4 +1,4 @@
 #[derive(Debug)]
 pub enum Errors {
-    InvalidLazItemType(u16)
+    InvalidLazItemType(u16),
 }

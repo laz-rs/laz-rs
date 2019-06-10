@@ -25,19 +25,17 @@
 ===============================================================================
 */
 
-
 use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
 
-use crate::formats::{FieldCompressor, FieldDecompressor};
-use crate::encoders::ArithmeticEncoder;
 use crate::decoders::ArithmeticDecoder;
-use std::io::{Write, Read};
+use crate::encoders::ArithmeticEncoder;
+use crate::formats::{FieldCompressor, FieldDecompressor};
+use std::io::{Read, Write};
 
 #[derive(Debug)]
 pub struct ExtraBytes {
-    bytes: Vec<u8>
+    bytes: Vec<u8>,
 }
-
 
 pub struct ExtraBytesCompressor {
     have_last: bool,
@@ -47,7 +45,6 @@ pub struct ExtraBytesCompressor {
     models: Vec<ArithmeticModel>,
 }
 
-
 impl ExtraBytesCompressor {
     pub fn new(count: usize) -> Self {
         Self {
@@ -55,11 +52,13 @@ impl ExtraBytesCompressor {
             count,
             lasts: vec![0u8; count],
             diffs: vec![0u8; count],
-            models: (0..count).into_iter().map(|i| ArithmeticModelBuilder::new(256).build()).collect(),
+            models: (0..count)
+                .into_iter()
+                .map(|_i| ArithmeticModelBuilder::new(256).build())
+                .collect(),
         }
     }
 }
-
 
 impl<W: Write> FieldCompressor<W> for ExtraBytesCompressor {
     fn size_of_field(&self) -> usize {
@@ -71,7 +70,7 @@ impl<W: Write> FieldCompressor<W> for ExtraBytesCompressor {
             let current_byte = &buf[i];
             let last = &mut self.lasts[i];
 
-            self.diffs[i] = *current_byte - *last;
+            self.diffs[i] = (*current_byte).wrapping_sub(*last);
             *last = *current_byte;
         }
 
@@ -103,7 +102,9 @@ impl<R: Read> FieldDecompressor<R> for ExtraBytesDecompressor {
                 let diff = &mut self.diffs[i];
                 let last = &mut self.lasts[i];
 
-                *diff = (*last).wrapping_add(decoder.decode_symbol(&mut self.models[i]) as u8);
+                let sym = decoder.decode_symbol(&mut self.models[i]) as u8;
+
+                *diff = (*last).wrapping_add(sym);
                 buf[i] = *diff;
                 *last = *diff;
             }

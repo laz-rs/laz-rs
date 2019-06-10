@@ -25,11 +25,9 @@
 ===============================================================================
 */
 
-
-
 // length bits discarded before mult.
 pub(crate) const DM_LENGTH_SHIFT: u32 = 15;
-pub(crate) const DM_MAX_COUNT: u32 = 1 << DM_LENGTH_SHIFT;  // for adaptive models
+pub(crate) const DM_MAX_COUNT: u32 = 1 << DM_LENGTH_SHIFT; // for adaptive models
 
 // length bits discarded before mult.
 pub(crate) const BM_MAX_COUNT: u32 = 1 << BM_LENGTH_SHIFT;
@@ -52,7 +50,6 @@ pub struct ArithmeticModel {
     pub(crate) table_size: u32,
     pub(crate) table_shift: u32,
 }
-
 
 impl ArithmeticModel {
     pub fn new(symbols: u32, compress: bool, init_table: &[u32]) -> Self {
@@ -180,7 +177,10 @@ impl ArithmeticBitModel {
     }
 
     pub fn update(&mut self) {
-        println!("ArithmeticBitModel::update() -> bit_0_prop: {}", self.bit_0_prob);
+        println!(
+            "ArithmeticBitModel::update() -> bit_0_prop: {}",
+            self.bit_0_prob
+        );
         // halve counts when a threshold is reached
         self.bit_count += self.update_cycle;
         if self.bit_count > BM_MAX_COUNT {
@@ -206,7 +206,6 @@ impl ArithmeticBitModel {
     }
 }
 
-
 pub struct ArithmeticModelBuilder<'a> {
     symbols: u32,
     compress: bool,
@@ -224,21 +223,5 @@ impl<'a> ArithmeticModelBuilder<'a> {
 
     pub fn build(self) -> ArithmeticModel {
         ArithmeticModel::new(self.symbols, self.compress, self.init_table)
-    }
-}
-
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn can_create_bit_model() {
-        let model = ArithmeticBitModel::new();
-    }
-
-    #[test]
-    fn can_create_model() {
-        let model = ArithmeticModel::new(14, false, &[]);
     }
 }

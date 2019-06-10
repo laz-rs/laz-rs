@@ -24,21 +24,20 @@
 ===============================================================================
 */
 
-use std::io::{Cursor, Write, Read};
+use std::io::{Read, Write};
 use std::mem::size_of;
 
-
-use crate::las::utils;
-use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
 use crate::compressors::{IntegerCompressor, IntegerCompressorBuilder};
-use crate::encoders::ArithmeticEncoder;
 use crate::decoders::ArithmeticDecoder;
+use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
+use crate::encoders::ArithmeticEncoder;
 use crate::formats::{FieldCompressor, FieldDecompressor};
+use crate::las::utils;
 use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
 use crate::packers::Packable;
 
 struct Point10ChangedValues {
-    value: i32
+    value: i32,
 }
 
 impl Point10ChangedValues {
@@ -112,32 +111,28 @@ impl Point10 {
         // This logic here constructs a 5-bit changed value which is basically a bit map of what has changed
         // since the last point, not considering the x, y and z values
 
-        let bit_fields_changed = (
-            ((last.return_number ^ self.return_number) != 0) |
-                ((last.number_of_returns_of_given_pulse ^ self.number_of_returns_of_given_pulse) != 0) |
-                (last.scan_direction_flag ^ self.scan_direction_flag) |
-                (last.edge_of_flight_line ^ self.edge_of_flight_line)
-        );
+        let bit_fields_changed = ((last.return_number ^ self.return_number) != 0)
+            | ((last.number_of_returns_of_given_pulse ^ self.number_of_returns_of_given_pulse)
+                != 0)
+            | (last.scan_direction_flag ^ self.scan_direction_flag)
+            | (last.edge_of_flight_line ^ self.edge_of_flight_line);
 
-        let intensity_changed = (last.intensity ^ self.intensity) != 0;
+        let intensity_changed = (last_intensity ^ self.intensity) != 0;
         let classification_changed = (last.classification ^ self.classification) != 0;
         let scan_angle_rank_changed = (last.scan_angle_rank ^ self.scan_angle_rank) != 0;
         let user_data_changed = (last.user_data ^ self.user_data) != 0;
         let point_source_id_changed = (last.point_source_id ^ self.point_source_id) != 0;
 
-
         Point10ChangedValues {
-            value:
-            (bit_fields_changed as i32) << 5 |
-                (intensity_changed as i32) << 4 |
-                (classification_changed as i32) << 3 |
-                (scan_angle_rank_changed as i32) << 2 |
-                (user_data_changed as i32) << 1 |
-                (point_source_id_changed as i32)
+            value: (bit_fields_changed as i32) << 5
+                | (intensity_changed as i32) << 4
+                | (classification_changed as i32) << 3
+                | (scan_angle_rank_changed as i32) << 2
+                | (user_data_changed as i32) << 1
+                | (point_source_id_changed as i32),
         }
     }
 }
-
 
 impl Packable for Point10 {
     type Type = Point10;
@@ -253,19 +248,36 @@ impl Common {
         Self {
             last_point: Default::default(),
             last_intensity: [0u16; 16],
-            last_x_diff_median: (0..16).into_iter().map(|i| utils::StreamingMedian::<i32>::new()).collect(),
-            last_y_diff_median: (0..16).into_iter().map(|i| utils::StreamingMedian::<i32>::new()).collect(),
+            last_x_diff_median: (0..16)
+                .into_iter()
+                .map(|_i| utils::StreamingMedian::<i32>::new())
+                .collect(),
+            last_y_diff_median: (0..16)
+                .into_iter()
+                .map(|_i| utils::StreamingMedian::<i32>::new())
+                .collect(),
             last_height: [0i32; 8],
             changed_values: ArithmeticModelBuilder::new(64).build(),
-            scan_angle_rank: (0..2).into_iter().map(|i| ArithmeticModelBuilder::new(256).build()).collect(),
-            bit_byte: (0..256).into_iter().map(|i| ArithmeticModelBuilder::new(256).build()).collect(),
-            classification: (0..256).into_iter().map(|i| ArithmeticModelBuilder::new(256).build()).collect(),
-            user_data: (0..256).into_iter().map(|i| ArithmeticModelBuilder::new(256).build()).collect(),
+            scan_angle_rank: (0..2)
+                .into_iter()
+                .map(|_i| ArithmeticModelBuilder::new(256).build())
+                .collect(),
+            bit_byte: (0..256)
+                .into_iter()
+                .map(|_i| ArithmeticModelBuilder::new(256).build())
+                .collect(),
+            classification: (0..256)
+                .into_iter()
+                .map(|_i| ArithmeticModelBuilder::new(256).build())
+                .collect(),
+            user_data: (0..256)
+                .into_iter()
+                .map(|_i| ArithmeticModelBuilder::new(256).build())
+                .collect(),
             have_last: false,
         }
     }
 }
-
 
 pub struct Point10Compressor {
     ic_intensity: IntegerCompressor,
@@ -284,8 +296,14 @@ impl Point10Compressor {
             ic_intensity: IntegerCompressorBuilder::new().bits(16).contexts(4).build(),
             ic_point_source_id: IntegerCompressorBuilder::new().bits(16).build(),
             ic_dx: IntegerCompressorBuilder::new().bits(32).contexts(2).build(),
-            ic_dy: IntegerCompressorBuilder::new().bits(32).contexts(22).build(),
-            ic_z: IntegerCompressorBuilder::new().bits(32).contexts(20).build(),
+            ic_dy: IntegerCompressorBuilder::new()
+                .bits(32)
+                .contexts(22)
+                .build(),
+            ic_z: IntegerCompressorBuilder::new()
+                .bits(32)
+                .contexts(20)
+                .build(),
             common: Common::new(),
             compressor_inited: false,
         }
@@ -321,21 +339,23 @@ impl<W: Write> FieldCompressor<W> for Point10Compressor {
             let m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
             let l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
 
-
             let changed_values = this_val.changed_values(
-                &self.common.last_point, self.common.last_intensity[m as usize]);
+                &self.common.last_point,
+                self.common.last_intensity[m as usize],
+            );
             // compress which other values have changed
 
             encoder.encode_symbol(&mut self.common.changed_values, changed_values.value as u32);
 
             if changed_values.bit_fields_changed() {
-                println!("bit fields");
+                println!("-> bit fields");
                 let b = this_val.bit_fields_to_byte();
                 let last_b = self.common.last_point.bit_fields_to_byte();
                 encoder.encode_symbol(&mut self.common.bit_byte[last_b as usize], b as u32);
             }
 
             if changed_values.intensity_changed() {
+                println!("-> Intensity");
                 self.ic_intensity.compress(
                     &mut encoder,
                     self.common.last_intensity[m as usize] as i32,
@@ -346,7 +366,7 @@ impl<W: Write> FieldCompressor<W> for Point10Compressor {
             }
 
             if changed_values.classification_changed() {
-                println!("classif");
+                println!("-> Classification");
                 encoder.encode_symbol(
                     &mut self.common.classification[self.common.last_point.classification as usize],
                     this_val.classification as u32,
@@ -354,16 +374,17 @@ impl<W: Write> FieldCompressor<W> for Point10Compressor {
             }
 
             if changed_values.scan_angle_rank_changed() {
-                println!("scan_angle_rank: this_val {}, last val: {}", this_val.scan_angle_rank, self.common.last_point.scan_angle_rank);
+                println!("-> Scan angle rank");
                 // the "as u8" before "as u32" is vital
                 encoder.encode_symbol(
                     &mut self.common.scan_angle_rank[this_val.scan_direction_flag as usize],
-                    (this_val.scan_angle_rank - self.common.last_point.scan_angle_rank) as u8 as u32,
+                    (this_val.scan_angle_rank - self.common.last_point.scan_angle_rank) as u8
+                        as u32,
                 );
             }
 
             if changed_values.user_data_changed() {
-                println!("user_data");
+                println!("-> user_data");
                 encoder.encode_symbol(
                     &mut self.common.user_data[self.common.last_point.user_data as usize],
                     this_val.user_data as u32,
@@ -371,6 +392,7 @@ impl<W: Write> FieldCompressor<W> for Point10Compressor {
             }
 
             if changed_values.point_source_id_changed() {
+                println!("-> Point source ID");
                 self.ic_point_source_id.compress(
                     &mut encoder,
                     self.common.last_point.point_source_id as i32,
@@ -379,31 +401,49 @@ impl<W: Write> FieldCompressor<W> for Point10Compressor {
                 );
             }
 
+            println!("-> X");
             //compress x coordinates
             let median = self.common.last_x_diff_median[m as usize].get();
             let diff = this_val.x - self.common.last_point.x;
-            self.ic_dx.compress(&mut encoder, median, diff, (n == 1) as u32);
+            self.ic_dx
+                .compress(&mut encoder, median, diff, (n == 1) as u32);
             self.common.last_x_diff_median[m as usize].add(diff);
 
+            println!("-> Y");
             //compress y coordinates
             let k_bits = self.ic_dx.k();
             let median = self.common.last_y_diff_median[m as usize].get();
             let diff = this_val.y - self.common.last_point.y;
-            let context = (n == 1) as u32 + if k_bits < 20 { utils::u32_zero_bit(k_bits) } else { 20 };
+            let context = (n == 1) as u32
+                + if k_bits < 20 {
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    20
+                };
             self.ic_dy.compress(&mut encoder, median, diff, context);
             self.common.last_y_diff_median[m as usize].add(diff);
 
+            println!("-> Z");
             //compress z coordinates
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
-            let context = (n == 1) as u32 + (n == 1) as u32 + if k_bits < 18 { utils::u32_zero_bit(k_bits) } else { 18 };
-            self.ic_z.compress(&mut encoder, self.common.last_height[l as usize], this_val.z, context);
+            let context = (n == 1) as u32
+                + if k_bits < 18 {
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    18
+                };
+            self.ic_z.compress(
+                &mut encoder,
+                self.common.last_height[l as usize],
+                this_val.z,
+                context,
+            );
             self.common.last_height[l as usize] = this_val.z;
 
             self.common.last_point = this_val;
         }
     }
 }
-
 
 pub struct Point10Decompressor {
     ic_intensity: IntegerDecompressor,
@@ -419,11 +459,23 @@ pub struct Point10Decompressor {
 impl Point10Decompressor {
     pub fn new() -> Self {
         Self {
-            ic_intensity: IntegerDecompressorBuilder::new().bits(16).contexts(4).build(),
+            ic_intensity: IntegerDecompressorBuilder::new()
+                .bits(16)
+                .contexts(4)
+                .build(),
             ic_point_source_id: IntegerDecompressorBuilder::new().bits(16).build(),
-            ic_dx: IntegerDecompressorBuilder::new().bits(32).contexts(2).build(),
-            ic_dy: IntegerDecompressorBuilder::new().bits(32).contexts(22).build(),
-            ic_z: IntegerDecompressorBuilder::new().bits(32).contexts(20).build(),
+            ic_dx: IntegerDecompressorBuilder::new()
+                .bits(32)
+                .contexts(2)
+                .build(),
+            ic_dy: IntegerDecompressorBuilder::new()
+                .bits(32)
+                .contexts(22)
+                .build(),
+            ic_z: IntegerDecompressorBuilder::new()
+                .bits(32)
+                .contexts(20)
+                .build(),
             common: Common::new(),
             decompressor_inited: false,
         }
@@ -445,14 +497,13 @@ impl<R: Read> FieldDecompressor<R> for Point10Decompressor {
             self.decompressor_inited = true;
         }
 
-
         if !self.common.have_last {
             decoder.in_stream().read_exact(&mut buf).unwrap();
             self.common.last_point = Point10::unpack(&buf);
             self.common.have_last = true;
         } else {
             let changed_value = Point10ChangedValues {
-                value: decoder.decode_symbol(&mut self.common.changed_values) as i32
+                value: decoder.decode_symbol(&mut self.common.changed_values) as i32,
             };
 
             let r;
@@ -475,9 +526,11 @@ impl<R: Read> FieldDecompressor<R> for Point10Decompressor {
                 m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
                 l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
 
-
                 if changed_value.intensity_changed() {
-                    println!("Intensity -> m: {}, last intensity: {}", m, self.common.last_intensity[m as usize]);
+                    println!(
+                        "Intensity -> m: {}, last intensity: {}",
+                        m, self.common.last_intensity[m as usize]
+                    );
                     self.common.last_point.intensity = self.ic_intensity.decompress(
                         &mut decoder,
                         self.common.last_intensity[m as usize] as i32,
@@ -491,27 +544,34 @@ impl<R: Read> FieldDecompressor<R> for Point10Decompressor {
                 if changed_value.classification_changed() {
                     println!("Classification");
                     self.common.last_point.classification = decoder.decode_symbol(
-                        &mut self.common.classification[self.common.last_point.classification as usize]
+                        &mut self.common.classification
+                            [self.common.last_point.classification as usize],
                     ) as u8;
                 }
 
                 if changed_value.scan_angle_rank_changed() {
                     println!("Scna angle rank");
                     let val = decoder.decode_symbol(
-                        &mut self.common.scan_angle_rank[self.common.last_point.scan_direction_flag as usize]) as i8;
-                    self.common.last_point.scan_angle_rank = val + self.common.last_point.scan_angle_rank;
+                        &mut self.common.scan_angle_rank
+                            [self.common.last_point.scan_direction_flag as usize],
+                    ) as i8;
+                    self.common.last_point.scan_angle_rank =
+                        val + self.common.last_point.scan_angle_rank;
                 }
 
                 if changed_value.user_data_changed() {
                     println!("user_data");
                     self.common.last_point.user_data = decoder.decode_symbol(
-                        &mut self.common.user_data[self.common.last_point.user_data as usize]) as u8;
+                        &mut self.common.user_data[self.common.last_point.user_data as usize],
+                    ) as u8;
                 }
 
                 if changed_value.point_source_id_changed() {
                     println!("point_source_id");
                     self.common.last_point.point_source_id = self.ic_point_source_id.decompress(
-                        &mut decoder, self.common.last_point.point_source_id as i32, 0,
+                        &mut decoder,
+                        self.common.last_point.point_source_id as i32,
+                        0,
                     ) as u16;
                 }
             } else {
@@ -532,7 +592,12 @@ impl<R: Read> FieldDecompressor<R> for Point10Decompressor {
             // decompress y
             let median = self.common.last_y_diff_median[m as usize].get();
             let k_bits = self.ic_dx.k();
-            let context = (n == 1) as u32 + if k_bits < 20 { utils::u32_zero_bit(k_bits) } else { 20 };
+            let context = (n == 1) as u32
+                + if k_bits < 20 {
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    20
+                };
             let diff = self.ic_dy.decompress(&mut decoder, median, context);
             self.common.last_point.y += diff;
             self.common.last_y_diff_median[m as usize].add(diff);
@@ -540,12 +605,15 @@ impl<R: Read> FieldDecompressor<R> for Point10Decompressor {
             println!("-> Z");
             // decompress z coordinate
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
-            let context = (n == 1) as u32 + if k_bits < 18 { utils::u32_zero_bit(k_bits) } else { 18 };
-            self.common.last_point.z = self.ic_z.decompress(
-                &mut decoder,
-                self.common.last_height[l as usize],
-                context,
-            );
+            let context = (n == 1) as u32
+                + if k_bits < 18 {
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    18
+                };
+            self.common.last_point.z =
+                self.ic_z
+                    .decompress(&mut decoder, self.common.last_height[l as usize], context);
             self.common.last_height[l as usize] = self.common.last_point.z;
 
             //TODO here last point is not taken by ref, but by copy, this may cause perf problems

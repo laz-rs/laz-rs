@@ -3,17 +3,17 @@ use std::io::Cursor;
 use laz::decoders::ArithmeticDecoder;
 use laz::encoders::ArithmeticEncoder;
 use laz::formats::{RecordCompressor, RecordDecompressor};
-use laz::las::point10::{Point10, Point10Compressor, Point10Decompressor};
 use laz::las::gps::{GpsTime, GpsTimeCompressor, GpsTimeDecompressor};
-use laz::las::rgb::{RGB, RGBCompressor, RGBDecompressor};
+use laz::las::point10::{Point10, Point10Compressor, Point10Decompressor};
+use laz::las::rgb::{RGBCompressor, RGBDecompressor, RGB};
 use laz::packers::Packable;
 
 #[test]
 fn test_compression_decompression_of_point_10() {
-    let mut compressor = RecordCompressor::new(
-        ArithmeticEncoder::new(std::io::Cursor::new(Vec::<u8>::new())));
+    let mut compressor = RecordCompressor::new(ArithmeticEncoder::new(std::io::Cursor::new(
+        Vec::<u8>::new(),
+    )));
     compressor.add_field_compressor(Point10Compressor::new());
-
 
     let n: i32 = 10000;
     let mut buf = [0u8; 20];
@@ -38,12 +38,11 @@ fn test_compression_decompression_of_point_10() {
     }
     compressor.done();
 
-
     let compressed_data = compressor.into_stream().into_inner();
 
-    let mut decompressor = RecordDecompressor::new(
-        ArithmeticDecoder::new(std::io::Cursor::new(compressed_data))
-    );
+    let mut decompressor = RecordDecompressor::new(ArithmeticDecoder::new(std::io::Cursor::new(
+        compressed_data,
+    )));
     decompressor.add_field(Point10Decompressor::new());
 
     for i in 0..n {
@@ -71,8 +70,8 @@ fn test_compression_decompression_of_point_10() {
 
 #[test]
 fn test_rgb() {
-    let mut compressor = RecordCompressor::new(
-        ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())));
+    let mut compressor =
+        RecordCompressor::new(ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())));
 
     compressor.add_field_compressor(RGBCompressor::new());
 
@@ -92,9 +91,9 @@ fn test_rgb() {
     compressor.done();
     let compressed_data = compressor.into_stream().into_inner();
 
-    let mut decompressor = RecordDecompressor::new(
-        ArithmeticDecoder::new(std::io::Cursor::new(compressed_data))
-    );
+    let mut decompressor = RecordDecompressor::new(ArithmeticDecoder::new(std::io::Cursor::new(
+        compressed_data,
+    )));
     decompressor.add_field(RGBDecompressor::new());
 
     for i in 0..n {
@@ -111,18 +110,19 @@ fn test_rgb() {
     }
 }
 
-
 #[test]
 fn test_gps_time() {
-    let mut compressor = RecordCompressor::new(
-        ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())));
+    let mut compressor =
+        RecordCompressor::new(ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())));
     compressor.add_field_compressor(GpsTimeCompressor::new());
 
     let n = 10000;
 
     let mut buf = [0u8; std::mem::size_of::<i64>()];
     for i in 0..n {
-        let gps_time = GpsTime { value: (i + 48741) % std::i64::MAX };
+        let gps_time = GpsTime {
+            value: (i + 48741) % std::i64::MAX,
+        };
         GpsTime::pack(gps_time, &mut buf);
 
         compressor.compress(&buf);
@@ -131,15 +131,14 @@ fn test_gps_time() {
 
     let compressed_data = compressor.into_stream().into_inner();
 
-
-    let mut decompressor = RecordDecompressor::new(
-        ArithmeticDecoder::new(Cursor::new(compressed_data))
-    );
+    let mut decompressor =
+        RecordDecompressor::new(ArithmeticDecoder::new(Cursor::new(compressed_data)));
     decompressor.add_field(GpsTimeDecompressor::new());
 
-
     for i in 0..n {
-        let expected_gps_time = GpsTime { value: (i + 48741) % std::i64::MAX };
+        let expected_gps_time = GpsTime {
+            value: (i + 48741) % std::i64::MAX,
+        };
         decompressor.decompress(&mut buf);
         let gps_time = GpsTime::unpack(&buf);
         assert_eq!(expected_gps_time, gps_time);

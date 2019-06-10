@@ -31,7 +31,6 @@ pub trait Packable {
     fn pack(value: Self::Type, output: &mut [u8]);
 }
 
-
 impl Packable for u32 {
     type Type = u32;
 
@@ -51,7 +50,6 @@ impl Packable for u32 {
         output[0] = (value & 0xFF) as u8;
     }
 }
-
 
 impl Packable for u16 {
     type Type = u16;
@@ -105,7 +103,6 @@ impl Packable for i16 {
     }
 }
 
-
 impl Packable for i8 {
     type Type = i8;
 
@@ -142,4 +139,3 @@ mod test {
         }
     */
 }
-

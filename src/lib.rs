@@ -1,10 +1,9 @@
-pub mod models;
-pub mod decoders;
-pub mod encoders;
-pub mod decompressors;
 pub mod compressors;
-pub mod formats;
-pub mod packers;
-pub mod las;
+pub mod decoders;
+pub mod decompressors;
+pub mod encoders;
 pub mod errors;
-
+pub mod formats;
+pub mod las;
+pub mod models;
+pub mod packers;
