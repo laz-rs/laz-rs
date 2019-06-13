@@ -123,16 +123,16 @@ impl<T: Read> ArithmeticDecoder<T> {
         self.in_stream.read_exact(&mut v)?;
 
         self.value = (v[0] as u32) << 24 | (v[1] as u32) << 16 | (v[2] as u32) << 8 | v[3] as u32;
-        println!("read_init_bytes gives value {:?}", self.value);
+        //    println!("read_init_bytes gives value {:?}", self.value);
         Ok(())
     }
 
-    pub fn decode_bit(&mut self, model: &mut models::ArithmeticBitModel) -> u32 {
-        println!("ArithmeticDecoder::decode_bit -> length {}", self.length);
+    pub fn decode_bit(&mut self, model: &mut models::ArithmeticBitModel) -> std::io::Result<u32> {
+        //   println!("ArithmeticDecoder::decode_bit -> length {}", self.length);
         let x = model.bit_0_prob * (self.length >> models::BM_LENGTH_SHIFT); // product l x p0
-        println!("bit0prob: {}, x: {}", model.bit_0_prob, x);
+                                                                             //println!("bit0prob: {}, x: {}", model.bit_0_prob, x);
         let sym = self.value >= x;
-        println!("value {}, sym: {}", self.value, sym);
+        //   println!("value {}, sym: {}", self.value, sym);
 
         if !sym {
             self.length = x;
@@ -142,21 +142,21 @@ impl<T: Read> ArithmeticDecoder<T> {
             self.length -= x;
         }
         if self.length < AC_MIN_LENGTH {
-            self.renorm_dec_interval()
+            self.renorm_dec_interval()?;
         }
         model.bits_until_update -= 1;
         if model.bits_until_update == 0 {
             model.update();
         }
-        println!("length at end of decode bit {}", self.length);
-        sym as u32
+        // println!("length at end of decode bit {}", self.length);
+        Ok(sym as u32)
     }
 
-    pub fn decode_symbol(&mut self, model: &mut models::ArithmeticModel) -> u32 {
-        println!(
+    pub fn decode_symbol(&mut self, model: &mut models::ArithmeticModel) -> std::io::Result<u32> {
+        /*  println!(
             "\nArthmeticDecoder::decode_symbol -> length: {}, value: {}",
             self.length, self.value
-        );
+        );*/
         let mut sym;
         let mut n;
         let mut x;
@@ -165,17 +165,17 @@ impl<T: Read> ArithmeticDecoder<T> {
         if !model.decoder_table.is_empty() {
             // use table look-up for faster decoding
             self.length >>= DM_LENGTH_SHIFT;
-            let dv = self.value / self.length; //TODO can this div by 0 ?
+            let dv = self.value / self.length;
             let t = dv >> model.table_shift;
 
             sym = model.decoder_table[t as usize]; // initial decision based on table look-up
             n = model.decoder_table[t as usize + 1] + 1;
-            println!(
+            /*   println!(
                 "table: {:?}, len: {}",
                 model.decoder_table,
                 model.decoder_table.len()
-            );
-            println!("t: {}, sym: {}, n: {}", t, sym, n);
+            );*/
+            //      println!("t: {}, sym: {}, n: {}", t, sym, n);
 
             while n > sym + 1 {
                 // finish with bisection search
@@ -186,12 +186,12 @@ impl<T: Read> ArithmeticDecoder<T> {
                     sym = k;
                 }
             }
-
+            /*
             // compute products
             println!(
                 "sym: {}, model.distribution: {}",
                 sym, model.distribution[sym as usize]
-            );
+            );*/
             x = model.distribution[sym as usize] * self.length;
             if sym != model.last_symbol {
                 y = model.distribution[sym as usize + 1] * self.length;
@@ -220,33 +220,36 @@ impl<T: Read> ArithmeticDecoder<T> {
             }
         }
         // update interval
-        println!("VALUE: {}, X: {}", self.value, x);
+        // println!("VALUE: {}, X: {}", self.value, x);
         self.value -= x;
         self.length = y - x;
-
+        /*
         println!(
             "length {} should renorm: {}",
             self.length,
             self.length < AC_MIN_LENGTH
         );
+        */
         if self.length < AC_MIN_LENGTH {
-            self.renorm_dec_interval()
+            self.renorm_dec_interval()?;
         }
         model.symbol_count[sym as usize] += 1;
         model.symbols_until_update -= 1;
-        println!("Symbols until update: {}", model.symbols_until_update);
+        //   println!("Symbols until update: {}", model.symbols_until_update);
         if model.symbols_until_update == 0 {
             model.update();
         }
+        /*
         println!(
             "length at end of decode symbol: {} -> symbol: {}",
             self.length, sym
         );
-        sym
+        */
+        Ok(sym)
     }
 
-    pub fn read_bit(&mut self) -> u32 {
-        println!("read_bit");
+    pub fn read_bit(&mut self) -> std::io::Result<u32> {
+        //    println!("read_bit");
         // decode symbol, change length
         self.length >>= 1;
         let sym = self.value / self.length;
@@ -254,19 +257,19 @@ impl<T: Read> ArithmeticDecoder<T> {
         self.value -= self.length * sym;
 
         if self.length < AC_MIN_LENGTH {
-            self.renorm_dec_interval()
+            self.renorm_dec_interval()?;
         }
-        sym
+        Ok(sym)
     }
 
-    pub fn read_bits(&mut self, mut bits: u32) -> u32 {
-        println!("read_bits");
+    pub fn read_bits(&mut self, mut bits: u32) -> std::io::Result<u32> {
+        // println!("read_bits");
         assert!(bits > 0 && (bits <= 32));
         if bits > 19 {
-            let tmp = self.read_short() as u32;
+            let tmp = self.read_short()? as u32;
             bits -= 16;
-            let tmpl = self.read_bits(bits) << 16;
-            tmpl | tmp
+            let tmpl = self.read_bits(bits)? << 16;
+            Ok(tmpl | tmp)
         } else {
             // decode symbol, change length
             self.length >>= bits;
@@ -276,65 +279,66 @@ impl<T: Read> ArithmeticDecoder<T> {
             self.value -= self.length * sym;
 
             if self.length < AC_MIN_LENGTH {
-                self.renorm_dec_interval()
+                self.renorm_dec_interval()?;
             }
-            sym
+            Ok(sym)
         }
     }
 
     #[allow(dead_code)]
-    fn read_byte(&mut self) -> u8 {
-        println!("read_byte");
+    fn read_byte(&mut self) -> std::io::Result<u8> {
+        //  println!("read_byte");
         // decode symbol, change length
         self.length >>= 8;
         let sym = self.value / self.length;
         // update interval
         self.value -= self.length * sym;
         if self.length < AC_MIN_LENGTH {
-            self.renorm_dec_interval()
+            self.renorm_dec_interval()?;
         }
         assert!(sym < (1 << 8));
-        sym as u8
+        Ok(sym as u8)
     }
 
-    fn read_short(&mut self) -> u16 {
-        println!("read_short");
+    fn read_short(&mut self) -> std::io::Result<u16> {
+        //println!("read_short");
         // decode symbol, change length
         self.length >>= 16;
         let sym = self.value / self.length;
         // update interval
         self.value -= self.length * sym;
         if self.length < AC_MIN_LENGTH {
-            self.renorm_dec_interval()
+            self.renorm_dec_interval()?;
         }
         assert!(sym < (1 << 16));
-        sym as u16
+        Ok(sym as u16)
     }
 
-    pub fn read_int(&mut self) -> u32 {
-        println!("read_int");
-        let lower_int = self.read_short();
-        let upper_int = self.read_short();
-        (upper_int as u32) << 16 | (lower_int) as u32
+    pub fn read_int(&mut self) -> std::io::Result<u32> {
+        //  println!("read_int");
+        let lower_int = self.read_short()?;
+        let upper_int = self.read_short()?;
+        Ok((upper_int as u32) << 16 | (lower_int) as u32)
     }
-    #[allow(dead_code)]
-    fn read_int_64(&mut self) -> u64 {
-        println!("read_int_64");
-        let lower_int = self.read_short();
-        let upper_int = self.read_short();
-        ((upper_int << 32) | lower_int) as u64
+
+    pub fn read_int_64(&mut self) -> std::io::Result<u64> {
+        // println!("read_int_64");
+        let lower_int = self.read_int()? as u64;
+        let upper_int = self.read_int()? as u64;
+        Ok((upper_int << 32) | lower_int)
     }
 
     //TODO readFloat, readDouble
-    fn renorm_dec_interval(&mut self) {
-        println!("ArithmeticDecoder::renorm_dec_interval()");
+    fn renorm_dec_interval(&mut self) -> std::io::Result<()> {
+        // println!("ArithmeticDecoder::renorm_dec_interval()");
         loop {
-            self.value = (self.value << 8) | self.in_stream.read_u8().unwrap() as u32;
+            self.value = (self.value << 8) | self.in_stream.read_u8()? as u32;
             self.length <<= 8;
             if self.length >= AC_MIN_LENGTH {
                 break;
             }
         }
+        Ok(())
     }
 
     pub fn in_stream(&mut self) -> &mut T {

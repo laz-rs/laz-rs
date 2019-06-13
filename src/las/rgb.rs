@@ -24,34 +24,22 @@
 ===============================================================================
 */
 
-use std::io::{Read, Write};
-use std::mem::size_of;
+use num_traits::clamp;
 
-
-use crate::decoders::ArithmeticDecoder;
-use crate::encoders::ArithmeticEncoder;
-use crate::formats::{FieldCompressor, FieldDecompressor};
 use crate::las::utils::flag_diff;
-use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
 use crate::packers::Packable;
 
 fn u8_clamp(n: i32) -> u8 {
-    if n <= std::u8::MIN as i32 {
-        std::u8::MIN
-    } else {
-        if n >= std::u8::MAX as i32 {
-            std::u8::MAX
-        } else {
-            n as u8
-        }
-    }
+    clamp(n, i32::from(std::u8::MIN), i32::from(std::u8::MAX)) as u8
 }
 
-fn low_byte(n: u16) -> u8 {
+#[inline(always)]
+fn lower_byte(n: u16) -> u8 {
     (n & 0x00FF) as u8
 }
 
-fn high_byte(n: u16) -> u8 {
+#[inline(always)]
+fn upper_byte(n: u16) -> u8 {
     (n >> 8) as u8
 }
 
@@ -81,206 +69,464 @@ impl RGB {
 impl Packable for RGB {
     type Type = RGB;
 
-    fn unpack(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self::Type {
         Self {
-            red: u16::unpack(&input[0..2]),
-            green: u16::unpack(&input[2..4]),
-            blue: u16::unpack(&input[4..6]),
+            red: u16::unpack_from(&input[0..2]),
+            green: u16::unpack_from(&input[2..4]),
+            blue: u16::unpack_from(&input[4..6]),
         }
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        u16::pack(value.red, &mut output[0..2]);
-        u16::pack(value.green, &mut output[2..4]);
-        u16::pack(value.blue, &mut output[4..6]);
+    fn pack_into(&self, output: &mut [u8]) {
+        u16::pack_into(&self.red, &mut output[0..2]);
+        u16::pack_into(&self.green, &mut output[2..4]);
+        u16::pack_into(&self.blue, &mut output[4..6]);
     }
 }
 
-pub struct RGBCompressor {
-    have_last: bool,
-    last: RGB,
+pub mod v1 {
+    use std::io::{Read, Write};
+    use std::mem::size_of;
 
-    byte_used: ArithmeticModel,
-    rgb_diff_0: ArithmeticModel,
-    rgb_diff_1: ArithmeticModel,
-    rgb_diff_2: ArithmeticModel,
-    rgb_diff_3: ArithmeticModel,
-    rgb_diff_4: ArithmeticModel,
-    rgb_diff_5: ArithmeticModel,
-}
+    use crate::compressors::{IntegerCompressor, IntegerCompressorBuilder};
+    use crate::decoders::ArithmeticDecoder;
+    use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
+    use crate::encoders::ArithmeticEncoder;
+    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
+    use crate::packers::Packable;
 
-impl RGBCompressor {
-    pub fn new() -> Self {
-        Self {
-            have_last: false,
-            last: Default::default(),
-            byte_used: ArithmeticModelBuilder::new(128).build(),
-            rgb_diff_0: ArithmeticModelBuilder::new(256).build(),
-            rgb_diff_1: ArithmeticModelBuilder::new(256).build(),
-            rgb_diff_2: ArithmeticModelBuilder::new(256).build(),
-            rgb_diff_3: ArithmeticModelBuilder::new(256).build(),
-            rgb_diff_4: ArithmeticModelBuilder::new(256).build(),
-            rgb_diff_5: ArithmeticModelBuilder::new(256).build(),
+    use super::{lower_byte, upper_byte, RGB};
+
+    struct ColorDiff(u8);
+
+    impl ColorDiff {
+        fn new(v: u8) -> Self {
+            Self { 0: v }
+        }
+        fn lower_red_byte_changed(&self) -> bool {
+            self.0 & (1 << 0) != 0
+        }
+
+        fn upper_red_byte_changed(&self) -> bool {
+            self.0 & (1 << 1) != 0
+        }
+
+        fn lower_green_byte_changed(&self) -> bool {
+            self.0 & (1 << 2) != 0
+        }
+
+        fn upper_green_byte_changed(&self) -> bool {
+            self.0 & (1 << 3) != 0
+        }
+
+        fn lower_blue_byte_changed(&self) -> bool {
+            self.0 & (1 << 4) != 0
+        }
+
+        fn upper_blue_byte_changed(&self) -> bool {
+            self.0 & (1 << 5) != 0
+        }
+    }
+
+    pub struct RGBDecompressor {
+        last: RGB,
+        have_last: bool,
+        byte_used_model: ArithmeticModel,
+        ic_rgb: IntegerDecompressor,
+    }
+
+    impl RGBDecompressor {
+        pub fn new() -> Self {
+            Self {
+                last: Default::default(),
+                have_last: false,
+                byte_used_model: ArithmeticModelBuilder::new(64).build(),
+                ic_rgb: IntegerDecompressorBuilder::new()
+                    .bits(8) // 8 bits, because we encode byte by byte
+                    .contexts(6) // there are 6 bytes in a RGB component
+                    .build_initialized(),
+            }
+        }
+    }
+
+    impl<R: Read> FieldDecompressor<R> for RGBDecompressor {
+        fn size_of_field(&self) -> usize {
+            3 * size_of::<u16>()
+        }
+
+        fn decompress_with(
+            &mut self,
+            mut decoder: &mut ArithmeticDecoder<R>,
+            mut buf: &mut [u8],
+        ) -> std::io::Result<()> {
+            if !self.have_last {
+                decoder.in_stream().read_exact(&mut buf)?;
+                self.last = RGB::unpack_from(buf);
+                self.have_last = true;
+            } else {
+                let color_diff =
+                    ColorDiff::new(decoder.decode_symbol(&mut self.byte_used_model)? as u8);
+
+                if color_diff.lower_red_byte_changed() {
+                    self.last.red =
+                        self.ic_rgb
+                            .decompress(&mut decoder, lower_byte(self.last.red) as i32, 0)?
+                            as u16;
+                }
+
+                if color_diff.upper_red_byte_changed() {
+                    self.last.red |=
+                        self.ic_rgb
+                            .decompress(&mut decoder, upper_byte(self.last.red) as i32, 1)?
+                            as u16;
+                }
+
+                if color_diff.lower_green_byte_changed() {
+                    self.last.green = self.ic_rgb.decompress(
+                        &mut decoder,
+                        lower_byte(self.last.green) as i32,
+                        2,
+                    )? as u16;
+                }
+
+                if color_diff.upper_green_byte_changed() {
+                    self.last.green |= self.ic_rgb.decompress(
+                        &mut decoder,
+                        upper_byte(self.last.green) as i32,
+                        3,
+                    )? as u16;
+                }
+
+                if color_diff.lower_blue_byte_changed() {
+                    self.last.blue = self.ic_rgb.decompress(
+                        &mut decoder,
+                        lower_byte(self.last.blue) as i32,
+                        4,
+                    )? as u16;
+                }
+
+                if color_diff.upper_blue_byte_changed() {
+                    self.last.blue |= self.ic_rgb.decompress(
+                        &mut decoder,
+                        upper_byte(self.last.blue) as i32,
+                        5,
+                    )? as u16;
+                }
+
+                self.last.pack_into(&mut buf);
+            }
+            Ok(())
+        }
+    }
+
+    pub struct RGBCompressor {
+        last: Option<RGB>,
+        byte_used_model: ArithmeticModel,
+        ic_rgb: IntegerCompressor,
+    }
+
+    impl RGBCompressor {
+        pub fn new() -> Self {
+            Self {
+                last: None,
+                byte_used_model: ArithmeticModelBuilder::new(64).build(),
+                ic_rgb: IntegerCompressorBuilder::new()
+                    .bits(8)
+                    .contexts(6)
+                    .build_initialized(),
+            }
+        }
+    }
+
+    impl<W: Write> FieldCompressor<W> for RGBCompressor {
+        fn size_of_field(&self) -> usize {
+            3 * size_of::<u16>()
+        }
+
+        fn compress_with(
+            &mut self,
+            mut encoder: &mut ArithmeticEncoder<W>,
+            buf: &[u8],
+        ) -> std::io::Result<()> {
+            let current = RGB::unpack_from(buf);
+            if let Some(last) = self.last.as_mut() {
+                let sym = ((lower_byte(last.red) != lower_byte(current.red)) as u8) << 0
+                    | ((upper_byte(last.red) != upper_byte(current.red)) as u8) << 1
+                    | ((lower_byte(last.green) != lower_byte(current.green)) as u8) << 2
+                    | ((upper_byte(last.green) != upper_byte(current.green)) as u8) << 3
+                    | ((lower_byte(last.blue) != lower_byte(current.blue)) as u8) << 4
+                    | ((upper_byte(last.blue) != upper_byte(current.blue)) as u8) << 5;
+
+                encoder.encode_symbol(&mut self.byte_used_model, sym as u32)?;
+                let color_diff = ColorDiff::new(sym);
+
+                if color_diff.lower_red_byte_changed() {
+                    self.ic_rgb.compress(
+                        &mut encoder,
+                        lower_byte(last.red) as i32,
+                        lower_byte(current.red) as i32,
+                        0,
+                    )?;
+                }
+
+                if color_diff.upper_red_byte_changed() {
+                    self.ic_rgb.compress(
+                        &mut encoder,
+                        upper_byte(last.red) as i32,
+                        upper_byte(current.red) as i32,
+                        1,
+                    )?;
+                }
+
+                if color_diff.lower_green_byte_changed() {
+                    self.ic_rgb.compress(
+                        &mut encoder,
+                        lower_byte(last.green) as i32,
+                        lower_byte(current.green) as i32,
+                        2,
+                    )?;
+                }
+
+                if color_diff.upper_green_byte_changed() {
+                    self.ic_rgb.compress(
+                        &mut encoder,
+                        upper_byte(last.green) as i32,
+                        upper_byte(current.green) as i32,
+                        3,
+                    )?;
+                }
+
+                if color_diff.lower_blue_byte_changed() {
+                    self.ic_rgb.compress(
+                        &mut encoder,
+                        lower_byte(last.blue) as i32,
+                        lower_byte(current.blue) as i32,
+                        4,
+                    )?;
+                }
+
+                if color_diff.upper_blue_byte_changed() {
+                    self.ic_rgb.compress(
+                        &mut encoder,
+                        upper_byte(last.blue) as i32,
+                        upper_byte(current.blue) as i32,
+                        5,
+                    )?;
+                }
+            } else {
+                encoder.out_stream().write_all(buf)?;
+            }
+            self.last = Some(current);
+            Ok(())
         }
     }
 }
 
-impl<W: Write> FieldCompressor<W> for RGBCompressor {
-    fn size_of_field(&self) -> usize {
-        3 * std::mem::size_of::<u16>()
+pub mod v2 {
+    use std::io::{Read, Write};
+    use std::mem::size_of;
+
+    use crate::decoders::ArithmeticDecoder;
+    use crate::encoders::ArithmeticEncoder;
+    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
+    use crate::packers::Packable;
+
+    use super::{lower_byte, u8_clamp, upper_byte, RGB};
+
+    pub struct RGBCompressor {
+        have_last: bool,
+        last: RGB,
+
+        byte_used: ArithmeticModel,
+        rgb_diff_0: ArithmeticModel,
+        rgb_diff_1: ArithmeticModel,
+        rgb_diff_2: ArithmeticModel,
+        rgb_diff_3: ArithmeticModel,
+        rgb_diff_4: ArithmeticModel,
+        rgb_diff_5: ArithmeticModel,
     }
 
-    fn compress_with(&mut self, encoder: &mut ArithmeticEncoder<W>, buf: &[u8]) {
-        let this_val = RGB::unpack(&buf);
-
-        if !self.have_last {
-            self.have_last = true;
-            encoder.out_stream().write_all(&buf).unwrap();
-        } else {
-            let mut diff_l = 0i32;
-            let mut diff_h = 0i32;
-            let mut corr;
-
-            let sym: u32 = this_val.color_diff_bits(&self.last) as u32;
-            println!("color changed sym: {}", sym);
-
-            encoder.encode_symbol(&mut self.byte_used, sym);
-
-            // high and low R
-            if (sym & (1 << 0)) != 0 {
-                diff_l = low_byte(this_val.red) as i32 - low_byte(self.last.red) as i32;
-                //println!("{} {} {}", (this_val.red & 0x00FF), (self.last.red & 0x00FF), diff_l);
-                println!("diff_l: {}", diff_l);
-                encoder.encode_symbol(&mut self.rgb_diff_0, diff_l as u8 as u32);
-            }
-
-            if (sym & (1 << 1)) != 0 {
-                diff_h = high_byte(this_val.red) as i32 - high_byte(self.last.red) as i32;
-                println!("diff_h: {}", diff_h);
-                encoder.encode_symbol(&mut self.rgb_diff_1, diff_h as u8 as u32);
-            }
-            if (sym & (1 << 6)) != 0 {
-                if (sym & (1 << 2)) != 0 {
-                    corr = low_byte(this_val.green) as i32
-                        - u8_clamp(diff_l + low_byte(self.last.green) as i32) as i32;
-                    encoder.encode_symbol(&mut self.rgb_diff_2, corr as u8 as u32);
-                }
-
-                if (sym & (1 << 4)) != 0 {
-                    diff_l = (diff_l + low_byte(this_val.green) as i32
-                        - low_byte(self.last.green) as i32)
-                        / 2;
-                    corr = low_byte(this_val.blue) as i32
-                        - u8_clamp(diff_l + low_byte(self.last.blue) as i32) as i32;
-                    encoder.encode_symbol(&mut self.rgb_diff_4, corr as u8 as u32);
-                }
-
-                if (sym & (1 << 3)) != 0 {
-                    corr = high_byte(this_val.green) as i32
-                        - u8_clamp(diff_h + high_byte(self.last.green) as i32) as i32;
-                    encoder.encode_symbol(&mut self.rgb_diff_3, corr as u8 as u32);
-                }
-
-                if (sym & (1 << 5)) != 0 {
-                    diff_h = (diff_h + high_byte(this_val.green) as i32
-                        - high_byte(self.last.green) as i32)
-                        / 2;
-                    corr = high_byte(this_val.blue) as i32
-                        - u8_clamp(diff_h + high_byte(self.last.blue) as i32) as i32;
-                    encoder.encode_symbol(&mut self.rgb_diff_5, corr as u8 as u32);
-                }
+    impl RGBCompressor {
+        pub fn new() -> Self {
+            Self {
+                have_last: false,
+                last: Default::default(),
+                byte_used: ArithmeticModelBuilder::new(128).build(),
+                rgb_diff_0: ArithmeticModelBuilder::new(256).build(),
+                rgb_diff_1: ArithmeticModelBuilder::new(256).build(),
+                rgb_diff_2: ArithmeticModelBuilder::new(256).build(),
+                rgb_diff_3: ArithmeticModelBuilder::new(256).build(),
+                rgb_diff_4: ArithmeticModelBuilder::new(256).build(),
+                rgb_diff_5: ArithmeticModelBuilder::new(256).build(),
             }
         }
-        self.last = this_val;
-    }
-}
-
-pub type RGBDecompressor = RGBCompressor;
-
-impl<R: Read> FieldDecompressor<R> for RGBDecompressor {
-    fn size_of_field(&self) -> usize {
-        3 * size_of::<u16>()
     }
 
-    fn decompress_with(&mut self, decoder: &mut ArithmeticDecoder<R>, mut buf: &mut [u8]) {
-        if !self.have_last {
-            decoder.in_stream().read_exact(&mut buf).unwrap();
-            self.last = RGB::unpack(&buf);
-            self.have_last = true;
-        } else {
-            let sym = decoder.decode_symbol(&mut self.byte_used);
+    impl<W: Write> FieldCompressor<W> for RGBCompressor {
+        fn size_of_field(&self) -> usize {
+            3 * std::mem::size_of::<u16>()
+        }
 
-            let mut this_val = RGB::default();
-            println!("RGB DEFAULT: {:?}", this_val);
-            let mut corr;
-            let mut diff;
+        fn compress_with(
+            &mut self,
+            encoder: &mut ArithmeticEncoder<W>,
+            buf: &[u8],
+        ) -> std::io::Result<()> {
+            let this_val = super::RGB::unpack_from(&buf);
 
-            if (sym & (1 << 0)) != 0 {
-                corr = decoder.decode_symbol(&mut self.rgb_diff_0) as u8;
-                this_val.red = corr.wrapping_add((self.last.red & 0x00FF) as u8) as u16;
+            if !self.have_last {
+                self.have_last = true;
+                encoder.out_stream().write_all(&buf)?;
             } else {
-                this_val.red = self.last.red & 0xFF;
+                let mut diff_l = 0i32;
+                let mut diff_h = 0i32;
+                let mut corr;
+
+                let sym: u32 = this_val.color_diff_bits(&self.last) as u32;
+
+                encoder.encode_symbol(&mut self.byte_used, sym)?;
+
+                // high and low R
+                if (sym & (1 << 0)) != 0 {
+                    diff_l = lower_byte(this_val.red) as i32 - lower_byte(self.last.red) as i32;
+                    encoder.encode_symbol(&mut self.rgb_diff_0, diff_l as u8 as u32)?;
+                }
+
+                if (sym & (1 << 1)) != 0 {
+                    diff_h = upper_byte(this_val.red) as i32 - upper_byte(self.last.red) as i32;
+                    encoder.encode_symbol(&mut self.rgb_diff_1, diff_h as u8 as u32)?;
+                }
+                if (sym & (1 << 6)) != 0 {
+                    if (sym & (1 << 2)) != 0 {
+                        corr = lower_byte(this_val.green) as i32
+                            - u8_clamp(diff_l + lower_byte(self.last.green) as i32) as i32;
+                        encoder.encode_symbol(&mut self.rgb_diff_2, corr as u8 as u32)?;
+                    }
+
+                    if (sym & (1 << 4)) != 0 {
+                        diff_l = (diff_l + lower_byte(this_val.green) as i32
+                            - lower_byte(self.last.green) as i32)
+                            / 2;
+                        corr = lower_byte(this_val.blue) as i32
+                            - u8_clamp(diff_l + lower_byte(self.last.blue) as i32) as i32;
+                        encoder.encode_symbol(&mut self.rgb_diff_4, corr as u8 as u32)?;
+                    }
+
+                    if (sym & (1 << 3)) != 0 {
+                        corr = upper_byte(this_val.green) as i32
+                            - u8_clamp(diff_h + upper_byte(self.last.green) as i32) as i32;
+                        encoder.encode_symbol(&mut self.rgb_diff_3, corr as u8 as u32)?;
+                    }
+
+                    if (sym & (1 << 5)) != 0 {
+                        diff_h = (diff_h + upper_byte(this_val.green) as i32
+                            - upper_byte(self.last.green) as i32)
+                            / 2;
+                        corr = upper_byte(this_val.blue) as i32
+                            - u8_clamp(diff_h + upper_byte(self.last.blue) as i32) as i32;
+                        encoder.encode_symbol(&mut self.rgb_diff_5, corr as u8 as u32)?;
+                    }
+                }
             }
-
-            if (sym & (1 << 1)) != 0 {
-                corr = decoder.decode_symbol(&mut self.rgb_diff_1) as u8;
-                this_val.red |= (corr.wrapping_add((self.last.red >> 8) as u8) as u16) << 8;
-            } else {
-                this_val.red |= self.last.red & 0xFF00;
-            }
-
-            if (sym & (1 << 6)) != 0 {
-                diff = (this_val.red & 0x00FF) as i32 - (self.last.red & 0x00FF) as i32;
-
-                if (sym & (1 << 2)) != 0 {
-                    corr = decoder.decode_symbol(&mut self.rgb_diff_2) as u8;
-                    this_val.green = corr
-                        .wrapping_add(u8_clamp(diff + (self.last.green & 0x00FF) as i32) as u8)
-                        as u16;
-                } else {
-                    this_val.green = self.last.green & 0x00FF;
-                }
-
-                if (sym & (1 << 4)) != 0 {
-                    corr = decoder.decode_symbol(&mut self.rgb_diff_4) as u8;
-                    diff = (diff + (this_val.green & 0x00FF) as i32
-                        - (self.last.green & 0x00FF) as i32)
-                        / 2;
-                    this_val.blue = (corr
-                        .wrapping_add(u8_clamp(diff + (self.last.blue & 0x00FF) as i32) as u8))
-                        as u16;
-                } else {
-                    this_val.blue = self.last.blue & 0x00FF;
-                }
-
-                diff = (this_val.red >> 8) as i32 - (self.last.red >> 8) as i32;
-                if (sym & (1 << 3)) != 0 {
-                    corr = decoder.decode_symbol(&mut self.rgb_diff_3) as u8;
-                    this_val.green |= (corr
-                        .wrapping_add(u8_clamp(diff + (self.last.green >> 8) as i32))
-                        as u16)
-                        << 8;
-                } else {
-                    this_val.green |= self.last.green & 0xFF00;
-                }
-
-                if (sym & (1 << 5)) != 0 {
-                    corr = decoder.decode_symbol(&mut self.rgb_diff_5) as u8;
-                    diff =
-                        (diff + (this_val.green >> 8) as i32 - (self.last.green >> 8) as i32) / 2;
-
-                    this_val.blue |=
-                        ((corr + (u8_clamp(diff + (self.last.blue >> 8) as i32)) as u8) as u16)
-                            << 08;
-                } else {
-                    this_val.blue |= self.last.blue & 0xFF00;
-                }
-            } else {
-                this_val.green = this_val.red;
-                this_val.blue = this_val.red;
-            }
-            RGB::pack(this_val, &mut buf);
             self.last = this_val;
+            Ok(())
+        }
+    }
+
+    pub type RGBDecompressor = RGBCompressor;
+
+    impl<R: Read> FieldDecompressor<R> for RGBDecompressor {
+        fn size_of_field(&self) -> usize {
+            3 * size_of::<u16>()
+        }
+
+        fn decompress_with(
+            &mut self,
+            decoder: &mut ArithmeticDecoder<R>,
+            mut buf: &mut [u8],
+        ) -> std::io::Result<()> {
+            if !self.have_last {
+                decoder.in_stream().read_exact(&mut buf)?;
+                self.last = RGB::unpack_from(&buf);
+                self.have_last = true;
+            } else {
+                let sym = decoder.decode_symbol(&mut self.byte_used)?;
+
+                let mut this_val = RGB::default();
+                let mut corr;
+                let mut diff;
+
+                if (sym & (1 << 0)) != 0 {
+                    corr = decoder.decode_symbol(&mut self.rgb_diff_0)? as u8;
+                    this_val.red = corr.wrapping_add((self.last.red & 0x00FF) as u8) as u16;
+                } else {
+                    this_val.red = self.last.red & 0xFF;
+                }
+
+                if (sym & (1 << 1)) != 0 {
+                    corr = decoder.decode_symbol(&mut self.rgb_diff_1)? as u8;
+                    this_val.red |= (corr.wrapping_add((self.last.red >> 8) as u8) as u16) << 8;
+                } else {
+                    this_val.red |= self.last.red & 0xFF00;
+                }
+
+                if (sym & (1 << 6)) != 0 {
+                    diff = (this_val.red & 0x00FF) as i32 - (self.last.red & 0x00FF) as i32;
+
+                    if (sym & (1 << 2)) != 0 {
+                        corr = decoder.decode_symbol(&mut self.rgb_diff_2)? as u8;
+                        this_val.green = corr
+                            .wrapping_add(u8_clamp(diff + (self.last.green & 0x00FF) as i32) as u8)
+                            as u16;
+                    } else {
+                        this_val.green = self.last.green & 0x00FF;
+                    }
+
+                    if (sym & (1 << 4)) != 0 {
+                        corr = decoder.decode_symbol(&mut self.rgb_diff_4)? as u8;
+                        diff = (diff + (this_val.green & 0x00FF) as i32
+                            - (self.last.green & 0x00FF) as i32)
+                            / 2;
+                        this_val.blue = (corr
+                            .wrapping_add(u8_clamp(diff + (self.last.blue & 0x00FF) as i32) as u8))
+                            as u16;
+                    } else {
+                        this_val.blue = self.last.blue & 0x00FF;
+                    }
+
+                    diff = (this_val.red >> 8) as i32 - (self.last.red >> 8) as i32;
+                    if (sym & (1 << 3)) != 0 {
+                        corr = decoder.decode_symbol(&mut self.rgb_diff_3)? as u8;
+                        this_val.green |= (corr
+                            .wrapping_add(u8_clamp(diff + (self.last.green >> 8) as i32))
+                            as u16)
+                            << 8;
+                    } else {
+                        this_val.green |= self.last.green & 0xFF00;
+                    }
+
+                    if (sym & (1 << 5)) != 0 {
+                        corr = decoder.decode_symbol(&mut self.rgb_diff_5)? as u8;
+                        diff = (diff + (this_val.green >> 8) as i32
+                            - (self.last.green >> 8) as i32)
+                            / 2;
+
+                        this_val.blue |=
+                            ((corr + (u8_clamp(diff + (self.last.blue >> 8) as i32)) as u8) as u16)
+                                << 08;
+                    } else {
+                        this_val.blue |= self.last.blue & 0xFF00;
+                    }
+                } else {
+                    this_val.green = this_val.red;
+                    this_val.blue = this_val.red;
+                }
+                this_val.pack_into(&mut buf);
+                self.last = this_val;
+            }
+            Ok(())
         }
     }
 }

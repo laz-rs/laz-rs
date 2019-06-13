@@ -37,6 +37,7 @@ pub const DEFAULT_BITS: u32 = 16;
 pub const DEFAULT_CONTEXTS: u32 = 1;
 pub const DEFAULT_BITS_HIGH: u32 = 8;
 pub const DEFAULT_RANGE: u32 = 0;
+pub const DEFAULT_COMPRESS_CONTEXTS: u32 = 0;
 
 const COMPRESS_ONLY_K: bool = false;
 
@@ -144,13 +145,14 @@ impl IntegerCompressor {
         pred: i32,
         real: i32,
         context: u32,
-    ) {
+    ) -> std::io::Result<()> {
+        /*
         println!(
             "IntegerCompressor::compress(), pred: {}, real: {}, context: {}",
             pred, real, context
-        );
+        );*/
         // the corrector will be within the interval [ - (corr_range - 1)  ...  + (corr_range - 1) ]
-        let mut corr = real - pred;
+        let mut corr = real.wrapping_sub(pred);
         // we fold the corrector into the interval [ corr_min  ...  corr_max ]
         if corr < self.corr_min {
             corr += self.corr_range as i32;
@@ -177,54 +179,58 @@ impl IntegerCompressor {
         }
 
         // the number k is between 0 and corr_bits and describes the interval the corrector
-        encoder.encode_symbol(m_bit, self.k);
+        encoder.encode_symbol(m_bit, self.k)?;
         if COMPRESS_ONLY_K {
             //TODO
+            Ok(())
         } else {
+            // print!("k: {} , c: {}, bits_high: {}", self.k, c, self.bits_high);
             if self.k != 0 {
                 // then c is either smaller than 0 or bigger than 1
                 assert!(c != 0 && c != 1);
                 if self.k < 32 {
                     // translate the corrector c into the k-bit interval [ 0 ... 2^k - 1 ]
-                    if c < 0
-                    // then c is in the interval [ - (2^k - 1)  ...  - (2^(k-1)) ]
-                    {
-                        // so we translate c into the interval [ 0 ...  + 2^(k-1) - 1 ] by adding (2^k - 1)
-                        c += ((1 << self.k) - 1) as i32;
-                    } else
-                    // then c is in the interval [ 2^(k-1) + 1  ...  2^k ]
-                    {
+                    if c >= 0 {
                         // so we translate c into the interval [ 2^(k-1) ...  + 2^k - 1 ] by subtracting 1
                         c -= 1;
+                    } else {
+                        // so we translate c into the interval [ 0 ...  + 2^(k-1) - 1 ] by adding (2^k - 1)
+                        //println!("k {} -> {} -> {}", self.k,  1 << self.k, ((1u32 << self.k) as u32).wrapping_sub(1));
+                        c += ((1u32 << self.k) - 1) as i32;
                     }
 
                     if self.k <= self.bits_high
                     // for small k we code the interval in one step
                     {
                         // compress c with the range coder
-                        encoder
-                            .encode_symbol(&mut self.m_corrector[(self.k - 1) as usize], c as u32);
+                        encoder.encode_symbol(
+                            &mut self.m_corrector[(self.k - 1) as usize],
+                            c as u32,
+                        )?;
                     } else
                     // for larger k we need to code the interval in two steps
                     {
                         // figure out how many lower bits there are
                         let k1 = self.k - self.bits_high;
                         // c1 represents the lowest k-bits_high+1 bits
-                        c1 = (c & ((1 << k1) - 1) as i32) as u32;
+                        c1 = (c & ((1u32 << k1) - 1u32) as i32) as u32;
                         // c represents the highest bits_high bits
                         c = c >> k1 as i32;
                         // compress the higher bits using a context table
-                        encoder
-                            .encode_symbol(&mut self.m_corrector[(self.k - 1) as usize], c as u32);
+                        encoder.encode_symbol(
+                            &mut self.m_corrector[(self.k - 1) as usize],
+                            c as u32,
+                        )?;
                         // store the lower k1 bits raw
-                        encoder.write_bits(k1, c1);
+                        encoder.write_bits(k1, c1)?;
                     }
                 }
             } else {
                 // then c is 0 or 1
                 assert!(c == 0 || c == 1);
-                encoder.encode_bit(&mut self.m_corrector_0, c as u32);
+                encoder.encode_bit(&mut self.m_corrector_0, c as u32)?;
             }
+            Ok(())
         } // end COMPRESS_ONLY_K
     }
 }
@@ -258,5 +264,11 @@ impl IntegerCompressorBuilder {
 
     pub fn build(&self) -> IntegerCompressor {
         IntegerCompressor::new(self.bits, self.contexts, self.bits_high, self.range)
+    }
+
+    pub fn build_initialized(&self) -> IntegerCompressor {
+        let mut ic = self.build();
+        ic.init();
+        ic
     }
 }

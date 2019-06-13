@@ -1,11 +1,11 @@
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::compressors::IntegerCompressorBuilder;
 use crate::decoders::ArithmeticDecoder;
 use crate::encoders::ArithmeticEncoder;
 use crate::formats::{RecordCompressor, RecordDecompressor};
-use crate::las;
 
 const SUPPORTED_VERSION: u32 = 2;
 const DEFAULT_CHUNK_SIZE: usize = 5000;
@@ -59,9 +59,9 @@ impl From<LazItemType> for u16 {
 #[derive(Debug)]
 pub struct LazItem {
     // coded on a u16
-    item_type: LazItemType,
-    size: u16,
-    version: u16,
+    pub(crate) item_type: LazItemType,
+    pub(crate) size: u16,
+    pub(crate) version: u16,
 }
 
 impl LazItem {
@@ -232,7 +232,7 @@ impl LazVlr {
         }
     }
 }
-
+//TODO: would it be possible to extract some logic to a ChunkedCompressor & ChunkedDecompressor ?
 pub struct LasZipDecompressor<R: Read> {
     vlr: LazVlr,
     record_decompressor: RecordDecompressor<R>,
@@ -248,23 +248,15 @@ impl<R: Read> LasZipDecompressor<R> {
 
     //TODO add point_size as params to have some check later
     pub fn new(source: R, vlr: LazVlr) -> Self {
-        let mut record_decompressor = RecordDecompressor::new(ArithmeticDecoder::new(source));
-        for record_item in &vlr.items {
-            match record_item.item_type {
-                LazItemType::Byte(_) => record_decompressor.add_field(
-                    las::extra_bytes::ExtraBytesDecompressor::new(record_item.size as usize),
-                ),
-                LazItemType::Point10 => {
-                    record_decompressor.add_field(las::point10::Point10Decompressor::new())
-                }
-                LazItemType::GpsTime => {
-                    record_decompressor.add_field(las::gps::GpsTimeDecompressor::new())
-                }
-                LazItemType::RGB12 => {
-                    record_decompressor.add_field(las::rgb::RGBDecompressor::new())
-                }
-            }
+        /*
+        if vlr.version.major != SUPPORTED_VERSION as u8 {
+            panic!("Unsupported Laszip version: {}", vlr.version.major);
         }
+        */
+
+        let mut record_decompressor =
+            RecordDecompressor::with_decoder(ArithmeticDecoder::new(source));
+        record_decompressor.set_fields_from(&vlr.items);
         Self {
             vlr,
             record_decompressor,
@@ -272,14 +264,16 @@ impl<R: Read> LasZipDecompressor<R> {
         }
     }
 
-    pub fn decompress_one(&mut self, mut out: &mut [u8]) {
+    pub fn decompress_one(&mut self, mut out: &mut [u8]) -> std::io::Result<()> {
         if self.chunk_points_read == self.vlr.chunk_size {
             self.record_decompressor.reset();
+            self.record_decompressor.set_fields_from(&self.vlr.items);
             self.chunk_points_read = 0;
         }
 
-        self.record_decompressor.decompress(&mut out);
+        self.record_decompressor.decompress(&mut out)?;
         self.chunk_points_read += 1;
+        Ok(())
     }
 
     pub fn into_stream(self) -> R {
@@ -292,30 +286,16 @@ pub struct LasZipCompressor<W: Write> {
     record_compressor: RecordCompressor<W>,
     first_point: bool,
     chunk_point_written: u32,
+    chunk_sizes: Vec<usize>,
+    last_chunk_pos: u64,
 }
 
 // TODO impl for W: Write + Seek update chunktale offset ?
 // TODO chunkTable
-impl<W: Write> LasZipCompressor<W> {
+impl<W: Write + Seek> LasZipCompressor<W> {
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Self {
-        let mut record_compressor = RecordCompressor::new(ArithmeticEncoder::new(output));
-        for item in &items {
-            println!("====> ITEM: {:?}", item);
-            match item.item_type {
-                LazItemType::Byte(count) => record_compressor.add_field_compressor(
-                    las::extra_bytes::ExtraBytesCompressor::new(count as usize),
-                ),
-                LazItemType::Point10 => {
-                    record_compressor.add_field_compressor(las::point10::Point10Compressor::new())
-                }
-                LazItemType::GpsTime => {
-                    record_compressor.add_field_compressor(las::gps::GpsTimeCompressor::new())
-                }
-                LazItemType::RGB12 => {
-                    record_compressor.add_field_compressor(las::rgb::RGBCompressor::new())
-                }
-            }
-        }
+        let mut record_compressor = RecordCompressor::with_encoder(ArithmeticEncoder::new(output));
+        record_compressor.set_fields_from(&items);
         let vlr = LazVlr::from_laz_items(items);
 
         Self {
@@ -323,30 +303,38 @@ impl<W: Write> LasZipCompressor<W> {
             record_compressor,
             first_point: true,
             chunk_point_written: 0,
+            chunk_sizes: Vec::new(),
+            last_chunk_pos: 0,
         }
     }
 
-    pub fn compress_one(&mut self, input: &[u8]) {
+    pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
         if self.first_point {
             //TODO borrow stream and write emtpy chunk offset size
-            //self.record_compressor.reset();
+            self.last_chunk_pos = self
+                .record_compressor
+                .borrow_mut_stream()
+                .seek(SeekFrom::Current(0))?;
             self.first_point = false;
         }
 
         if self.chunk_point_written == self.vlr.chunk_size {
+            self.record_compressor.done()?;
             self.record_compressor.reset();
+            self.record_compressor.set_fields_from(&self.vlr.items);
             self.chunk_point_written = 0;
-            //TODO update chunk table
+            self.update_chunk_table()?;
         }
 
-        self.record_compressor.compress(&input);
-
+        self.record_compressor.compress(&input)?;
         self.chunk_point_written += 1;
+        Ok(())
     }
 
-    pub fn done(&mut self) {
-        self.record_compressor.done();
-        //TODO write chunktable
+    pub fn done(&mut self) -> std::io::Result<()> {
+        self.record_compressor.done()?;
+        self.update_chunk_table()?;
+        self.write_chunk_table()
     }
 
     pub fn vlr(&self) -> &LazVlr {
@@ -355,6 +343,39 @@ impl<W: Write> LasZipCompressor<W> {
 
     pub fn into_stream(self) -> W {
         self.record_compressor.into_stream()
+    }
+
+    fn write_chunk_table(&mut self) -> std::io::Result<()> {
+        // Write header
+        let mut stream = self.record_compressor.borrow_mut_stream();
+        stream.write_u32::<LittleEndian>(0)?;
+        stream.write_u32::<LittleEndian>(self.chunk_sizes.len() as u32)?;
+
+        let mut encoder = ArithmeticEncoder::new(&mut stream);
+        let mut compressor = IntegerCompressorBuilder::new()
+            .bits(32)
+            .contexts(2)
+            .build_initialized();
+
+        let mut predictor = 0;
+        for chunk_size in &self.chunk_sizes {
+            compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
+            predictor = (*chunk_size) as i32;
+        }
+        encoder.done()?;
+
+        Ok(())
+    }
+
+    fn update_chunk_table(&mut self) -> std::io::Result<()> {
+        let current_pos = self
+            .record_compressor
+            .borrow_mut_stream()
+            .seek(SeekFrom::Current(0))?;
+        self.chunk_sizes
+            .push((current_pos - self.last_chunk_pos) as usize);
+        self.last_chunk_pos = current_pos;
+        Ok(())
     }
 }
 

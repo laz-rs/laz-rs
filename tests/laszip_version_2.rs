@@ -51,13 +51,13 @@ fn test_point_format_0_loop() {
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
 
     for _ in 0..NUM_POINTS {
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         las_file.read_exact(&mut expected_buff).unwrap();
         assert_eq!(expected_buff, buf);
 
-        compressor.compress_one(&expected_buff);
+        compressor.compress_one(&expected_buff).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let mut compression_output = compressor.into_stream();
 
@@ -71,7 +71,7 @@ fn test_point_format_0_loop() {
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
         las_file.read_exact(&mut expected_buff).unwrap();
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
 
         assert_eq!(expected_buff, buf);
     }
@@ -110,13 +110,13 @@ fn test_point_format_1_loop() {
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
 
     for _ in 0..NUM_POINTS {
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         las_file.read_exact(&mut expected_buff).unwrap();
         assert_eq!(expected_buff, buf);
 
-        compressor.compress_one(&expected_buff);
+        compressor.compress_one(&expected_buff).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let mut compression_output = compressor.into_stream();
 
@@ -130,7 +130,7 @@ fn test_point_format_1_loop() {
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
         las_file.read_exact(&mut expected_buff).unwrap();
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         assert_eq!(expected_buff, buf);
     }
 }
@@ -168,13 +168,13 @@ fn test_point_format_2_loop() {
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
 
     for _ in 0..NUM_POINTS {
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         las_file.read_exact(&mut expected_buff).unwrap();
         assert_eq!(expected_buff, buf);
 
-        compressor.compress_one(&expected_buff);
+        compressor.compress_one(&expected_buff).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let mut compression_output = compressor.into_stream();
 
@@ -188,7 +188,7 @@ fn test_point_format_2_loop() {
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
         las_file.read_exact(&mut expected_buff).unwrap();
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         assert_eq!(expected_buff, buf);
     }
 }
@@ -227,13 +227,13 @@ fn test_point_format_3_loop() {
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
 
     for _ in 0..NUM_POINTS {
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         las_file.read_exact(&mut expected_buff).unwrap();
         assert_buffer_eq(&expected_buff, &buf);
 
-        compressor.compress_one(&expected_buff);
+        compressor.compress_one(&expected_buff).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let mut compression_output = compressor.into_stream();
 
@@ -247,7 +247,7 @@ fn test_point_format_3_loop() {
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
         las_file.read_exact(&mut expected_buff).unwrap();
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
 
         assert_buffer_eq(&expected_buff, &buf);
     }
@@ -291,13 +291,13 @@ fn test_point_format_3_with_extra_bytes_loop() {
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
 
     for _ in 0..NUM_POINTS {
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
         las_file.read_exact(&mut expected_buff).unwrap();
         assert_buffer_eq(&expected_buff, &buf);
 
-        compressor.compress_one(&expected_buff);
+        compressor.compress_one(&expected_buff).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let mut compression_output = compressor.into_stream();
 
@@ -316,7 +316,7 @@ fn test_point_format_3_with_extra_bytes_loop() {
 
     for _ in 0..NUM_POINTS {
         las_file.read_exact(&mut expected_buff).unwrap();
-        decompressor.decompress_one(&mut buf);
+        decompressor.decompress_one(&mut buf).unwrap();
 
         assert_buffer_eq(&expected_buff, &buf);
     }

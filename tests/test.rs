@@ -4,11 +4,9 @@ use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use i32;
-use laz::encoders::ArithmeticEncoder;
 use laz::formats::{
     IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor, RecordDecompressor,
 };
-use laz::*;
 
 unsafe fn to_slice<T>(value: &T) -> &[u8] {
     let p: *const T = value;
@@ -18,26 +16,24 @@ unsafe fn to_slice<T>(value: &T) -> &[u8] {
 
 #[test]
 fn test_i32_compression_decompression() {
-    let encoder = ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new()));
-    let mut compressor = RecordCompressor::new(encoder);
+    let mut compressor = RecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
 
     let n = 20000i32;
     for i in 0..n {
         let slc = unsafe { to_slice(&i) };
-        compressor.compress(&slc);
+        compressor.compress(&slc).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let compressed_data = compressor.into_stream().into_inner();
 
-    let decoder = decoders::ArithmeticDecoder::new(Cursor::new(compressed_data));
-    let mut decompressor = RecordDecompressor::new(decoder);
+    let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field(IntegerFieldDecompressor::<i32>::new());
 
     for i in 0..n {
         let mut buf = [0u8; std::mem::size_of::<i32>()];
-        decompressor.decompress(&mut buf);
+        decompressor.decompress(&mut buf).unwrap();
 
         let val = i32::from_ne_bytes(buf.try_into().unwrap());
         assert_eq!(val, i);
@@ -46,26 +42,24 @@ fn test_i32_compression_decompression() {
 
 #[test]
 fn test_u32_compression_decompression() {
-    let encoder = ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new()));
-    let mut compressor = RecordCompressor::new(encoder);
+    let mut compressor = RecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(IntegerFieldCompressor::<u32>::new());
 
     let n = 20000u32;
     for i in 0..n {
         let slc = unsafe { to_slice(&i) };
-        compressor.compress(&slc);
+        compressor.compress(&slc).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let compressed_data = compressor.into_stream().into_inner();
 
-    let decoder = decoders::ArithmeticDecoder::new(Cursor::new(compressed_data));
-    let mut decompressor = RecordDecompressor::new(decoder);
+    let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field(IntegerFieldDecompressor::<u32>::new());
 
     for i in 0..n {
         let mut buf = [0u8; std::mem::size_of::<u32>()];
-        decompressor.decompress(&mut buf);
+        decompressor.decompress(&mut buf).unwrap();
 
         let val = u32::from_ne_bytes(buf.try_into().unwrap());
         assert_eq!(val, i);
@@ -93,8 +87,7 @@ fn test_compress_decompress_simple_struct() {
         }
     }
 
-    let encoder = ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new()));
-    let mut compressor = RecordCompressor::new(encoder);
+    let mut compressor = RecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
     compressor.add_field_compressor(IntegerFieldCompressor::<i16>::new());
 
@@ -106,20 +99,19 @@ fn test_compress_decompress_simple_struct() {
             b: (i + 1000) as i16,
         };
         p.write_to(&mut cursor);
-        compressor.compress(&buf);
+        compressor.compress(&buf).unwrap();
     }
-    compressor.done();
+    compressor.done().unwrap();
 
     let compressed_data = compressor.into_stream().into_inner();
 
-    let decoder = decoders::ArithmeticDecoder::new(Cursor::new(compressed_data));
-    let mut decompressor = RecordDecompressor::new(decoder);
+    let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field(IntegerFieldDecompressor::<i32>::new());
     decompressor.add_field(IntegerFieldDecompressor::<i16>::new());
 
     let mut buf = [0u8; 6];
     for i in 0..1000 {
-        decompressor.decompress(&mut buf);
+        decompressor.decompress(&mut buf).unwrap();
         let mut cursor = Cursor::new(&mut buf);
         let p = MyPoint::read_from(&mut cursor);
         assert_eq!(p.a, i + 50000);

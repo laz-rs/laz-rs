@@ -106,15 +106,19 @@ impl ArithmeticModel {
     }
 
     pub fn update(&mut self) {
-        println!("ArithmeticModel::update");
+        //dbg!("ArithmeticModel::update");
         //halve counts when a threshold os reached
         self.total_count += self.update_cycle;
         if self.total_count > DM_MAX_COUNT {
             self.total_count = 0;
-            for n in 0..self.symbols as usize {
+            for symbol_count in &mut self.symbol_count {
+                *symbol_count = (*symbol_count + 1) >> 1;
+                self.total_count += *symbol_count;
+            }
+            /* for n in 0..self.symbols as usize {
                 self.symbol_count[n] = (self.symbol_count[n] + 1) >> 1;
                 self.total_count += self.symbol_count[n];
-            }
+            }*/
         }
 
         // compute cumulative distribution, decoder table
@@ -123,24 +127,36 @@ impl ArithmeticModel {
         let mut s = 0usize;
 
         if self.compress || self.table_size == 0 {
-            for k in 0..self.symbols as usize {
-                self.distribution[k] = (scale * sum) >> (31 - DM_LENGTH_SHIFT);
-                sum += self.symbol_count[k];
+            for (symbol_distribution, symbol_count) in
+                self.distribution.iter_mut().zip(&self.symbol_count)
+            {
+                *symbol_distribution = (scale * sum) >> (31 - DM_LENGTH_SHIFT);
+                sum += *symbol_count;
             }
         } else {
-            for k in 0..self.symbols as usize {
-                self.distribution[k] = (scale * sum) >> (31 - DM_LENGTH_SHIFT);
-                sum += self.symbol_count[k];
-                let w = self.distribution[k] >> self.table_shift;
+            for (k, (symbol_distribution, symbol_count)) in self
+                .distribution
+                .iter_mut()
+                .zip(&self.symbol_count)
+                .enumerate()
+            {
+                *symbol_distribution = (scale * sum) >> (31 - DM_LENGTH_SHIFT);
+                sum += *symbol_count;
+                let w = *symbol_distribution >> self.table_shift;
+
+                assert!((w as usize) < self.decoder_table.len());
                 while s < w as usize {
                     s += 1;
-                    self.decoder_table[s] = (k - 1) as u32;
+                    *unsafe { self.decoder_table.get_unchecked_mut(s) } = (k - 1) as u32;
                 }
             }
+
             self.decoder_table[0] = 0;
+            //decoder_table as self.table_size + 2 elements
+            debug_assert!(self.decoder_table.len() >= self.table_size as usize);
             while s <= self.table_size as usize {
                 s += 1;
-                self.decoder_table[s] = self.symbols - 1;
+                *unsafe { self.decoder_table.get_unchecked_mut(s) } = self.symbols - 1;
             }
         }
 
@@ -165,22 +181,14 @@ pub struct ArithmeticBitModel {
 
 impl ArithmeticBitModel {
     pub fn new() -> Self {
-        // initialization to equiprobable model
-        Self {
-            bit_0_count: 1,
-            bit_count: 2,
-            bit_0_prob: 1u32 << (BM_LENGTH_SHIFT - 1),
-            // start with frequent updates
-            bits_until_update: 4,
-            update_cycle: 4,
-        }
+        Self::default()
     }
 
     pub fn update(&mut self) {
-        println!(
+        /*  println!(
             "ArithmeticBitModel::update() -> bit_0_prop: {}",
             self.bit_0_prob
-        );
+        );*/
         // halve counts when a threshold is reached
         self.bit_count += self.update_cycle;
         if self.bit_count > BM_MAX_COUNT {
@@ -202,7 +210,21 @@ impl ArithmeticBitModel {
             self.update_cycle = 64;
         }
         self.bits_until_update = self.update_cycle;
-        println!("bit_0_prob at end update: {}", self.bit_0_prob);
+        //println!("bit_0_prob at end update: {}", self.bit_0_prob);
+    }
+}
+
+impl Default for ArithmeticBitModel {
+    fn default() -> Self {
+        // initialization to equiprobable model
+        Self {
+            bit_0_count: 1,
+            bit_count: 2,
+            bit_0_prob: 1u32 << (BM_LENGTH_SHIFT - 1),
+            // start with frequent updates
+            bits_until_update: 4,
+            update_cycle: 4,
+        }
     }
 }
 

@@ -27,14 +27,14 @@
 pub trait Packable {
     type Type;
 
-    fn unpack(input: &[u8]) -> Self::Type;
-    fn pack(value: Self::Type, output: &mut [u8]);
+    fn unpack_from(input: &[u8]) -> Self::Type;
+    fn pack_into(&self, output: &mut [u8]);
 }
 
 impl Packable for u32 {
     type Type = u32;
 
-    fn unpack(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self::Type {
         let b1 = input[0] as u32;
         let b2 = input[1] as u32;
         let b3 = input[2] as u32;
@@ -43,75 +43,75 @@ impl Packable for u32 {
         b4 << 24 | (b3 & 0xFFF) << 16 | (b2 & 0xFF) << 8 | b1 & 0xFF
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        output[3] = ((value >> 24) & 0xFF) as u8;
-        output[2] = ((value >> 16) & 0xFF) as u8;
-        output[1] = ((value >> 8) & 0xFF) as u8;
-        output[0] = (value & 0xFF) as u8;
+    fn pack_into(&self, output: &mut [u8]) {
+        output[3] = ((self >> 24) & 0xFFu32) as u8;
+        output[2] = ((self >> 16) & 0xFFu32) as u8;
+        output[1] = ((self >> 8) & 0xFFu32) as u8;
+        output[0] = (self & 0xFFu32) as u8;
     }
 }
 
 impl Packable for u16 {
     type Type = u16;
 
-    fn unpack(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self::Type {
         let b1 = input[0] as u16;
         let b2 = input[1] as u16;
 
         (b2 & 0xFF) << 8 | (b1 & 0xFF)
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        output[1] = ((value >> 8) & 0xFF) as u8;
-        output[0] = (value & 0xFF) as u8
+    fn pack_into(&self, output: &mut [u8]) {
+        output[1] = ((self >> 8) & 0xFFu16) as u8;
+        output[0] = (self & 0xFFu16) as u8
     }
 }
 
 impl Packable for u8 {
     type Type = u8;
 
-    fn unpack(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self::Type {
         input[0]
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        output[0] = value;
+    fn pack_into(&self, output: &mut [u8]) {
+        output[0] = *self;
     }
 }
 
 impl Packable for i32 {
     type Type = i32;
 
-    fn unpack(input: &[u8]) -> Self::Type {
-        u32::unpack(input) as i32
+    fn unpack_from(input: &[u8]) -> Self::Type {
+        u32::unpack_from(input) as i32
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        u32::pack(value as u32, output)
+    fn pack_into(&self, mut output: &mut [u8]) {
+        (*self as u32).pack_into(&mut output)
     }
 }
 
 impl Packable for i16 {
     type Type = i16;
 
-    fn unpack(input: &[u8]) -> Self::Type {
-        u16::unpack(input) as i16
+    fn unpack_from(input: &[u8]) -> Self::Type {
+        u16::unpack_from(input) as i16
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        u16::pack(value as u16, output)
+    fn pack_into(&self, mut output: &mut [u8]) {
+        (*self as u16).pack_into(&mut output)
     }
 }
 
 impl Packable for i8 {
     type Type = i8;
 
-    fn unpack(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self::Type {
         input[0] as i8
     }
 
-    fn pack(value: Self::Type, output: &mut [u8]) {
-        output[0] = value as u8;
+    fn pack_into(&self, output: &mut [u8]) {
+        output[0] = *self as u8;
     }
 }
 
@@ -123,8 +123,8 @@ mod test {
     fn test_packer() {
         let in_val: i32 = -25;
         let mut buf = [0u8; std::mem::size_of::<i32>()];
-        i32::pack(in_val, &mut buf);
-        let v = i32::unpack(&buf);
+        in_val.pack_into(&mut buf);
+        let v = i32::unpack_from(&buf);
         assert_eq!(v, in_val);
     }
     /*

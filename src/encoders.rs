@@ -136,8 +136,8 @@ impl<T: Write> ArithmeticEncoder<T> {
         };
     }
 
-    pub fn done(&mut self) {
-        println!("Encoder::done() -> length: {}", self.length);
+    pub fn done(&mut self) -> std::io::Result<()> {
+        //   println!("Encoder::done() -> length: {}", self.length);
         // done encoding: set final data bytes
         let init_base = self.base;
         let mut another_byte = true;
@@ -158,7 +158,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         if init_base > self.base {
             self.propagate_carry();
         }
-        self.renorm_enc_interval();
+        self.renorm_enc_interval()?;
 
         let endbuffer = unsafe {
             self.out_buffer
@@ -175,43 +175,46 @@ impl<T: Write> ArithmeticEncoder<T> {
                     self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize),
                     AC_BUFFER_SIZE,
                 );
-                self.out_stream.write_all(&slc).unwrap();
+                self.out_stream.write_all(&slc)?;
             }
         }
 
         let buffer_size = self.out_byte as isize - self.out_buffer.as_ptr() as isize;
-        println!("buffersize in encoder.done(): {}", buffer_size);
+        //   println!("buffersize in encoder.done(): {}", buffer_size);
         if buffer_size != 0 {
             let slc = &self.out_buffer[..buffer_size as usize];
-            self.out_stream.write_all(&slc).unwrap();
+            self.out_stream.write_all(&slc)?
         }
 
-        self.out_stream.write_all(&[0u8, 0u8]).unwrap();
+        self.out_stream.write_all(&[0u8, 0u8])?;
 
         if another_byte {
-            println!("another byte");
-            self.out_stream.write_all(&[0u8]).unwrap();
+            self.out_stream.write_all(&[0u8])?
         }
+        Ok(())
     }
 
     //TODO symbol is a bit, should it be bool type instead ?
-    pub fn encode_bit(&mut self, model: &mut models::ArithmeticBitModel, sym: u32) {
+    pub fn encode_bit(
+        &mut self,
+        model: &mut models::ArithmeticBitModel,
+        sym: u32,
+    ) -> std::io::Result<()> {
         debug_assert!(sym <= 1);
-        println!("Encoder::encode_bit() -> sym: {}", sym);
+        //  println!("Encoder::encode_bit() -> sym: {}", sym);
 
         // product l x p0
         let x = model.bit_0_prob * (self.length >> models::BM_LENGTH_SHIFT);
-        println!(
+        /*   println!(
             "bit_0_prob: {}, length: {} => x: {}",
             model.bit_0_prob, self.length, x
-        );
+        );*/
         //update interval
         if sym == 0 {
             self.length = x;
             model.bit_0_count += 1;
         } else {
             let init_base = self.base;
-            // TODO use this or overflowing add ?
             self.base = self.base.wrapping_add(x);
             self.length -= x;
             if init_base > self.base {
@@ -220,21 +223,26 @@ impl<T: Write> ArithmeticEncoder<T> {
             }
         }
         if self.length < decoders::AC_MIN_LENGTH {
-            self.renorm_enc_interval()
+            self.renorm_enc_interval()?;
         }
 
         model.bits_until_update -= 1;
         if model.bits_until_update == 0 {
             model.update();
         }
-        println!("length at end of encode bit: {}", self.length);
+        Ok(())
+        //println!("length at end of encode bit: {}", self.length);
     }
 
-    pub fn encode_symbol(&mut self, model: &mut models::ArithmeticModel, sym: u32) {
-        println!(
+    pub fn encode_symbol(
+        &mut self,
+        model: &mut models::ArithmeticModel,
+        sym: u32,
+    ) -> std::io::Result<()> {
+        /*    println!(
             "\nencode_symbol -> length: {}, symbol: {}, last symbol: {}",
             self.length, sym, model.last_symbol
-        );
+        );*/
         debug_assert!(sym <= model.last_symbol);
 
         let x;
@@ -247,43 +255,46 @@ impl<T: Write> ArithmeticEncoder<T> {
             self.length -= x; // no product needed
         } else {
             self.length >>= DM_LENGTH_SHIFT;
-            println!("length: {}", self.length);
+            // println!("length: {}", self.length);
             x = model.distribution[sym as usize] * self.length;
             self.base = self.base.wrapping_add(x);
             //self.base += x;
             self.length = model.distribution[(sym + 1) as usize] * self.length - x;
+            /*
             println!(
                 "length: {}, sym + 1: {}, model.distrib: {}",
                 self.length,
                 sym + 1,
                 model.distribution[(sym + 1) as usize]
             );
+            */
         }
 
         if init_base > self.base {
             self.propagate_carry();
         }
         if self.length < AC_MIN_LENGTH {
-            self.renorm_enc_interval();
+            self.renorm_enc_interval()?;
         }
         model.symbol_count[sym as usize] += 1;
         model.symbols_until_update -= 1;
         if model.symbols_until_update == 0 {
             model.update();
         }
-        println!("length at end of encoder symbol: {}", self.length);
+        Ok(())
+        //  println!("length at end of encoder symbol: {}", self.length);
     }
 
     /* Encode a bit without modelling  */
     // again sym is a bool
-    pub fn write_bit(&mut self, sym: u32) {
-        println!("write_bit");
+    pub fn write_bit(&mut self, sym: u32) -> std::io::Result<()> {
+        //println!("write_bit");
         assert!(sym <= 1);
 
         let init_base = self.base;
         // new interval base and length
         self.length >>= 1;
-        self.base += sym * self.length;
+        self.base = self.base.wrapping_add(sym * self.length);
 
         // overflow = carry
         if init_base > self.base {
@@ -291,16 +302,17 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
 
         if self.length < AC_MIN_LENGTH {
-            self.renorm_enc_interval();
+            self.renorm_enc_interval()?;
         }
+        Ok(())
     }
 
-    pub fn write_bits(&mut self, mut bits: u32, mut sym: u32) {
-        println!("write_bits");
+    pub fn write_bits(&mut self, mut bits: u32, mut sym: u32) -> std::io::Result<()> {
+        // println!("write_bits");
         assert!(bits <= 32 && sym < (1u32 << bits));
 
         if bits > 19 {
-            self.write_short((sym & std::u16::MAX as u32) as u16);
+            self.write_short((sym & std::u16::MAX as u32) as u16)?;
             sym = sym >> 16;
             bits = bits - 16;
         }
@@ -316,28 +328,30 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
 
         if self.length < AC_MIN_LENGTH {
-            self.renorm_enc_interval();
+            self.renorm_enc_interval()?;
         }
+        Ok(())
     }
 
-    pub fn write_byte(&mut self, sym: u8) {
-        println!("write_byte");
+    pub fn write_byte(&mut self, sym: u8) -> std::io::Result<()> {
+        //   println!("write_byte");
         let init_base = self.base;
         self.length >>= 8;
 
-        self.base += sym as u32 * self.length;
+        self.base = self.base.wrapping_add(sym as u32 * self.length);
         // overflow = carry
         if init_base > self.base {
             self.propagate_carry();
         }
 
         if self.length < AC_MIN_LENGTH {
-            self.renorm_enc_interval();
+            self.renorm_enc_interval()?;
         }
+        Ok(())
     }
 
-    pub fn write_short(&mut self, sym: u16) {
-        println!("write_short");
+    pub fn write_short(&mut self, sym: u16) -> std::io::Result<()> {
+        //  println!("write_short");
         let init_base = self.base;
         self.length >>= 16;
 
@@ -348,22 +362,23 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
 
         if self.length < AC_MIN_LENGTH {
-            self.renorm_enc_interval();
+            self.renorm_enc_interval()?;
         }
+        Ok(())
     }
 
-    pub fn write_int(&mut self, sym: u32) {
+    pub fn write_int(&mut self, sym: u32) -> std::io::Result<()> {
         // lower 16 bits
-        self.write_short((sym & 0xFFFFu32) as u16);
-        // UPPER 16 bits
-        self.write_short((sym >> 16) as u16);
+        self.write_short((sym & 0xFFFFu32) as u16)?;
+        // upper 16 bits
+        self.write_short((sym >> 16) as u16)
     }
 
-    pub fn write_int64(&mut self, sym: u64) {
+    pub fn write_int64(&mut self, sym: u64) -> std::io::Result<()> {
         // lower 32 bits
-        self.write_int((sym & 0xFFFFFFFF) as u32);
-        // UPPER 32 bits
-        self.write_int((sym >> 32) as u32);
+        self.write_int((sym & 0xFFFFFFFF) as u32)?;
+        // upper 32 bits
+        self.write_int((sym >> 32) as u32)
     }
 
     pub fn out_stream(&mut self) -> &mut T {
@@ -406,18 +421,20 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
     }
 
-    fn renorm_enc_interval(&mut self) {
+    fn renorm_enc_interval(&mut self) -> std::io::Result<()> {
         let endbuffer = unsafe {
             self.out_buffer
                 .as_mut_ptr()
                 .offset((2 * AC_BUFFER_SIZE) as isize)
         };
         loop {
+            /*
             println!(
                 "ArithmeticEncoder::renorm_enc_interval: {} -> {}",
                 self.length,
                 self.length << 8
             );
+            */
             assert!(self.out_buffer.as_ptr() <= self.out_byte);
             assert!(self.out_byte < endbuffer);
             assert!((self.out_byte as *const u8) < self.end_byte);
@@ -426,21 +443,19 @@ impl<T: Write> ArithmeticEncoder<T> {
                 self.out_byte = self.out_byte.offset(1);
 
                 if self.out_byte as *const u8 == self.end_byte {
-                    self.manage_out_buffer();
+                    self.manage_out_buffer()?;
                 }
                 self.base <<= 8;
                 self.length <<= 8; // length multiplied by 256
-                if self.length == 0 {
-                    panic!("wo00");
-                }
                 if self.length >= AC_MIN_LENGTH {
                     break;
                 }
             }
         }
+        Ok(())
     }
 
-    fn manage_out_buffer(&mut self) {
+    fn manage_out_buffer(&mut self) -> std::io::Result<()> {
         let endbuffer = unsafe {
             self.out_buffer
                 .as_mut_ptr()
@@ -451,12 +466,13 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
         unsafe {
             let slc: &[u8] = std::slice::from_raw_parts(self.out_byte, AC_BUFFER_SIZE);
-            self.out_stream.write_all(&slc).unwrap();
+            self.out_stream.write_all(&slc)?;
             self.end_byte = self.out_byte.offset(AC_BUFFER_SIZE as isize);
 
             assert!(self.end_byte > self.out_byte);
             assert!(self.out_byte < endbuffer);
         }
+        Ok(())
     }
 
     //TODO write float & double
