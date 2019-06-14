@@ -47,12 +47,15 @@ impl<R: Read> RecordDecompressor<R> {
         self.fields.push(Box::new(field));
     }
 
+    pub fn record_size(&self) -> usize {
+        self.fields.iter().map(|f| f.size_of_field()).sum()
+    }
+
     pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
         // FIXME to avoid having to check, & to avoid the user doing the mistake why not have the
         //  record_decompressor own the buffer and returns it on each decompress
         //  -> std::io::Result<&[u8]>; ?
-        let record_size = self.fields.iter().map(|f| f.size_of_field()).sum();
-        if out.len() < record_size {
+        if out.len() < self.record_size() {
             panic!("Input buffer to small")
         }
         let mut field_start = 0;
@@ -69,6 +72,10 @@ impl<R: Read> RecordDecompressor<R> {
             self.decoder.read_init_bytes()?;
         }
         Ok(())
+    }
+
+    pub fn borrow_mut_stream(&mut self) -> &mut R {
+        self.decoder.in_stream()
     }
 
     pub fn into_stream(self) -> R {

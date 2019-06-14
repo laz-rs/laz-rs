@@ -460,25 +460,25 @@ pub mod v2 {
 
                 if (sym & (1 << 0)) != 0 {
                     corr = decoder.decode_symbol(&mut self.rgb_diff_0)? as u8;
-                    this_val.red = corr.wrapping_add((self.last.red & 0x00FF) as u8) as u16;
+                    this_val.red = corr.wrapping_add(lower_byte(self.last.red)) as u16;
                 } else {
                     this_val.red = self.last.red & 0xFF;
                 }
 
                 if (sym & (1 << 1)) != 0 {
                     corr = decoder.decode_symbol(&mut self.rgb_diff_1)? as u8;
-                    this_val.red |= (corr.wrapping_add((self.last.red >> 8) as u8) as u16) << 8;
+                    this_val.red |= (corr.wrapping_add(upper_byte(self.last.red)) as u16) << 8;
                 } else {
                     this_val.red |= self.last.red & 0xFF00;
                 }
 
                 if (sym & (1 << 6)) != 0 {
-                    diff = (this_val.red & 0x00FF) as i32 - (self.last.red & 0x00FF) as i32;
+                    diff = lower_byte(this_val.red) as i32 - lower_byte(self.last.red) as i32;
 
                     if (sym & (1 << 2)) != 0 {
                         corr = decoder.decode_symbol(&mut self.rgb_diff_2)? as u8;
                         this_val.green = corr
-                            .wrapping_add(u8_clamp(diff + (self.last.green & 0x00FF) as i32) as u8)
+                            .wrapping_add(u8_clamp(diff + lower_byte(self.last.green) as i32) as u8)
                             as u16;
                     } else {
                         this_val.green = self.last.green & 0x00FF;
@@ -486,21 +486,21 @@ pub mod v2 {
 
                     if (sym & (1 << 4)) != 0 {
                         corr = decoder.decode_symbol(&mut self.rgb_diff_4)? as u8;
-                        diff = (diff + (this_val.green & 0x00FF) as i32
-                            - (self.last.green & 0x00FF) as i32)
+                        diff = (diff + lower_byte(this_val.green) as i32
+                            - lower_byte(self.last.green) as i32)
                             / 2;
                         this_val.blue = (corr
-                            .wrapping_add(u8_clamp(diff + (self.last.blue & 0x00FF) as i32) as u8))
+                            .wrapping_add(u8_clamp(diff + lower_byte(self.last.blue) as i32) as u8))
                             as u16;
                     } else {
                         this_val.blue = self.last.blue & 0x00FF;
                     }
 
-                    diff = (this_val.red >> 8) as i32 - (self.last.red >> 8) as i32;
+                    diff = upper_byte(this_val.red) as i32 - upper_byte(self.last.red) as i32;
                     if (sym & (1 << 3)) != 0 {
                         corr = decoder.decode_symbol(&mut self.rgb_diff_3)? as u8;
                         this_val.green |= (corr
-                            .wrapping_add(u8_clamp(diff + (self.last.green >> 8) as i32))
+                            .wrapping_add(u8_clamp(diff + upper_byte(self.last.green) as i32))
                             as u16)
                             << 8;
                     } else {
@@ -509,13 +509,14 @@ pub mod v2 {
 
                     if (sym & (1 << 5)) != 0 {
                         corr = decoder.decode_symbol(&mut self.rgb_diff_5)? as u8;
-                        diff = (diff + (this_val.green >> 8) as i32
-                            - (self.last.green >> 8) as i32)
+                        diff = (diff + upper_byte(this_val.green) as i32
+                            - upper_byte(self.last.green) as i32)
                             / 2;
 
-                        this_val.blue |=
-                            ((corr + (u8_clamp(diff + (self.last.blue >> 8) as i32)) as u8) as u16)
-                                << 08;
+                        this_val.blue |= ((corr
+                            + (u8_clamp(diff + upper_byte(self.last.blue) as i32)) as u8)
+                            as u16)
+                            << 08;
                     } else {
                         this_val.blue |= self.last.blue & 0xFF00;
                     }

@@ -28,18 +28,13 @@ fn test_point_format_0_loop() {
         .unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-    // Seek over chunk table offset
-    laz_file
-        .seek(SeekFrom::Current(std::mem::size_of::<u64>() as i64))
-        .unwrap();
-
     let mut las_file = File::open("tests/data/point10.las").unwrap();
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
 
     let mut buf = [0u8; 20];
     let mut expected_buff = [0u8; 20];
 
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
     let mut compressor = LasZipCompressor::from_laz_items(
         Cursor::new(Vec::<u8>::new()),
         LazItemRecordBuilder::new()
@@ -65,8 +60,7 @@ fn test_point_format_0_loop() {
     my_laz_vlr.set_position(0);
     let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
 
-    //compression_output.seek(SeekFrom::Start(std::mem::size_of::<u64>() as u64)); // skip offset to chunk table
-    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
@@ -86,18 +80,13 @@ fn test_point_format_1_loop() {
         .unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-    // Seek over chunk table offset
-    laz_file
-        .seek(SeekFrom::Current(std::mem::size_of::<u64>() as i64))
-        .unwrap();
-
     let mut las_file = File::open("tests/data/point-time.las").unwrap();
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
 
     let mut buf = [0u8; 28];
     let mut expected_buff = [0u8; 28];
 
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
     let mut compressor = LasZipCompressor::from_laz_items(
         Cursor::new(Vec::<u8>::new()),
         LazItemRecordBuilder::new()
@@ -124,8 +113,7 @@ fn test_point_format_1_loop() {
     my_laz_vlr.set_position(0);
     let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
 
-    //compression_output.seek(SeekFrom::Start(std::mem::size_of::<u64>() as u64)); // skip offset to chunk table
-    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
@@ -144,18 +132,13 @@ fn test_point_format_2_loop() {
         .unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-    // Seek over chunk table offset
-    laz_file
-        .seek(SeekFrom::Current(std::mem::size_of::<u64>() as i64))
-        .unwrap();
-
     let mut las_file = File::open("tests/data/point-color.las").unwrap();
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
 
     let mut buf = [0u8; 26];
     let mut expected_buff = [0u8; 26];
 
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
     let mut compressor = LasZipCompressor::from_laz_items(
         Cursor::new(Vec::<u8>::new()),
         LazItemRecordBuilder::new()
@@ -182,8 +165,7 @@ fn test_point_format_2_loop() {
     my_laz_vlr.set_position(0);
     let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
 
-    //compression_output.seek(SeekFrom::Start(std::mem::size_of::<u64>() as u64)); // skip offset to chunk table
-    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
@@ -202,18 +184,13 @@ fn test_point_format_3_loop() {
         .unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-    // Seek over chunk table offset
-    laz_file
-        .seek(SeekFrom::Current(std::mem::size_of::<u64>() as i64))
-        .unwrap();
-
     let mut las_file = File::open("tests/data/point-color-time.las").unwrap();
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
 
     let mut buf = [0u8; 34];
     let mut expected_buff = [0u8; 34];
 
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
     let mut compressor = LasZipCompressor::from_laz_items(
         Cursor::new(Vec::<u8>::new()),
         LazItemRecordBuilder::new()
@@ -241,8 +218,7 @@ fn test_point_format_3_loop() {
     my_laz_vlr.set_position(0);
     let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
 
-    //compression_output.seek(SeekFrom::Start(std::mem::size_of::<u64>() as u64)); // skip offset to chunk table
-    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for _ in 0..NUM_POINTS {
@@ -260,11 +236,6 @@ fn test_point_format_3_with_extra_bytes_loop() {
     laz_file.seek(SeekFrom::Start(1295)).unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-    // Seek over chunk table offset
-    laz_file
-        .seek(SeekFrom::Current(std::mem::size_of::<u64>() as i64))
-        .unwrap();
-
     let mut las_file = File::open("tests/data/extra-bytes.las").unwrap();
     // Again, account for the extra bytes vlr
     las_file
@@ -276,7 +247,7 @@ fn test_point_format_3_with_extra_bytes_loop() {
     let mut buf = [0u8; 61];
     let mut expected_buff = [0u8; 61];
 
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
     let mut compressor = LasZipCompressor::from_laz_items(
         Cursor::new(Vec::<u8>::new()),
         LazItemRecordBuilder::new()
@@ -305,8 +276,7 @@ fn test_point_format_3_with_extra_bytes_loop() {
     my_laz_vlr.set_position(0);
     let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
 
-    //compression_output.seek(SeekFrom::Start(std::mem::size_of::<u64>() as u64)); // skip offset to chunk table
-    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
 
     las_file
         .seek(SeekFrom::Start(

@@ -35,7 +35,7 @@ fn main() {
     let mut buf = [0u8; POINT_SIZE];
     let mut expected_buff = [0u8; POINT_SIZE];
 
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
     let mut compressor = LasZipCompressor::from_laz_items(
         Cursor::new(Vec::<u8>::new()),
         LazItemRecordBuilder::new()
@@ -72,7 +72,7 @@ fn main() {
     my_laz_vlr.set_position(0);
     let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
 
-    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr);
+    let mut decompressor = LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for i in 0..num_points {
