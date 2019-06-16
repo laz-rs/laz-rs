@@ -3,8 +3,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::compressors::IntegerCompressorBuilder;
-use crate::decompressors::IntegerDecompressorBuilder;
 use crate::decoders::ArithmeticDecoder;
+use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
 use crate::formats::{RecordCompressor, RecordDecompressor};
 
@@ -14,7 +14,7 @@ const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &'static str = "laszip encoded";
 pub const LASZIP_RECORD_ID: u16 = 22204;
-pub const LASZIP_DESCRIPTION:&'static str = "http://laszip.org";
+pub const LASZIP_DESCRIPTION: &'static str = "http://laszip.org";
 
 
 #[derive(Debug)]
@@ -254,6 +254,52 @@ impl LazVlr {
     }
 }
 
+impl Default for LazVlr {
+    fn default() -> Self {
+        Self {
+            compressor: Default::default(),
+            coder: 0,
+            version: Version {
+                major: 2,
+                minor: 2,
+                revision: 0,
+            },
+            options: 0,
+            chunk_size: DEFAULT_CHUNK_SIZE as u32,
+            number_of_special_evlrs: -1,
+            offset_to_special_evlrs: -1,
+            items: vec![],
+        }
+    }
+}
+
+pub struct LazVlrBuilder {
+    laz_vlr: LazVlr
+}
+
+impl LazVlrBuilder {
+    pub fn new() -> Self {
+        Self {
+            laz_vlr: Default::default()
+        }
+    }
+
+    pub fn with_chunk_size(mut self, chunk_size: u32) -> Self {
+        self.laz_vlr.chunk_size = chunk_size;
+        self
+    }
+
+
+    pub fn with_laz_items(mut self, laz_items: Vec<LazItem>) -> Self {
+        self.laz_vlr.items = laz_items;
+        self
+    }
+
+    pub fn build(self) -> LazVlr {
+        self.laz_vlr
+    }
+}
+
 //TODO: would it be possible to extract some logic to a ChunkedCompressor & ChunkedDecompressor ?
 pub struct LasZipDecompressor<R: Read + Seek> {
     vlr: LazVlr,
@@ -261,7 +307,7 @@ pub struct LasZipDecompressor<R: Read + Seek> {
     chunk_points_read: u32,
     offset_to_chunk_table: i64,
     data_start: u64,
-    chunk_table: Option<Vec<u64>>
+    chunk_table: Option<Vec<u64>>,
 }
 
 //TODO jumping to, & reading chunk table
@@ -297,15 +343,13 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
             chunk_points_read: 0,
             offset_to_chunk_table,
             data_start,
-            chunk_table: None
+            chunk_table: None,
         })
     }
 
     pub fn decompress_one(&mut self, mut out: &mut [u8]) -> std::io::Result<()> {
         if self.chunk_points_read == self.vlr.chunk_size {
-            self.record_decompressor.reset();
-            self.record_decompressor.set_fields_from(&self.vlr.items);
-            self.chunk_points_read = 0;
+            self.reset_for_new_chunk();
         }
 
         self.record_decompressor.decompress(&mut out)?;
@@ -316,20 +360,62 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
     pub fn into_stream(self) -> R {
         self.record_decompressor.into_stream()
     }
-}
 
-impl<R: Read + Seek> LasZipDecompressor<R> {
     pub fn seek(&mut self, point_idx: u64) -> std::io::Result<()> {
         if let Some(chunk_table) = &self.chunk_table {
             let chunk_of_point = point_idx / self.vlr.chunk_size as u64;
-            let chunk_start_idx = chunk_of_point * self.vlr.chunk_size as u64;
-            self.record_decompressor.reset();
-            self.record_decompressor
-                .borrow_mut_stream()
-                .seek(SeekFrom::Start(chunk_table[chunk_of_point as usize] as u64))?;
-            let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
-            for i in chunk_start_idx..point_idx {
-                self.decompress_one(&mut tmp_out)?;
+            let delta = point_idx % self.vlr.chunk_size as u64;
+
+            if chunk_of_point == (chunk_table.len() - 1) as u64 {
+                // the requested point fall into the last chunk,
+                // but that does not mean that the point exists
+                // so we have to be careful, we will do as we could normally,
+                // but if we reach the chunk_table_offset that means the requested
+                // point is out ouf bounds so well just seek to the end cf(the else in the if let below)
+                // we do this to avoid decompressing data (ie the chunk table) thinking its a record
+
+                if self.offset_to_chunk_table == -1 {
+                    // If the offset is still -1 it means the chunk table could not
+                    // be read :thinking:
+                    unreachable!("unexpected offset to chunk table");
+                }
+                let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
+                self.record_decompressor
+                    .borrow_mut_stream()
+                    .seek(SeekFrom::Start(chunk_table[chunk_of_point as usize] as u64))?;
+
+                self.reset_for_new_chunk();
+
+                for _i in 0..delta {
+                    self.decompress_one(&mut tmp_out)?;
+                    let current_pos = self.record_decompressor
+                        .borrow_mut_stream()
+                        .seek(SeekFrom::Current(0))?;
+
+                    if current_pos >= self.offset_to_chunk_table as u64 {
+                        self.record_decompressor
+                            .borrow_mut_stream()
+                            .seek(SeekFrom::End(0))?;
+                        return Ok(());
+                    }
+                }
+            } else if let Some(start_of_chunk) = chunk_table.get(chunk_of_point as usize) {
+                self.record_decompressor
+                    .borrow_mut_stream()
+                    .seek(SeekFrom::Start(*start_of_chunk as u64))?;
+                self.reset_for_new_chunk();
+                let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
+
+                for _i in 0..delta {
+                    self.decompress_one(&mut tmp_out)?;
+                }
+            } else {
+                // the requested point it out of bounds (ie higher than the number of
+                // points compressed)
+
+                // Seek to the end so that the next call to decompress causes en error
+                // like "Failed to fill whole buffer (seeking past end is allowed by the Trait
+                self.record_decompressor.borrow_mut_stream().seek(SeekFrom::End(0))?;
             }
             Ok(())
         } else {
@@ -338,20 +424,29 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
         }
     }
 
+    fn reset_for_new_chunk(&mut self) {
+        self.chunk_points_read = 0;
+        self.reset_internal_decompressor();
+    }
+
+    fn reset_internal_decompressor(&mut self) {
+        self.record_decompressor.reset();
+        self.record_decompressor.set_fields_from(&self.vlr.items);
+    }
+
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
-        //TODO impl seek for the encoder ?
         let mut stream = self.record_decompressor.borrow_mut_stream();
         let current_pos = stream.seek(SeekFrom::Current(0))?;
         if self.offset_to_chunk_table == -1 {
             // Compressor was writing to non seekable stream
-            stream.seek(SeekFrom::End(8))?;
+            stream.seek(SeekFrom::End(-8))?;
             self.offset_to_chunk_table = stream.read_i64::<LittleEndian>()?;
         }
         stream.seek(SeekFrom::Start(self.offset_to_chunk_table as u64))?;
 
         let _version = stream.read_u32::<LittleEndian>()?;
         let number_of_chunks = stream.read_u32::<LittleEndian>()?;
-        let mut chunk_starts = vec![0u64; (number_of_chunks + 1) as usize];
+        let mut chunk_sizes = vec![0u64; number_of_chunks as usize];
 
         let mut decompressor = IntegerDecompressorBuilder::new()
             .bits(32)
@@ -360,15 +455,16 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
         let mut decoder = ArithmeticDecoder::new(&mut stream);
         decoder.read_init_bytes()?;
         for i in 1..=number_of_chunks {
-            decompressor.decompress(
+            chunk_sizes[(i - 1) as usize] = decompressor.decompress(
                 &mut decoder,
-                if i > 1 { chunk_starts[(i - 1) as usize] } else { 0 } as i32,
-                1
-            )?;
+                if i > 1 { chunk_sizes[(i - 2) as usize] } else { 0 } as i32,
+                1,
+            )? as u64;
         }
+        let mut chunk_starts = vec![0u64; number_of_chunks as usize];
         chunk_starts[0] = self.data_start;
-        for i in 1..=number_of_chunks {
-            chunk_starts[i as usize] += chunk_starts[(i -1) as usize];
+        for i in 1..number_of_chunks {
+            chunk_starts[i as usize] = chunk_sizes[(i - 1) as usize] + chunk_starts[(i -1) as usize];
             /*if (chunk_starts[i] <= chunk_starts[i-1]) {
                 //err
             }*/
@@ -408,7 +504,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
             chunk_point_written: 0,
             chunk_sizes: vec![],
             last_chunk_pos: 0,
-            start_pos: 0
+            start_pos: 0,
         }
     }
 
@@ -466,15 +562,12 @@ impl<W: Write + Seek> LasZipCompressor<W> {
             .contexts(2)
             .build_initialized();
 
-        println!("Chunk Table: {:?}", self.chunk_sizes);
-
         let mut predictor = 0;
         for chunk_size in &self.chunk_sizes {
             compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
             predictor = (*chunk_size) as i32;
         }
         encoder.done()?;
-        println!("End of chunk table: {}", stream.seek(SeekFrom::Current(0)).unwrap());
         Ok(())
     }
 
@@ -492,7 +585,6 @@ impl<W: Write + Seek> LasZipCompressor<W> {
     fn update_chunk_table_offset(&mut self) -> std::io::Result<()> {
         let stream = self.record_compressor.borrow_mut_stream();
         let start_of_chunk_table_pos = stream.seek(SeekFrom::Current(0))?;
-        println!("chunk table pos: {}", start_of_chunk_table_pos);
         stream.seek(SeekFrom::Start(self.start_pos))?;
         stream.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;
         stream.seek(SeekFrom::Start(start_of_chunk_table_pos))?;
