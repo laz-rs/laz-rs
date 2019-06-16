@@ -369,9 +369,9 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
             if chunk_of_point == (chunk_table.len() - 1) as u64 {
                 // the requested point fall into the last chunk,
                 // but that does not mean that the point exists
-                // so we have to be careful, we will do as we could normally,
+                // so we have to be careful, we will do as we would normally,
                 // but if we reach the chunk_table_offset that means the requested
-                // point is out ouf bounds so well just seek to the end cf(the else in the if let below)
+                // point is out ouf bounds so will just seek to the end cf(the else in the if let below)
                 // we do this to avoid decompressing data (ie the chunk table) thinking its a record
 
                 if self.offset_to_chunk_table == -1 {
