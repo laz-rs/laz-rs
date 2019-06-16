@@ -55,9 +55,9 @@ impl<R: Read> RecordDecompressor<R> {
         // FIXME to avoid having to check, & to avoid the user doing the mistake why not have the
         //  record_decompressor own the buffer and returns it on each decompress
         //  -> std::io::Result<&[u8]>; ?
-        if out.len() < self.record_size() {
-            panic!("Input buffer to small")
-        }
+       // if out.len() < self.record_size() {
+       //     panic!("Input buffer to small")
+       // }
         let mut field_start = 0;
         for field in &mut self.fields {
             let field_end = field_start + field.size_of_field();
@@ -159,15 +159,17 @@ impl<W: Write> RecordCompressor<W> {
         self.field_compressors.push(Box::new(field));
     }
 
+    pub fn record_size(&self) -> usize {
+        self.field_compressors.iter().map(|f| f.size_of_field()).sum()
+    }
+
     pub fn compress(&mut self, input: &[u8]) -> std::io::Result<()> {
-        let record_size = self
-            .field_compressors
-            .iter()
-            .map(|f| f.size_of_field())
-            .sum();
-        if input.len() < record_size {
-            panic!("Input buffer to small")
-        }
+//        if input.len() < self.record_size() {
+//            panic!("Input buffer to small")
+//        }
+
+
+
         let mut field_start = 0;
         for field in &mut self.field_compressors {
             let field_end = field_start + field.size_of_field();
@@ -182,7 +184,7 @@ impl<W: Write> RecordCompressor<W> {
         self.field_compressors.clear();
     }
 
-    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) {
+    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
@@ -213,12 +215,12 @@ impl<W: Write> RecordCompressor<W> {
                         las::extra_bytes::v2::ExtraBytesCompressor::new(record_item.size as usize),
                     ),
                 },
-                _ => panic!(
-                    "Unsupported Item compression version algorithm, (item: {:?}, version: {:?})",
-                    record_item.item_type, record_item.version
-                ),
+                _ => return  Err(LasZipError::UnsupportedLazItemVersion(
+                    record_item.item_type,
+                    record_item.version)),
             }
         }
+        Ok(())
     }
 
     pub fn into_stream(self) -> W {
@@ -445,12 +447,26 @@ mod test {
         let data = stream.into_inner();
         assert_eq!(&data, &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]);
     }
-    /*
-        fn test_packer_on<T: Packable>(val: T) {
-            let mut buf = [0u8, std::mem::size_of::<T>()];
-            T::pack(v, &mut buf);
-            let v = T::unpack(&buf);
-            assert_eq!(v, val);
-        }
-    */
+
+
+    #[test]
+    #[should_panic]
+    fn test_small_input_buffer() {
+        let stream = std::io::Cursor::new(Vec::<u8>::new());
+
+        let encoder = encoders::ArithmeticEncoder::new(stream);
+        let mut compressor = RecordCompressor::with_encoder(encoder);
+        compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
+        compressor.compress(&[]).unwrap();
+        compressor.done().unwrap();
+    }
+
+        /*
+            fn test_packer_on<T: Packable>(val: T) {
+                let mut buf = [0u8, std::mem::size_of::<T>()];
+                T::pack(v, &mut buf);
+                let v = T::unpack(&buf);
+                assert_eq!(v, val);
+            }
+        */
 }

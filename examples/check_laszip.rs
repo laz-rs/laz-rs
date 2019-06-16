@@ -43,7 +43,7 @@ fn main() {
             .add_item(LazItemType::GpsTime)
             .add_item(LazItemType::RGB12)
             .build(),
-    );
+    ).unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();

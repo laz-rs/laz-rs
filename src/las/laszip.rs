@@ -488,15 +488,15 @@ pub struct LasZipCompressor<W: Write> {
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
 impl<W: Write + Seek> LasZipCompressor<W> {
-    pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Self {
+    pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_laz_items(items);
         Self::from_laz_vlr(output, vlr)
     }
 
-    pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Self {
+    pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Result<Self, LasZipError> {
         let mut record_compressor = RecordCompressor::new(output);
-        record_compressor.set_fields_from(&vlr.items);
-        Self {
+        record_compressor.set_fields_from(&vlr.items)?;
+        Ok(Self {
             vlr,
             record_compressor,
             first_point: true,
@@ -504,7 +504,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
             chunk_sizes: vec![],
             last_chunk_pos: 0,
             start_pos: 0,
-        }
+        })
     }
 
     pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
@@ -519,7 +519,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
         if self.chunk_point_written == self.vlr.chunk_size {
             self.record_compressor.done()?;
             self.record_compressor.reset();
-            self.record_compressor.set_fields_from(&self.vlr.items);
+            self.record_compressor.set_fields_from(&self.vlr.items).unwrap();
             self.update_chunk_table()?;
             self.chunk_point_written = 0;
         }

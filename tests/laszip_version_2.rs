@@ -41,7 +41,7 @@ fn test_point_format_0_loop() {
         LazItemRecordBuilder::new()
             .add_item(LazItemType::Point10)
             .build(),
-    );
+    ).unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
@@ -94,7 +94,7 @@ fn test_point_format_1_loop() {
             .add_item(LazItemType::Point10)
             .add_item(LazItemType::GpsTime)
             .build(),
-    );
+    ).unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
@@ -146,7 +146,7 @@ fn test_point_format_2_loop() {
             .add_item(LazItemType::Point10)
             .add_item(LazItemType::RGB12)
             .build(),
-    );
+    ).unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
@@ -199,7 +199,7 @@ fn test_point_format_3_loop() {
             .add_item(LazItemType::GpsTime)
             .add_item(LazItemType::RGB12)
             .build(),
-    );
+    ).unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
@@ -257,7 +257,7 @@ fn test_point_format_3_with_extra_bytes_loop() {
             .add_item(LazItemType::RGB12)
             .add_item(LazItemType::Byte(27))
             .build(),
-    );
+    ).unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
@@ -313,7 +313,7 @@ fn test_seek() {
     vlr.write_to(&mut vlr_data).unwrap();
     vlr_data.seek(SeekFrom::Start(0)).unwrap();
 
-    let mut compressor = LasZipCompressor::from_laz_vlr(Cursor::new(Vec::<u8>::new()), vlr);
+    let mut compressor = LasZipCompressor::from_laz_vlr(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
 
     let mut buf = [0u8; POINT_SIZE];
     for _ in 0..NUM_POINTS {
