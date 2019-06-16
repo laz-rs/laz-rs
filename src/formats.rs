@@ -28,6 +28,7 @@ pub struct RecordDecompressor<R: Read> {
     fields: Vec<Box<dyn FieldDecompressor<R>>>,
     decoder: decoders::ArithmeticDecoder<R>,
     first_decompression: bool,
+    record_size: usize,
 }
 
 impl<R: Read> RecordDecompressor<R> {
@@ -40,15 +41,17 @@ impl<R: Read> RecordDecompressor<R> {
             fields: vec![],
             decoder,
             first_decompression: true,
+            record_size: 0,
         }
     }
 
     pub fn add_field<T: 'static + FieldDecompressor<R>>(&mut self, field: T) {
+        self.record_size += field.size_of_field();
         self.fields.push(Box::new(field));
     }
 
     pub fn record_size(&self) -> usize {
-        self.fields.iter().map(|f| f.size_of_field()).sum()
+        self.record_size
     }
 
     pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
@@ -86,6 +89,7 @@ impl<R: Read> RecordDecompressor<R> {
         self.decoder.reset();
         self.first_decompression = true;
         self.fields.clear();
+        self.record_size = 0;
     }
 
     pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(),LasZipError> {
@@ -93,31 +97,31 @@ impl<R: Read> RecordDecompressor<R> {
             match record_item.version {
                 1 => match record_item.item_type {
                     LazItemType::Byte(_) => {
-                        self.add_field(las::extra_bytes::v1::ExtraBytesDecompressor::new(
+                        self.add_field(las::v1::ExtraBytesDecompressor::new(
                             record_item.size as usize,
                         ))
                     }
                     LazItemType::Point10 => {
-                        self.add_field(las::point10::v1::Point10Decompressor::new())
+                        self.add_field(las::v1::Point10Decompressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field(las::gps::v1::GpsTimeDecompressor::new())
+                        self.add_field(las::v1::GpsTimeDecompressor::new())
                     }
-                    LazItemType::RGB12 => self.add_field(las::rgb::v1::RGBDecompressor::new()),
+                    LazItemType::RGB12 => self.add_field(las::v1::RGBDecompressor::new()),
                 },
                 2 => match record_item.item_type {
                     LazItemType::Byte(_) => {
-                        self.add_field(las::extra_bytes::v2::ExtraBytesDecompressor::new(
+                        self.add_field(las::v2::ExtraBytesDecompressor::new(
                             record_item.size as usize,
                         ))
                     }
                     LazItemType::Point10 => {
-                        self.add_field(las::point10::v2::Point10Decompressor::new())
+                        self.add_field(las::v2::Point10Decompressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field(las::gps::v2::GpsTimeDecompressor::new())
+                        self.add_field(las::v2::GpsTimeDecompressor::new())
                     }
-                    LazItemType::RGB12 => self.add_field(las::rgb::v2::RGBDecompressor::new()),
+                    LazItemType::RGB12 => self.add_field(las::v2::RGBDecompressor::new()),
                 },
                 _ => return  Err(LasZipError::UnsupportedLazItemVersion(
                     record_item.item_type,
@@ -141,6 +145,7 @@ pub trait FieldCompressor<W: Write> {
 pub struct RecordCompressor<W: Write> {
     field_compressors: Vec<Box<dyn FieldCompressor<W>>>,
     encoder: encoders::ArithmeticEncoder<W>,
+    record_size: usize,
 }
 
 impl<W: Write> RecordCompressor<W> {
@@ -152,23 +157,23 @@ impl<W: Write> RecordCompressor<W> {
         Self {
             field_compressors: vec![],
             encoder,
+            record_size: 0,
         }
     }
 
     pub fn add_field_compressor<T: 'static + FieldCompressor<W>>(&mut self, field: T) {
+        self.record_size += field.size_of_field();
         self.field_compressors.push(Box::new(field));
     }
 
     pub fn record_size(&self) -> usize {
-        self.field_compressors.iter().map(|f| f.size_of_field()).sum()
+        self.record_size
     }
 
     pub fn compress(&mut self, input: &[u8]) -> std::io::Result<()> {
 //        if input.len() < self.record_size() {
 //            panic!("Input buffer to small")
 //        }
-
-
 
         let mut field_start = 0;
         for field in &mut self.field_compressors {
@@ -182,6 +187,7 @@ impl<W: Write> RecordCompressor<W> {
     pub fn reset(&mut self) {
         self.encoder.reset();
         self.field_compressors.clear();
+        self.record_size = 0;
     }
 
     pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
@@ -189,30 +195,30 @@ impl<W: Write> RecordCompressor<W> {
             match record_item.version {
                 1 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::point10::v1::Point10Compressor::new())
+                        self.add_field_compressor(las::v1::Point10Compressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_compressor(las::gps::v1::GpsTimeCompressor::new())
+                        self.add_field_compressor(las::v1::GpsTimeCompressor::new())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_compressor(las::rgb::v1::RGBCompressor::new())
+                        self.add_field_compressor(las::v1::RGBCompressor::new())
                     }
                     LazItemType::Byte(_) => self.add_field_compressor(
-                        las::extra_bytes::v1::ExtraBytesCompressor::new(record_item.size as usize),
+                        las::v1::ExtraBytesCompressor::new(record_item.size as usize),
                     ),
                 },
                 2 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::point10::v2::Point10Compressor::new())
+                        self.add_field_compressor(las::v2::Point10Compressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_compressor(las::gps::v2::GpsTimeCompressor::new())
+                        self.add_field_compressor(las::v2::GpsTimeCompressor::new())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_compressor(las::rgb::v2::RGBCompressor::new())
+                        self.add_field_compressor(las::v2::RGBCompressor::new())
                     }
                     LazItemType::Byte(_) => self.add_field_compressor(
-                        las::extra_bytes::v2::ExtraBytesCompressor::new(record_item.size as usize),
+                        las::v2::ExtraBytesCompressor::new(record_item.size as usize),
                     ),
                 },
                 _ => return  Err(LasZipError::UnsupportedLazItemVersion(
