@@ -7,3 +7,6 @@ pub mod formats;
 pub mod las;
 pub(crate) mod models;
 pub mod packers;
+
+
+pub use errors::LasZipError;

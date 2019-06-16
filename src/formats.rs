@@ -7,7 +7,7 @@ use crate::decoders;
 use crate::decompressors;
 use crate::encoders;
 use crate::las;
-use crate::las::laszip::{LazItem, LazItemType};
+use crate::las::laszip::{LazItem, LazItemType, LasZipError};
 use crate::packers::Packable;
 
 //TODO since all field compressor do not actually compress the 1st point
@@ -88,7 +88,7 @@ impl<R: Read> RecordDecompressor<R> {
         self.fields.clear();
     }
 
-    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) {
+    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(),LasZipError> {
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
@@ -119,12 +119,12 @@ impl<R: Read> RecordDecompressor<R> {
                     }
                     LazItemType::RGB12 => self.add_field(las::rgb::v2::RGBDecompressor::new()),
                 },
-                _ => panic!(
-                    "Unsupported Item compression version algorithm, (item: {:?}, version: {:?})",
-                    record_item.item_type, record_item.version
-                ),
+                _ => return  Err(LasZipError::UnsupportedLazItemVersion(
+                    record_item.item_type,
+                    record_item.version)),
             }
         }
+        Ok(())
     }
 }
 

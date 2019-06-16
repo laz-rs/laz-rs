@@ -7,6 +7,7 @@ use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
 use crate::formats::{RecordCompressor, RecordDecompressor};
+pub use crate::errors::LasZipError;
 
 const SUPPORTED_VERSION: u32 = 2;
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
@@ -15,6 +16,7 @@ const DEFAULT_CHUNK_SIZE: usize = 50_000;
 pub const LASZIP_USER_ID: &'static str = "laszip encoded";
 pub const LASZIP_RECORD_ID: u16 = 22204;
 pub const LASZIP_DESCRIPTION: &'static str = "http://laszip.org";
+
 
 
 #[derive(Debug)]
@@ -43,13 +45,14 @@ impl Version {
 
 #[derive(Debug, Copy, Clone)]
 pub enum LazItemType {
-    Byte(u16),
     //0
     Point10,
     //6
     GpsTime,
     //7
-    RGB12, //8
+    RGB12,
+    //8
+    Byte(u16),
 }
 
 impl From<LazItemType> for u16 {
@@ -72,16 +75,15 @@ pub struct LazItem {
 }
 
 impl LazItem {
-    fn read_from<R: Read>(src: &mut R) -> std::io::Result<Self> {
+    fn read_from<R: Read>(src: &mut R) -> Result<Self, LasZipError> {
         let item_type = src.read_u16::<LittleEndian>()?;
         let size = src.read_u16::<LittleEndian>()?;
-        // TODO forward Err
         let item_type = match item_type {
             0 => LazItemType::Byte(size),
             6 => LazItemType::Point10,
             7 => LazItemType::GpsTime,
             8 => LazItemType::RGB12,
-            _ => panic!("Unknown LazItem type: {}", item_type),
+            _ => return Err(LasZipError::UnknownLazItem(item_type)),
         };
         Ok(Self {
             item_type,
@@ -132,7 +134,7 @@ impl LazItemRecordBuilder {
     }
 }
 
-fn read_laz_items_from<R: Read>(mut src: &mut R) -> std::io::Result<Vec<LazItem>> {
+fn read_laz_items_from<R: Read>(mut src: &mut R) -> Result<Vec<LazItem>, LasZipError> {
     let num_items = src.read_u16::<LittleEndian>()?;
     let mut items = Vec::<LazItem>::with_capacity(num_items as usize);
     for _ in 0..num_items {
@@ -149,11 +151,11 @@ fn write_laz_items_to<W: Write>(laz_items: &Vec<LazItem>, mut dst: &mut W) -> st
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CompressorType {
     // TODO might need a better name
     None = 0,
-    // No chunks, or rather only 1 chunk with all the points
+    // No chunks, or rather only 1 chunk with all the points ?
     PointWise = 1,
     // Compress points into chunks with chunk_size points in each chunks
     PointWiseChunked = 2,
@@ -223,14 +225,20 @@ impl LazVlr {
         me
     }
 
-    pub fn from_buffer(record_data: &[u8]) -> std::io::Result<Self> {
+    pub fn from_buffer(record_data: &[u8]) -> Result<Self, LasZipError> {
         let mut cursor = std::io::Cursor::new(record_data);
         Self::read_from(&mut cursor)
     }
 
-    pub fn read_from<R: Read>(mut src: &mut R) -> std::io::Result<Self> {
+    pub fn read_from<R: Read>(mut src: &mut R) -> Result<Self, LasZipError> {
+        let compressor_type = src.read_u16::<LittleEndian>()?;
+        let compressor = match CompressorType::from_u16(compressor_type) {
+            Some(c) => c,
+            None => return Err(LasZipError::UnknownCompressorType(compressor_type)),
+        };
+
         Ok(Self {
-            compressor: CompressorType::from_u16(src.read_u16::<LittleEndian>()?).expect("Invalid compressor type"),
+            compressor,
             coder: src.read_u16::<LittleEndian>()?,
             version: Version::read_from(&mut src)?,
             options: src.read_u32::<LittleEndian>()?,
@@ -310,32 +318,22 @@ pub struct LasZipDecompressor<R: Read + Seek> {
     chunk_table: Option<Vec<u64>>,
 }
 
-//TODO jumping to, & reading chunk table
 impl<R: Read + Seek> LasZipDecompressor<R> {
-    //TODO FIXME WOW FIND A BETTER NAME WTF
-    pub fn new_1(source: R, laszip_vlr_record_data: &[u8]) -> std::io::Result<Self> {
-        let vlr = LazVlr::from_buffer(laszip_vlr_record_data).unwrap();
+    pub fn new_with_record_data(source: R, laszip_vlr_record_data: &[u8]) -> Result<Self, LasZipError> {
+        let vlr = LazVlr::from_buffer(laszip_vlr_record_data)?;
         Self::new(source, vlr)
     }
 
-    //TODO add point_size as params to have some check later
-    pub fn new(mut source: R, vlr: LazVlr) -> std::io::Result<Self> {
-        match vlr.compressor {
-            //TODO this case just needs an error
-            CompressorType::None => unimplemented!(),
-            //TODO all the necessary things are implemented, just find a clean way to
-            // differientitate with de current code that only does chunked
-            CompressorType::PointWise => unimplemented!(),
-            CompressorType::PointWiseChunked => {}
-            // Can't do until v3 & v4 of the compressions algorithms are done
-            CompressorType::LayeredChunked => unimplemented!(),
+    pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
+        if vlr.compressor != CompressorType::PointWiseChunked {
+            return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
         }
 
         let offset_to_chunk_table = source.read_i64::<LittleEndian>()?;
         let data_start = source.seek(SeekFrom::Current(0))?;
         let mut record_decompressor =
             RecordDecompressor::with_decoder(ArithmeticDecoder::new(source));
-        record_decompressor.set_fields_from(&vlr.items);
+        record_decompressor.set_fields_from(&vlr.items)?;
 
         Ok(Self {
             vlr,
@@ -431,7 +429,8 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
 
     fn reset_internal_decompressor(&mut self) {
         self.record_decompressor.reset();
-        self.record_decompressor.set_fields_from(&self.vlr.items);
+        //we can safely unwrap here, as set_field would have failed in the ::new()
+        self.record_decompressor.set_fields_from(&self.vlr.items).unwrap();
     }
 
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
