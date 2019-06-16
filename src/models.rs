@@ -185,10 +185,6 @@ impl ArithmeticBitModel {
     }
 
     pub fn update(&mut self) {
-        /*  println!(
-            "ArithmeticBitModel::update() -> bit_0_prop: {}",
-            self.bit_0_prob
-        );*/
         // halve counts when a threshold is reached
         self.bit_count += self.update_cycle;
         if self.bit_count > BM_MAX_COUNT {
@@ -210,7 +206,6 @@ impl ArithmeticBitModel {
             self.update_cycle = 64;
         }
         self.bits_until_update = self.update_cycle;
-        //println!("bit_0_prob at end update: {}", self.bit_0_prob);
     }
 }
 

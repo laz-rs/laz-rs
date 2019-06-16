@@ -433,8 +433,6 @@ pub mod v2 {
             buf: &[u8],
         ) -> std::io::Result<()> {
             let this_val = GpsTime::unpack_from(&buf);
-            //println!("Compress gps: current: {:?} last:  {:?}", this_val, self.common.last_gps_times[self.common.last]);
-            // println!("Last diff: {}", self.common.last_gps_time_diffs[self.common.last]);
 
             if !self.compressor_inited {
                 self.ic_gps_time.init();
@@ -458,7 +456,6 @@ pub mod v2 {
                             this_val.value - self.common.last_gps_times[self.common.last].value;
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
-                        //   println!("Diff 64b: {}, diff 32bits: {}", curr_gps_time_diff_64, curr_gps_time_diff_32);
 
                         if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
                             // this difference is small enough to be represented with 32 bits
@@ -488,7 +485,6 @@ pub mod v2 {
                                 }
                             }
                             // no other sequence found. start new sequence.
-                            //  println!("Start new sequence");
                             encoder.encode_symbol(&mut self.common.gps_time_0_diff, 2)?;
                             self.ic_gps_time.compress(
                                 &mut encoder,
@@ -527,7 +523,6 @@ pub mod v2 {
                             let multi_f = curr_gps_time_diff_32 as f32
                                 / self.common.last_gps_time_diffs[self.common.last] as f32;
                             let multi = i32_quantize(multi_f);
-                            //  println!("Multi: {}, multi_f: {}", multi, multi_f);
 
                             // compress the residual curr_gps_time_diff in dependance on the multiplier
                             if multi == 1 {

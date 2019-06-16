@@ -137,7 +137,6 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     pub fn done(&mut self) -> std::io::Result<()> {
-        //   println!("Encoder::done() -> length: {}", self.length);
         // done encoding: set final data bytes
         let init_base = self.base;
         let mut another_byte = true;
@@ -180,7 +179,6 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
 
         let buffer_size = self.out_byte as isize - self.out_buffer.as_ptr() as isize;
-        //   println!("buffersize in encoder.done(): {}", buffer_size);
         if buffer_size != 0 {
             let slc = &self.out_buffer[..buffer_size as usize];
             self.out_stream.write_all(&slc)?
@@ -201,14 +199,9 @@ impl<T: Write> ArithmeticEncoder<T> {
         sym: u32,
     ) -> std::io::Result<()> {
         debug_assert!(sym <= 1);
-        //  println!("Encoder::encode_bit() -> sym: {}", sym);
-
         // product l x p0
         let x = model.bit_0_prob * (self.length >> models::BM_LENGTH_SHIFT);
-        /*   println!(
-            "bit_0_prob: {}, length: {} => x: {}",
-            model.bit_0_prob, self.length, x
-        );*/
+
         //update interval
         if sym == 0 {
             self.length = x;
@@ -231,7 +224,6 @@ impl<T: Write> ArithmeticEncoder<T> {
             model.update();
         }
         Ok(())
-        //println!("length at end of encode bit: {}", self.length);
     }
 
     pub fn encode_symbol(
@@ -239,10 +231,6 @@ impl<T: Write> ArithmeticEncoder<T> {
         model: &mut models::ArithmeticModel,
         sym: u32,
     ) -> std::io::Result<()> {
-        /*    println!(
-            "\nencode_symbol -> length: {}, symbol: {}, last symbol: {}",
-            self.length, sym, model.last_symbol
-        );*/
         debug_assert!(sym <= model.last_symbol);
 
         let x;
@@ -255,19 +243,11 @@ impl<T: Write> ArithmeticEncoder<T> {
             self.length -= x; // no product needed
         } else {
             self.length >>= DM_LENGTH_SHIFT;
-            // println!("length: {}", self.length);
             x = model.distribution[sym as usize] * self.length;
             self.base = self.base.wrapping_add(x);
             //self.base += x;
             self.length = model.distribution[(sym + 1) as usize] * self.length - x;
-            /*
-            println!(
-                "length: {}, sym + 1: {}, model.distrib: {}",
-                self.length,
-                sym + 1,
-                model.distribution[(sym + 1) as usize]
-            );
-            */
+
         }
 
         if init_base > self.base {
@@ -282,13 +262,11 @@ impl<T: Write> ArithmeticEncoder<T> {
             model.update();
         }
         Ok(())
-        //  println!("length at end of encoder symbol: {}", self.length);
     }
 
     /* Encode a bit without modelling  */
     // again sym is a bool
     pub fn write_bit(&mut self, sym: u32) -> std::io::Result<()> {
-        //println!("write_bit");
         assert!(sym <= 1);
 
         let init_base = self.base;
@@ -308,7 +286,6 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     pub fn write_bits(&mut self, mut bits: u32, mut sym: u32) -> std::io::Result<()> {
-        // println!("write_bits");
         assert!(bits <= 32 && sym < (1u32 << bits));
 
         if bits > 19 {
@@ -334,7 +311,6 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     pub fn write_byte(&mut self, sym: u8) -> std::io::Result<()> {
-        //   println!("write_byte");
         let init_base = self.base;
         self.length >>= 8;
 
@@ -351,7 +327,6 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     pub fn write_short(&mut self, sym: u16) -> std::io::Result<()> {
-        //  println!("write_short");
         let init_base = self.base;
         self.length >>= 16;
 
@@ -428,13 +403,6 @@ impl<T: Write> ArithmeticEncoder<T> {
                 .offset((2 * AC_BUFFER_SIZE) as isize)
         };
         loop {
-            /*
-            println!(
-                "ArithmeticEncoder::renorm_enc_interval: {} -> {}",
-                self.length,
-                self.length << 8
-            );
-            */
             assert!(self.out_buffer.as_ptr() <= self.out_byte);
             assert!(self.out_byte < endbuffer);
             assert!((self.out_byte as *const u8) < self.end_byte);

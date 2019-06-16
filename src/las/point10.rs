@@ -714,7 +714,6 @@ pub mod v2 {
             buf: &[u8],
         ) -> std::io::Result<()> {
             let this_val = Point10::unpack_from(&buf);
-            //            println!("THIS VAL: {:?}", this_val);
 
             if !self.compressor_inited {
                 self.ic_intensity.init();
@@ -747,14 +746,12 @@ pub mod v2 {
                     .encode_symbol(&mut self.common.changed_values, changed_values.value as u32)?;
 
                 if changed_values.bit_fields_changed() {
-                    //  println!("-> Bit fields");
                     let b = this_val.bit_fields_to_byte();
                     let last_b = self.common.last_point.bit_fields_to_byte();
                     encoder.encode_symbol(&mut self.common.bit_byte[last_b as usize], b as u32)?;
                 }
 
                 if changed_values.intensity_changed() {
-                    //  println!("-> Intensity");
                     self.ic_intensity.compress(
                         &mut encoder,
                         self.common.last_intensity[m as usize] as i32,
@@ -765,7 +762,6 @@ pub mod v2 {
                 }
 
                 if changed_values.classification_changed() {
-                    //  println!("-> Classification");
                     encoder.encode_symbol(
                         &mut self.common.classification
                             [self.common.last_point.classification as usize],
@@ -774,7 +770,6 @@ pub mod v2 {
                 }
 
                 if changed_values.scan_angle_rank_changed() {
-                    //  println!("-> Scan angle rank, las {}, current: {}", self.common.last_point.scan_angle_rank, this_val.scan_angle_rank);
                     // the "as u8" before "as u32" is vital
                     encoder.encode_symbol(
                         &mut self.common.scan_angle_rank[this_val.scan_direction_flag as usize],
@@ -784,7 +779,6 @@ pub mod v2 {
                 }
 
                 if changed_values.user_data_changed() {
-                    //    println!("-> UserData");
                     encoder.encode_symbol(
                         &mut self.common.user_data[self.common.last_point.user_data as usize],
                         this_val.user_data as u32,
@@ -792,7 +786,6 @@ pub mod v2 {
                 }
 
                 if changed_values.point_source_id_changed() {
-                    //  println!("-> PointSourceId");
                     self.ic_point_source_id.compress(
                         &mut encoder,
                         self.common.last_point.point_source_id as i32,
@@ -801,7 +794,6 @@ pub mod v2 {
                     )?;
                 }
 
-                //   println!("-> X");
                 //compress x coordinates
                 let median = self.common.last_x_diff_median[m as usize].get();
                 let diff = this_val.x - self.common.last_point.x;
@@ -809,7 +801,6 @@ pub mod v2 {
                     .compress(&mut encoder, median, diff, (n == 1) as u32)?;
                 self.common.last_x_diff_median[m as usize].add(diff);
 
-                //  println!("-> Y");
                 //compress y coordinates
                 let k_bits = self.ic_dx.k();
                 let median = self.common.last_y_diff_median[m as usize].get();
@@ -823,7 +814,6 @@ pub mod v2 {
                 self.ic_dy.compress(&mut encoder, median, diff, context)?;
                 self.common.last_y_diff_median[m as usize].add(diff);
 
-                //    println!("-> Z, current: {}, last.z: {}, last_height[l]: {}",this_val.z, self.common.last_point.z, self.common.last_height[l as usize]);
                 //compress z coordinates
                 let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
                 let context = (n == 1) as u32
@@ -901,7 +891,6 @@ pub mod v2 {
                 self.ic_z.init();
                 self.decompressor_inited = true;
             }
-            //println!("last: {:?}", self.common.last_point);
             if !self.common.have_last {
                 decoder.in_stream().read_exact(&mut buf)?;
                 self.common.last_point = Point10::unpack_from(&buf);
@@ -1016,7 +1005,6 @@ pub mod v2 {
                 )?;
                 self.common.last_height[l as usize] = self.common.last_point.z;
 
-                //  println!("Current: {:?}", self.common.last_point);
                 self.common.last_point.pack_into(&mut buf);
             }
             Ok(())

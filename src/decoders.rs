@@ -123,16 +123,13 @@ impl<T: Read> ArithmeticDecoder<T> {
         self.in_stream.read_exact(&mut v)?;
 
         self.value = (v[0] as u32) << 24 | (v[1] as u32) << 16 | (v[2] as u32) << 8 | v[3] as u32;
-        //    println!("read_init_bytes gives value {:?}", self.value);
         Ok(())
     }
 
     pub fn decode_bit(&mut self, model: &mut models::ArithmeticBitModel) -> std::io::Result<u32> {
-        //   println!("ArithmeticDecoder::decode_bit -> length {}", self.length);
         let x = model.bit_0_prob * (self.length >> models::BM_LENGTH_SHIFT); // product l x p0
-                                                                             //println!("bit0prob: {}, x: {}", model.bit_0_prob, x);
+
         let sym = self.value >= x;
-        //   println!("value {}, sym: {}", self.value, sym);
 
         if !sym {
             self.length = x;
@@ -148,15 +145,10 @@ impl<T: Read> ArithmeticDecoder<T> {
         if model.bits_until_update == 0 {
             model.update();
         }
-        // println!("length at end of decode bit {}", self.length);
         Ok(sym as u32)
     }
 
     pub fn decode_symbol(&mut self, model: &mut models::ArithmeticModel) -> std::io::Result<u32> {
-        /*  println!(
-            "\nArthmeticDecoder::decode_symbol -> length: {}, value: {}",
-            self.length, self.value
-        );*/
         let mut sym;
         let mut n;
         let mut x;
@@ -170,12 +162,6 @@ impl<T: Read> ArithmeticDecoder<T> {
 
             sym = model.decoder_table[t as usize]; // initial decision based on table look-up
             n = model.decoder_table[t as usize + 1] + 1;
-            /*   println!(
-                "table: {:?}, len: {}",
-                model.decoder_table,
-                model.decoder_table.len()
-            );*/
-            //      println!("t: {}, sym: {}, n: {}", t, sym, n);
 
             while n > sym + 1 {
                 // finish with bisection search
@@ -186,12 +172,7 @@ impl<T: Read> ArithmeticDecoder<T> {
                     sym = k;
                 }
             }
-            /*
             // compute products
-            println!(
-                "sym: {}, model.distribution: {}",
-                sym, model.distribution[sym as usize]
-            );*/
             x = model.distribution[sym as usize] * self.length;
             if sym != model.last_symbol {
                 y = model.distribution[sym as usize + 1] * self.length;
@@ -220,36 +201,21 @@ impl<T: Read> ArithmeticDecoder<T> {
             }
         }
         // update interval
-        // println!("VALUE: {}, X: {}", self.value, x);
         self.value -= x;
         self.length = y - x;
-        /*
-        println!(
-            "length {} should renorm: {}",
-            self.length,
-            self.length < AC_MIN_LENGTH
-        );
-        */
+
         if self.length < AC_MIN_LENGTH {
             self.renorm_dec_interval()?;
         }
         model.symbol_count[sym as usize] += 1;
         model.symbols_until_update -= 1;
-        //   println!("Symbols until update: {}", model.symbols_until_update);
         if model.symbols_until_update == 0 {
             model.update();
         }
-        /*
-        println!(
-            "length at end of decode symbol: {} -> symbol: {}",
-            self.length, sym
-        );
-        */
         Ok(sym)
     }
 
     pub fn read_bit(&mut self) -> std::io::Result<u32> {
-        //    println!("read_bit");
         // decode symbol, change length
         self.length >>= 1;
         let sym = self.value / self.length;
@@ -263,7 +229,6 @@ impl<T: Read> ArithmeticDecoder<T> {
     }
 
     pub fn read_bits(&mut self, mut bits: u32) -> std::io::Result<u32> {
-        // println!("read_bits");
         assert!(bits > 0 && (bits <= 32));
         if bits > 19 {
             let tmp = self.read_short()? as u32;
@@ -287,7 +252,6 @@ impl<T: Read> ArithmeticDecoder<T> {
 
     #[allow(dead_code)]
     fn read_byte(&mut self) -> std::io::Result<u8> {
-        //  println!("read_byte");
         // decode symbol, change length
         self.length >>= 8;
         let sym = self.value / self.length;
@@ -301,7 +265,6 @@ impl<T: Read> ArithmeticDecoder<T> {
     }
 
     fn read_short(&mut self) -> std::io::Result<u16> {
-        //println!("read_short");
         // decode symbol, change length
         self.length >>= 16;
         let sym = self.value / self.length;
@@ -315,14 +278,12 @@ impl<T: Read> ArithmeticDecoder<T> {
     }
 
     pub fn read_int(&mut self) -> std::io::Result<u32> {
-        //  println!("read_int");
         let lower_int = self.read_short()?;
         let upper_int = self.read_short()?;
         Ok((upper_int as u32) << 16 | (lower_int) as u32)
     }
 
     pub fn read_int_64(&mut self) -> std::io::Result<u64> {
-        // println!("read_int_64");
         let lower_int = self.read_int()? as u64;
         let upper_int = self.read_int()? as u64;
         Ok((upper_int << 32) | lower_int)
@@ -330,7 +291,6 @@ impl<T: Read> ArithmeticDecoder<T> {
 
     //TODO readFloat, readDouble
     fn renorm_dec_interval(&mut self) -> std::io::Result<()> {
-        // println!("ArithmeticDecoder::renorm_dec_interval()");
         loop {
             self.value = (self.value << 8) | self.in_stream.read_u8()? as u32;
             self.length <<= 8;

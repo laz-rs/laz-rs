@@ -146,11 +146,6 @@ impl IntegerCompressor {
         real: i32,
         context: u32,
     ) -> std::io::Result<()> {
-        /*
-        println!(
-            "IntegerCompressor::compress(), pred: {}, real: {}, context: {}",
-            pred, real, context
-        );*/
         // the corrector will be within the interval [ - (corr_range - 1)  ...  + (corr_range - 1) ]
         let mut corr = real.wrapping_sub(pred);
         // we fold the corrector into the interval [ corr_min  ...  corr_max ]
@@ -184,7 +179,6 @@ impl IntegerCompressor {
             //TODO
             Ok(())
         } else {
-            // print!("k: {} , c: {}, bits_high: {}", self.k, c, self.bits_high);
             if self.k != 0 {
                 // then c is either smaller than 0 or bigger than 1
                 assert!(c != 0 && c != 1);
@@ -195,7 +189,6 @@ impl IntegerCompressor {
                         c -= 1;
                     } else {
                         // so we translate c into the interval [ 0 ...  + 2^(k-1) - 1 ] by adding (2^k - 1)
-                        //println!("k {} -> {} -> {}", self.k,  1 << self.k, ((1u32 << self.k) as u32).wrapping_sub(1));
                         c += ((1u32 << self.k) - 1) as i32;
                     }
 
