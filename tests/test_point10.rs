@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use laz::formats::{RecordCompressor, RecordDecompressor};
+use laz::record::{RecordCompressor, RecordDecompressor};
 use laz::las::gps::{v2::GpsTimeCompressor, v2::GpsTimeDecompressor, GpsTime};
 use laz::las::point10::{v2::Point10Compressor, v2::Point10Decompressor, Point10};
 use laz::las::rgb::{v2::RGBCompressor, v2::RGBDecompressor, RGB};
@@ -37,7 +37,7 @@ fn test_compression_decompression_of_point_10() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = RecordDecompressor::new(std::io::Cursor::new(compressed_data));
-    decompressor.add_field(Point10Decompressor::new());
+    decompressor.add_field_decompressor(Point10Decompressor::new());
 
     for i in 0..n {
         decompressor.decompress(&mut buf).unwrap();
@@ -85,7 +85,7 @@ fn test_rgb() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = RecordDecompressor::new(std::io::Cursor::new(compressed_data));
-    decompressor.add_field(RGBDecompressor::new());
+    decompressor.add_field_decompressor(RGBDecompressor::new());
 
     for i in 0..n {
         let expected_rgb = RGB {
@@ -122,7 +122,7 @@ fn test_gps_time() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
-    decompressor.add_field(GpsTimeDecompressor::new());
+    decompressor.add_field_decompressor(GpsTimeDecompressor::new());
 
     for i in 0..n {
         let expected_gps_time = GpsTime {

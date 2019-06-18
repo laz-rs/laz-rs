@@ -85,7 +85,7 @@ pub mod v1 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::record::{FieldCompressor, FieldDecompressor};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
 
@@ -369,7 +369,7 @@ pub mod v2 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::record::{FieldCompressor, FieldDecompressor};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
 

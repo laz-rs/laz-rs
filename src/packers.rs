@@ -35,19 +35,31 @@ impl Packable for u32 {
     type Type = u32;
 
     fn unpack_from(input: &[u8]) -> Self::Type {
-        let b1 = input[0] as u32;
-        let b2 = input[1] as u32;
-        let b3 = input[2] as u32;
-        let b4 = input[3] as u32;
+        if input.len() < 4 {
+            panic!("u32::unpack_from expected a buffer of 4 bytes");
+        }
+        unsafe {
+            let b1 = *input.get_unchecked(0) as u32;
+            let b2 = *input.get_unchecked(1) as u32;
+            let b3 = *input.get_unchecked(2) as u32;
+            let b4 = *input.get_unchecked(3) as u32;
 
-        b4 << 24 | (b3 & 0xFFF) << 16 | (b2 & 0xFF) << 8 | b1 & 0xFF
+            b4 << 24 | (b3 & 0xFFF) << 16 | (b2 & 0xFF) << 8 | b1 & 0xFF
+        }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        output[3] = ((self >> 24) & 0xFFu32) as u8;
-        output[2] = ((self >> 16) & 0xFFu32) as u8;
-        output[1] = ((self >> 8) & 0xFFu32) as u8;
-        output[0] = (self & 0xFFu32) as u8;
+        if output.len() < 4 {
+            panic!("u32::pack_into expected a buffer of 4 bytes");
+        }
+
+        unsafe {
+            *output.get_unchecked_mut(3) = ((self >> 24) & 0xFFu32) as u8;
+            *output.get_unchecked_mut(2) = ((self >> 16) & 0xFFu32) as u8;
+            *output.get_unchecked_mut(1) = ((self >> 8) & 0xFFu32) as u8;
+            *output.get_unchecked_mut(0) = (self & 0xFFu32) as u8;
+        }
+
     }
 }
 
@@ -55,15 +67,26 @@ impl Packable for u16 {
     type Type = u16;
 
     fn unpack_from(input: &[u8]) -> Self::Type {
-        let b1 = input[0] as u16;
-        let b2 = input[1] as u16;
+        if input.len() < 2 {
+            panic!("u16::unpack_from expected a buffer of 2 bytes");
+        }
+        unsafe {
+            let b1 = *input.get_unchecked(0) as u16;
+            let b2 = *input.get_unchecked(1) as u16;
 
-        (b2 & 0xFF) << 8 | (b1 & 0xFF)
+            (b2 & 0xFF) << 8 | (b1 & 0xFF)
+        }
+
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        output[1] = ((self >> 8) & 0xFFu16) as u8;
-        output[0] = (self & 0xFFu16) as u8
+        if output.len() < 2 {
+            panic!("u16::pack_into expected a buffer of 2 bytes");
+        }
+        unsafe {
+            *output.get_unchecked_mut(1) = ((self >> 8) & 0xFFu16) as u8;
+            *output.get_unchecked_mut(0) = (self & 0xFFu16) as u8
+        }
     }
 }
 

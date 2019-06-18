@@ -1,4 +1,4 @@
-use laz::formats::{RecordCompressor, RecordDecompressor};
+use laz::record::{RecordCompressor, RecordDecompressor};
 use laz::las::{gps, point10, rgb};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
@@ -32,9 +32,9 @@ fn main() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = RecordDecompressor::new(compression_output);
-    decompressor.add_field(point10::v2::Point10Decompressor::new());
-    decompressor.add_field(gps::v2::GpsTimeDecompressor::new());
-    decompressor.add_field(rgb::v2::RGBDecompressor::new());
+    decompressor.add_field_decompressor(point10::v2::Point10Decompressor::new());
+    decompressor.add_field_decompressor(gps::v2::GpsTimeDecompressor::new());
+    decompressor.add_field_decompressor(rgb::v2::RGBDecompressor::new());
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for i in 0..NUM_POINTS {

@@ -5,7 +5,7 @@ pub(crate) mod encoders;
 pub(crate) mod models;
 
 pub mod errors;
-pub mod formats;
+pub mod record;
 pub mod las;
 pub mod packers;
 

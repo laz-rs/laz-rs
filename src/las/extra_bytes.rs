@@ -30,7 +30,7 @@ pub mod v1 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::record::{FieldCompressor, FieldDecompressor};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
 
     pub struct ExtraBytesCompressor {

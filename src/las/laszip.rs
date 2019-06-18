@@ -6,7 +6,7 @@ use crate::compressors::IntegerCompressorBuilder;
 use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
-use crate::formats::{RecordCompressor, RecordDecompressor};
+use crate::record::{RecordCompressor, RecordDecompressor};
 pub use crate::errors::LasZipError;
 
 const SUPPORTED_VERSION: u32 = 2;

@@ -4,7 +4,7 @@ use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use i32;
-use laz::formats::{
+use laz::record::{
     IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor, RecordDecompressor,
 };
 
@@ -29,7 +29,7 @@ fn test_i32_compression_decompression() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
-    decompressor.add_field(IntegerFieldDecompressor::<i32>::new());
+    decompressor.add_field_decompressor(IntegerFieldDecompressor::<i32>::new());
 
     for i in 0..n {
         let mut buf = [0u8; std::mem::size_of::<i32>()];
@@ -55,7 +55,7 @@ fn test_u32_compression_decompression() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
-    decompressor.add_field(IntegerFieldDecompressor::<u32>::new());
+    decompressor.add_field_decompressor(IntegerFieldDecompressor::<u32>::new());
 
     for i in 0..n {
         let mut buf = [0u8; std::mem::size_of::<u32>()];
@@ -106,8 +106,8 @@ fn test_compress_decompress_simple_struct() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = RecordDecompressor::new(Cursor::new(compressed_data));
-    decompressor.add_field(IntegerFieldDecompressor::<i32>::new());
-    decompressor.add_field(IntegerFieldDecompressor::<i16>::new());
+    decompressor.add_field_decompressor(IntegerFieldDecompressor::<i32>::new());
+    decompressor.add_field_decompressor(IntegerFieldDecompressor::<i16>::new());
 
     let mut buf = [0u8; 6];
     for i in 0..1000 {

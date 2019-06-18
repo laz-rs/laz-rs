@@ -74,81 +74,94 @@ impl Packable for Point10 {
     type Type = Point10;
 
     fn unpack_from(input: &[u8]) -> Self::Type {
-        let mut point = Point10::default();
+        if input.len() < 20 {
+            panic!("Point10::unpack_from expected buffer of 20 bytes");
+        }
+        
+        unsafe {
+            let mut point = Point10::default();
 
-        let mut start = 0;
-        let mut end = size_of::<i32>();
-        point.x = i32::unpack_from(&input[start..end]);
-        start += size_of::<i32>();
-        end += size_of::<i32>();
-        point.y = i32::unpack_from(&input[start..end]);
-        start += size_of::<i32>();
-        end += size_of::<i32>();
-        point.z = i32::unpack_from(&input[start..end]);
+            let mut start = 0;
+            let mut end = size_of::<i32>();
+            point.x = i32::unpack_from(&input.get_unchecked(start..end));
+            start += size_of::<i32>();
+            end += size_of::<i32>();
+            point.y = i32::unpack_from(&input.get_unchecked(start..end));
+            start += size_of::<i32>();
+            end += size_of::<i32>();
+            point.z = i32::unpack_from(&input.get_unchecked(start..end));
 
-        start = end;
-        end += size_of::<u16>();
-        point.intensity = u16::unpack_from(&input[start..end]);
+            start = end;
+            end += size_of::<u16>();
+            point.intensity = u16::unpack_from(&input.get_unchecked(start..end));
 
-        start = end;
-        end += size_of::<u8>();
-        let bitfields = u8::unpack_from(&input[start..end]);
-        point.populate_bit_fields_from(bitfields);
+            start = end;
+            end += size_of::<u8>();
+            let bitfields = u8::unpack_from(&input.get_unchecked(start..end));
+            point.populate_bit_fields_from(bitfields);
 
-        start = end;
-        end += size_of::<u8>();
-        point.classification = u8::unpack_from(&input[start..end]);
+            start = end;
+            end += size_of::<u8>();
+            point.classification = u8::unpack_from(&input.get_unchecked(start..end));
 
-        start = end;
-        end += size_of::<i8>();
-        point.scan_angle_rank = i8::unpack_from(&input[start..end]);
+            start = end;
+            end += size_of::<i8>();
+            point.scan_angle_rank = i8::unpack_from(&input.get_unchecked(start..end));
 
-        start = end;
-        end += size_of::<i8>();
-        point.user_data = u8::unpack_from(&input[start..end]);
+            start = end;
+            end += size_of::<i8>();
+            point.user_data = u8::unpack_from(&input.get_unchecked(start..end));
 
-        start = end;
-        end += size_of::<u16>();
-        point.point_source_id = u16::unpack_from(&input[start..end]);
+            start = end;
+            end += size_of::<u16>();
+            point.point_source_id = u16::unpack_from(&input.get_unchecked(start..end));
+            debug_assert_eq!(end, 20);
+            point
+        }
 
-        point
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        let mut start = 0;
-        let mut end = size_of::<i32>();
+        if output.len() < 20 {
+            panic!("Point10::unpack_from expected buffer of 20 bytes");
+        }
+        unsafe {
+            let mut start = 0;
+            let mut end = size_of::<i32>();
 
-        i32::pack_into(&self.x, &mut output[start..end]);
-        start += size_of::<i32>();
-        end += size_of::<i32>();
-        i32::pack_into(&self.y, &mut output[start..end]);
-        start += size_of::<i32>();
-        end += size_of::<i32>();
-        i32::pack_into(&self.z, &mut output[start..end]);
+            i32::pack_into(&self.x, &mut output.get_unchecked_mut(start..end));
+            start += size_of::<i32>();
+            end += size_of::<i32>();
+            i32::pack_into(&self.y, &mut output.get_unchecked_mut(start..end));
+            start += size_of::<i32>();
+            end += size_of::<i32>();
+            i32::pack_into(&self.z, &mut output.get_unchecked_mut(start..end));
 
-        start = end;
-        end += size_of::<u16>();
-        u16::pack_into(&self.intensity, &mut output[start..end]);
+            start = end;
+            end += size_of::<u16>();
+            u16::pack_into(&self.intensity, &mut output.get_unchecked_mut(start..end));
 
-        start = end;
-        end += size_of::<u8>();
-        u8::pack_into(&self.bit_fields_to_byte(), &mut output[start..end]);
+            start = end;
+            end += size_of::<u8>();
+            u8::pack_into(&self.bit_fields_to_byte(), &mut output.get_unchecked_mut(start..end));
 
-        start = end;
-        end += size_of::<u8>();
-        u8::pack_into(&self.classification, &mut output[start..end]);
+            start = end;
+            end += size_of::<u8>();
+            u8::pack_into(&self.classification, &mut output.get_unchecked_mut(start..end));
 
-        start = end;
-        end += size_of::<i8>();
-        i8::pack_into(&self.scan_angle_rank, &mut output[start..end]);
+            start = end;
+            end += size_of::<i8>();
+            i8::pack_into(&self.scan_angle_rank, &mut output.get_unchecked_mut(start..end));
 
-        start = end;
-        end += size_of::<i8>();
-        u8::pack_into(&self.user_data, &mut output[start..end]);
+            start = end;
+            end += size_of::<i8>();
+            u8::pack_into(&self.user_data, &mut output.get_unchecked_mut(start..end));
 
-        start = end;
-        end += size_of::<u16>();
-        u16::pack_into(&self.point_source_id, &mut output[start..end]);
+            start = end;
+            end += size_of::<u16>();
+            u16::pack_into(&self.point_source_id, &mut output.get_unchecked_mut(start..end));
+            debug_assert_eq!(end, 20);
+        }
     }
 }
 
@@ -163,7 +176,7 @@ pub mod v1 {
         IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
     };
     use crate::encoders::ArithmeticEncoder;
-    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::record::{FieldCompressor, FieldDecompressor};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
 
@@ -542,7 +555,7 @@ pub mod v2 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::formats::{FieldCompressor, FieldDecompressor};
+    use crate::record::{FieldCompressor, FieldDecompressor};
     use crate::las::utils;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
@@ -678,27 +691,24 @@ pub mod v2 {
         ic_dx: IntegerCompressor,
         ic_dy: IntegerCompressor,
         ic_z: IntegerCompressor,
-
         common: Common,
-        compressor_inited: bool,
     }
 
     impl Point10Compressor {
         pub fn new() -> Self {
             Self {
-                ic_intensity: IntegerCompressorBuilder::new().bits(16).contexts(4).build(),
-                ic_point_source_id: IntegerCompressorBuilder::new().bits(16).build(),
-                ic_dx: IntegerCompressorBuilder::new().bits(32).contexts(2).build(),
+                ic_intensity: IntegerCompressorBuilder::new().bits(16).contexts(4).build_initialized(),
+                ic_point_source_id: IntegerCompressorBuilder::new().bits(16).build_initialized(),
+                ic_dx: IntegerCompressorBuilder::new().bits(32).contexts(2).build_initialized(),
                 ic_dy: IntegerCompressorBuilder::new()
                     .bits(32)
                     .contexts(22)
-                    .build(),
+                    .build_initialized(),
                 ic_z: IntegerCompressorBuilder::new()
                     .bits(32)
                     .contexts(20)
-                    .build(),
+                    .build_initialized(),
                 common: Common::new(),
-                compressor_inited: false,
             }
         }
     }
@@ -714,15 +724,6 @@ pub mod v2 {
             buf: &[u8],
         ) -> std::io::Result<()> {
             let this_val = Point10::unpack_from(&buf);
-
-            if !self.compressor_inited {
-                self.ic_intensity.init();
-                self.ic_point_source_id.init();
-                self.ic_dx.init();
-                self.ic_dy.init();
-                self.ic_z.init();
-                self.compressor_inited = true;
-            }
 
             if !self.common.have_last {
                 // don't have the first data yet, just push it to our have last stuff and move on
@@ -844,7 +845,6 @@ pub mod v2 {
         ic_z: IntegerDecompressor,
 
         common: Common,
-        decompressor_inited: bool,
     }
 
     impl Point10Decompressor {
@@ -853,22 +853,21 @@ pub mod v2 {
                 ic_intensity: IntegerDecompressorBuilder::new()
                     .bits(16)
                     .contexts(4)
-                    .build(),
-                ic_point_source_id: IntegerDecompressorBuilder::new().bits(16).build(),
+                    .build_initialized(),
+                ic_point_source_id: IntegerDecompressorBuilder::new().bits(16).build_initialized(),
                 ic_dx: IntegerDecompressorBuilder::new()
                     .bits(32)
                     .contexts(2)
-                    .build(),
+                    .build_initialized(),
                 ic_dy: IntegerDecompressorBuilder::new()
                     .bits(32)
                     .contexts(22)
-                    .build(),
+                    .build_initialized(),
                 ic_z: IntegerDecompressorBuilder::new()
                     .bits(32)
                     .contexts(20)
-                    .build(),
+                    .build_initialized(),
                 common: Common::new(),
-                decompressor_inited: false,
             }
         }
     }
@@ -883,14 +882,6 @@ pub mod v2 {
             mut decoder: &mut ArithmeticDecoder<R>,
             mut buf: &mut [u8],
         ) -> std::io::Result<()> {
-            if !self.decompressor_inited {
-                self.ic_intensity.init();
-                self.ic_point_source_id.init();
-                self.ic_dx.init();
-                self.ic_dy.init();
-                self.ic_z.init();
-                self.decompressor_inited = true;
-            }
             if !self.common.have_last {
                 decoder.in_stream().read_exact(&mut buf)?;
                 self.common.last_point = Point10::unpack_from(&buf);

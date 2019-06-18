@@ -2,7 +2,7 @@ use laz::las::{extra_bytes, gps, point10, rgb};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use laz::formats::{RecordCompressor, RecordDecompressor};
+use laz::record::{RecordCompressor, RecordDecompressor};
 
 const LAS_HEADER_SIZE: u64 = 227;
 const NUM_POINTS: usize = 1065;
@@ -29,7 +29,7 @@ fn test_point_format_0_version_1_loop() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = RecordDecompressor::new(compression_output);
-    decompressor.add_field(point10::v1::Point10Decompressor::new());
+    decompressor.add_field_decompressor(point10::v1::Point10Decompressor::new());
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for i in 0..NUM_POINTS {
@@ -64,8 +64,8 @@ fn test_point_format_1_version_1_loop() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = RecordDecompressor::new(compression_output);
-    decompressor.add_field(point10::v1::Point10Decompressor::new());
-    decompressor.add_field(gps::v1::GpsTimeDecompressor::new());
+    decompressor.add_field_decompressor(point10::v1::Point10Decompressor::new());
+    decompressor.add_field_decompressor(gps::v1::GpsTimeDecompressor::new());
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for i in 0..NUM_POINTS {
@@ -100,8 +100,8 @@ fn test_point_format_2_version_1_loop() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = RecordDecompressor::new(compression_output);
-    decompressor.add_field(point10::v1::Point10Decompressor::new());
-    decompressor.add_field(rgb::v1::RGBDecompressor::new());
+    decompressor.add_field_decompressor(point10::v1::Point10Decompressor::new());
+    decompressor.add_field_decompressor(rgb::v1::RGBDecompressor::new());
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for i in 0..NUM_POINTS {
@@ -137,9 +137,9 @@ fn test_point_format_3_version_1_loop() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = RecordDecompressor::new(compression_output);
-    decompressor.add_field(point10::v1::Point10Decompressor::new());
-    decompressor.add_field(gps::v1::GpsTimeDecompressor::new());
-    decompressor.add_field(rgb::v1::RGBDecompressor::new());
+    decompressor.add_field_decompressor(point10::v1::Point10Decompressor::new());
+    decompressor.add_field_decompressor(gps::v1::GpsTimeDecompressor::new());
+    decompressor.add_field_decompressor(rgb::v1::RGBDecompressor::new());
 
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
     for i in 0..NUM_POINTS {
@@ -182,10 +182,10 @@ fn test_point_format_3_with_extra_bytes_version_1_loop() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = RecordDecompressor::new(compression_output);
-    decompressor.add_field(point10::v1::Point10Decompressor::new());
-    decompressor.add_field(gps::v1::GpsTimeDecompressor::new());
-    decompressor.add_field(rgb::v1::RGBDecompressor::new());
-    decompressor.add_field(extra_bytes::v1::ExtraBytesDecompressor::new(27));
+    decompressor.add_field_decompressor(point10::v1::Point10Decompressor::new());
+    decompressor.add_field_decompressor(gps::v1::GpsTimeDecompressor::new());
+    decompressor.add_field_decompressor(rgb::v1::RGBDecompressor::new());
+    decompressor.add_field_decompressor(extra_bytes::v1::ExtraBytesDecompressor::new(27));
 
     // account for the extra bytes vlr
     las_file

@@ -25,7 +25,7 @@ pub trait FieldDecompressor<R: Read> {
 }
 
 pub struct RecordDecompressor<R: Read> {
-    fields: Vec<Box<dyn FieldDecompressor<R>>>,
+    field_decompressors: Vec<Box<dyn FieldDecompressor<R>>>,
     decoder: decoders::ArithmeticDecoder<R>,
     first_decompression: bool,
     record_size: usize,
@@ -38,16 +38,16 @@ impl<R: Read> RecordDecompressor<R> {
 
     pub fn with_decoder(decoder: decoders::ArithmeticDecoder<R>) -> Self {
         Self {
-            fields: vec![],
+            field_decompressors: vec![],
             decoder,
             first_decompression: true,
             record_size: 0,
         }
     }
 
-    pub fn add_field<T: 'static + FieldDecompressor<R>>(&mut self, field: T) {
+    pub fn add_field_decompressor<T: 'static + FieldDecompressor<R>>(&mut self, field: T) {
         self.record_size += field.size_of_field();
-        self.fields.push(Box::new(field));
+        self.field_decompressors.push(Box::new(field));
     }
 
     pub fn record_size(&self) -> usize {
@@ -55,14 +55,8 @@ impl<R: Read> RecordDecompressor<R> {
     }
 
     pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        // FIXME to avoid having to check, & to avoid the user doing the mistake why not have the
-        //  record_decompressor own the buffer and returns it on each decompress
-        //  -> std::io::Result<&[u8]>; ?
-       // if out.len() < self.record_size() {
-       //     panic!("Input buffer to small")
-       // }
         let mut field_start = 0;
-        for field in &mut self.fields {
+        for field in &mut self.field_decompressors {
             let field_end = field_start + field.size_of_field();
             field.decompress_with(&mut self.decoder, &mut out[field_start..field_end])?;
             field_start = field_end;
@@ -88,7 +82,7 @@ impl<R: Read> RecordDecompressor<R> {
     pub fn reset(&mut self) {
         self.decoder.reset();
         self.first_decompression = true;
-        self.fields.clear();
+        self.field_decompressors.clear();
         self.record_size = 0;
     }
 
@@ -97,31 +91,31 @@ impl<R: Read> RecordDecompressor<R> {
             match record_item.version {
                 1 => match record_item.item_type {
                     LazItemType::Byte(_) => {
-                        self.add_field(las::v1::ExtraBytesDecompressor::new(
+                        self.add_field_decompressor(las::v1::ExtraBytesDecompressor::new(
                             record_item.size as usize,
                         ))
                     }
                     LazItemType::Point10 => {
-                        self.add_field(las::v1::Point10Decompressor::new())
+                        self.add_field_decompressor(las::v1::Point10Decompressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field(las::v1::GpsTimeDecompressor::new())
+                        self.add_field_decompressor(las::v1::GpsTimeDecompressor::new())
                     }
-                    LazItemType::RGB12 => self.add_field(las::v1::RGBDecompressor::new()),
+                    LazItemType::RGB12 => self.add_field_decompressor(las::v1::RGBDecompressor::new()),
                 },
                 2 => match record_item.item_type {
                     LazItemType::Byte(_) => {
-                        self.add_field(las::v2::ExtraBytesDecompressor::new(
+                        self.add_field_decompressor(las::v2::ExtraBytesDecompressor::new(
                             record_item.size as usize,
                         ))
                     }
                     LazItemType::Point10 => {
-                        self.add_field(las::v2::Point10Decompressor::new())
+                        self.add_field_decompressor(las::v2::Point10Decompressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field(las::v2::GpsTimeDecompressor::new())
+                        self.add_field_decompressor(las::v2::GpsTimeDecompressor::new())
                     }
-                    LazItemType::RGB12 => self.add_field(las::v2::RGBDecompressor::new()),
+                    LazItemType::RGB12 => self.add_field_decompressor(las::v2::RGBDecompressor::new()),
                 },
                 _ => return  Err(LasZipError::UnsupportedLazItemVersion(
                     record_item.item_type,
@@ -171,9 +165,6 @@ impl<W: Write> RecordCompressor<W> {
     }
 
     pub fn compress(&mut self, input: &[u8]) -> std::io::Result<()> {
-//        if input.len() < self.record_size() {
-//            panic!("Input buffer to small")
-//        }
 
         let mut field_start = 0;
         for field in &mut self.field_compressors {
