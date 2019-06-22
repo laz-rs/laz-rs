@@ -8,6 +8,8 @@ exclude = [
     "tests/data",
 ]
 
+[profile.release]
+debug = true
 
 [dependencies]
 num-traits = "0.2.8"

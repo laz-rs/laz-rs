@@ -6,18 +6,15 @@ use crate::compressors::IntegerCompressorBuilder;
 use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
-use crate::record::{RecordCompressor, RecordDecompressor};
 pub use crate::errors::LasZipError;
+use crate::record::{BufferRecordCompressor, BufferRecordDecompressor};
 
 const SUPPORTED_VERSION: u32 = 2;
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
-
 pub const LASZIP_USER_ID: &'static str = "laszip encoded";
 pub const LASZIP_RECORD_ID: u16 = 22204;
 pub const LASZIP_DESCRIPTION: &'static str = "http://laszip.org";
-
-
 
 #[derive(Debug)]
 struct Version {
@@ -66,7 +63,7 @@ impl From<LazItemType> for u16 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct LazItem {
     // coded on a u16
     pub(crate) item_type: LazItemType,
@@ -260,6 +257,13 @@ impl LazVlr {
         write_laz_items_to(&self.items, &mut dst)?;
         Ok(())
     }
+    pub fn items(&self) -> &Vec<LazItem> {
+        &self.items
+    }
+
+    pub fn items_size(&self) -> u64 {
+        u64::from(self.items.iter().map(|item| item.size).sum::<u16>())
+    }
 }
 
 impl Default for LazVlr {
@@ -282,13 +286,13 @@ impl Default for LazVlr {
 }
 
 pub struct LazVlrBuilder {
-    laz_vlr: LazVlr
+    laz_vlr: LazVlr,
 }
 
 impl LazVlrBuilder {
     pub fn new() -> Self {
         Self {
-            laz_vlr: Default::default()
+            laz_vlr: Default::default(),
         }
     }
 
@@ -296,7 +300,6 @@ impl LazVlrBuilder {
         self.laz_vlr.chunk_size = chunk_size;
         self
     }
-
 
     pub fn with_laz_items(mut self, laz_items: Vec<LazItem>) -> Self {
         self.laz_vlr.items = laz_items;
@@ -311,7 +314,7 @@ impl LazVlrBuilder {
 //TODO: would it be possible to extract some logic to a ChunkedCompressor & ChunkedDecompressor ?
 pub struct LasZipDecompressor<R: Read + Seek> {
     vlr: LazVlr,
-    record_decompressor: RecordDecompressor<R>,
+    record_decompressor: BufferRecordDecompressor<R>,
     chunk_points_read: u32,
     offset_to_chunk_table: i64,
     data_start: u64,
@@ -319,7 +322,10 @@ pub struct LasZipDecompressor<R: Read + Seek> {
 }
 
 impl<R: Read + Seek> LasZipDecompressor<R> {
-    pub fn new_with_record_data(source: R, laszip_vlr_record_data: &[u8]) -> Result<Self, LasZipError> {
+    pub fn new_with_record_data(
+        source: R,
+        laszip_vlr_record_data: &[u8],
+    ) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_buffer(laszip_vlr_record_data)?;
         Self::new(source, vlr)
     }
@@ -332,7 +338,7 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
         let offset_to_chunk_table = source.read_i64::<LittleEndian>()?;
         let data_start = source.seek(SeekFrom::Current(0))?;
         let mut record_decompressor =
-            RecordDecompressor::with_decoder(ArithmeticDecoder::new(source));
+            BufferRecordDecompressor::with_decoder(ArithmeticDecoder::new(source));
         record_decompressor.set_fields_from(&vlr.items)?;
 
         Ok(Self {
@@ -386,7 +392,8 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
 
                 for _i in 0..delta {
                     self.decompress_one(&mut tmp_out)?;
-                    let current_pos = self.record_decompressor
+                    let current_pos = self
+                        .record_decompressor
                         .borrow_mut_stream()
                         .seek(SeekFrom::Current(0))?;
 
@@ -413,7 +420,9 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
 
                 // Seek to the end so that the next call to decompress causes en error
                 // like "Failed to fill whole buffer (seeking past end is allowed by the Trait
-                self.record_decompressor.borrow_mut_stream().seek(SeekFrom::End(0))?;
+                self.record_decompressor
+                    .borrow_mut_stream()
+                    .seek(SeekFrom::End(0))?;
             }
             Ok(())
         } else {
@@ -430,7 +439,9 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
     fn reset_internal_decompressor(&mut self) {
         self.record_decompressor.reset();
         //we can safely unwrap here, as set_field would have failed in the ::new()
-        self.record_decompressor.set_fields_from(&self.vlr.items).unwrap();
+        self.record_decompressor
+            .set_fields_from(&self.vlr.items)
+            .unwrap();
     }
 
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
@@ -456,14 +467,19 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
         for i in 1..=number_of_chunks {
             chunk_sizes[(i - 1) as usize] = decompressor.decompress(
                 &mut decoder,
-                if i > 1 { chunk_sizes[(i - 2) as usize] } else { 0 } as i32,
+                if i > 1 {
+                    chunk_sizes[(i - 2) as usize]
+                } else {
+                    0
+                } as i32,
                 1,
             )? as u64;
         }
         let mut chunk_starts = vec![0u64; number_of_chunks as usize];
         chunk_starts[0] = self.data_start;
         for i in 1..number_of_chunks {
-            chunk_starts[i as usize] = chunk_sizes[(i - 1) as usize] + chunk_starts[(i -1) as usize];
+            chunk_starts[i as usize] =
+                chunk_sizes[(i - 1) as usize] + chunk_starts[(i - 1) as usize];
             /*if (chunk_starts[i] <= chunk_starts[i-1]) {
                 //err
             }*/
@@ -476,7 +492,7 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
 
 pub struct LasZipCompressor<W: Write> {
     vlr: LazVlr,
-    record_compressor: RecordCompressor<W>,
+    record_compressor: BufferRecordCompressor<W>,
     first_point: bool,
     chunk_point_written: u32,
     chunk_sizes: Vec<usize>,
@@ -494,7 +510,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
     }
 
     pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Result<Self, LasZipError> {
-        let mut record_compressor = RecordCompressor::new(output);
+        let mut record_compressor = BufferRecordCompressor::new(output);
         record_compressor.set_fields_from(&vlr.items)?;
         Ok(Self {
             vlr,
@@ -519,7 +535,9 @@ impl<W: Write + Seek> LasZipCompressor<W> {
         if self.chunk_point_written == self.vlr.chunk_size {
             self.record_compressor.done()?;
             self.record_compressor.reset();
-            self.record_compressor.set_fields_from(&self.vlr.items).unwrap();
+            self.record_compressor
+                .set_fields_from(&self.vlr.items)
+                .unwrap();
             self.update_chunk_table()?;
             self.chunk_point_written = 0;
         }

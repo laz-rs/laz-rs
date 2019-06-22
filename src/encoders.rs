@@ -247,7 +247,6 @@ impl<T: Write> ArithmeticEncoder<T> {
             self.base = self.base.wrapping_add(x);
             //self.base += x;
             self.length = model.distribution[(sym + 1) as usize] * self.length - x;
-
         }
 
         if init_base > self.base {

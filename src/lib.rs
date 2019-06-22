@@ -5,9 +5,8 @@ pub(crate) mod encoders;
 pub(crate) mod models;
 
 pub mod errors;
-pub mod record;
 pub mod las;
 pub mod packers;
-
+pub mod record;
 
 pub use errors::LasZipError;

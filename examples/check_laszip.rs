@@ -24,10 +24,6 @@ fn main() {
         .unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-    // Seek over chunk table offset
-    laz_file
-        .seek(SeekFrom::Current(std::mem::size_of::<u64>() as i64))
-        .unwrap();
 
     let mut las_file = std::io::BufReader::new(File::open(&args[2]).unwrap());
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
@@ -43,23 +39,24 @@ fn main() {
             .add_item(LazItemType::GpsTime)
             .add_item(LazItemType::RGB12)
             .build(),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(52));
     compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
 
-    for _i in 0..num_points {
+    for i in 0..num_points {
         decompressor.decompress_one(&mut buf).unwrap();
         las_file.read_exact(&mut expected_buff).unwrap();
         assert_eq!(
             &expected_buff[0..20],
             &buf[0..20],
-            "point10  decompression not ok"
+            "point10  decompression not ok, {}", i
         );
         assert_eq!(
             &expected_buff[20..28],
             &buf[20..28],
-            "gps time decompression not ok"
+            "gps time decompression not ok {}", i
         );
         assert_eq!(&expected_buff[28..], &buf[28..], "rgb decompression not ok");
         compressor.compress_one(&expected_buff).unwrap();
@@ -91,6 +88,6 @@ fn main() {
             "gps compression not ok: {}",
             i
         );
-        assert_eq!(&expected_buff[28..], &buf[28..], "rgb compression not ok");
+        assert_eq!(&expected_buff[28..], &buf[28..], "rgb compression not ok: {}", i);
     }
 }

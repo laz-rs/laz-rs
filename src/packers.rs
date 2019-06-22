@@ -59,7 +59,6 @@ impl Packable for u32 {
             *output.get_unchecked_mut(1) = ((self >> 8) & 0xFFu32) as u8;
             *output.get_unchecked_mut(0) = (self & 0xFFu32) as u8;
         }
-
     }
 }
 
@@ -76,7 +75,6 @@ impl Packable for u16 {
 
             (b2 & 0xFF) << 8 | (b1 & 0xFF)
         }
-
     }
 
     fn pack_into(&self, output: &mut [u8]) {

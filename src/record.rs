@@ -6,16 +6,19 @@ use crate::compressors;
 use crate::decoders;
 use crate::decompressors;
 use crate::encoders;
+use crate::encoders::ArithmeticEncoder;
 use crate::las;
-use crate::las::laszip::{LazItem, LazItemType, LasZipError};
+use crate::las::laszip::{LasZipError, LazItem, LazItemType};
 use crate::packers::Packable;
 
 //TODO since all field compressor do not actually compress the 1st point
 // but write it directly to the dst the FieldCompressor trait should maybe define
 // "compress_first" & FieldDecompressor have "decompress_first"
 
-pub trait FieldDecompressor<R: Read> {
+pub trait BufferFieldDecompressor<R: Read> {
     fn size_of_field(&self) -> usize;
+
+    fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()>;
 
     fn decompress_with(
         &mut self,
@@ -24,14 +27,68 @@ pub trait FieldDecompressor<R: Read> {
     ) -> std::io::Result<()>;
 }
 
-pub struct RecordDecompressor<R: Read> {
-    field_decompressors: Vec<Box<dyn FieldDecompressor<R>>>,
+pub trait PointFieldDecompressor<R: Read, P> {
+    fn init_first_point(&mut self, src: &mut R, first_point: &mut P) -> std::io::Result<()>;
+
+    fn decompress_field_with(
+        &mut self,
+        decoder: &mut decoders::ArithmeticDecoder<R>,
+        current_point: &mut P,
+    ) -> std::io::Result<()>;
+}
+
+pub struct PointRecordDecompressor<R: Read, P: Default> {
+    point_fields_decompressor: Vec<Box<dyn PointFieldDecompressor<R, P>>>,
     decoder: decoders::ArithmeticDecoder<R>,
     first_decompression: bool,
+}
+
+impl<R: Read, P: Default> PointRecordDecompressor<R, P> {
+    pub fn new(input: R) -> Self {
+        Self {
+            point_fields_decompressor: vec![],
+            decoder: decoders::ArithmeticDecoder::new(input),
+            first_decompression: true,
+        }
+    }
+
+    pub fn add_decompressor<D: PointFieldDecompressor<R, P> + 'static>(
+        &mut self,
+        field_decompressor: D,
+    ) {
+        self.point_fields_decompressor
+            .push(Box::new(field_decompressor));
+    }
+
+    pub fn add_boxed_decompressor(&mut self, d: Box<PointFieldDecompressor<R, P>>) {
+        self.point_fields_decompressor.push(d);
+    }
+
+    pub fn decompress_next(&mut self) -> std::io::Result<P> {
+        let mut current_point = P::default();
+        if self.first_decompression {
+            for field in &mut self.point_fields_decompressor {
+                field.init_first_point(self.decoder.in_stream(), &mut current_point)?;
+            }
+            self.decoder.read_init_bytes()?;
+            self.first_decompression = false;
+        } else {
+            for field in &mut self.point_fields_decompressor {
+                field.decompress_field_with(&mut self.decoder, &mut current_point)?;
+            }
+        }
+        Ok(current_point)
+    }
+}
+
+pub struct BufferRecordDecompressor<R: Read> {
+    field_decompressors: Vec<Box<dyn BufferFieldDecompressor<R>>>,
+    decoder: decoders::ArithmeticDecoder<R>,
+    is_first_decompression: bool,
     record_size: usize,
 }
 
-impl<R: Read> RecordDecompressor<R> {
+impl<R: Read> BufferRecordDecompressor<R> {
     pub fn new(input: R) -> Self {
         Self::with_decoder(decoders::ArithmeticDecoder::new(input))
     }
@@ -40,14 +97,19 @@ impl<R: Read> RecordDecompressor<R> {
         Self {
             field_decompressors: vec![],
             decoder,
-            first_decompression: true,
+            is_first_decompression: true,
             record_size: 0,
         }
     }
 
-    pub fn add_field_decompressor<T: 'static + FieldDecompressor<R>>(&mut self, field: T) {
+    pub fn add_field_decompressor<T: 'static + BufferFieldDecompressor<R>>(&mut self, field: T) {
         self.record_size += field.size_of_field();
         self.field_decompressors.push(Box::new(field));
+    }
+
+    pub fn add_boxed_decompressor(&mut self, d: Box<BufferFieldDecompressor<R>>) {
+        self.record_size += d.size_of_field();
+        self.field_decompressors.push(d);
     }
 
     pub fn record_size(&self) -> usize {
@@ -55,18 +117,29 @@ impl<R: Read> RecordDecompressor<R> {
     }
 
     pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        let mut field_start = 0;
-        for field in &mut self.field_decompressors {
-            let field_end = field_start + field.size_of_field();
-            field.decompress_with(&mut self.decoder, &mut out[field_start..field_end])?;
-            field_start = field_end;
-        }
+        if self.is_first_decompression {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.decompress_first(
+                    &mut self.decoder.in_stream(),
+                    &mut out[field_start..field_end],
+                )?;
+                field_start = field_end;
+            }
 
-        // the decoder needs to be told that it should read the
-        // init bytes after the first record has been read
-        if self.first_decompression {
-            self.first_decompression = false;
+            self.is_first_decompression = false;
+
+            // the decoder needs to be told that it should read the
+            // init bytes after the first record has been read
             self.decoder.read_init_bytes()?;
+        } else {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.decompress_with(&mut self.decoder, &mut out[field_start..field_end])?;
+                field_start = field_end;
+            }
         }
         Ok(())
     }
@@ -81,53 +154,58 @@ impl<R: Read> RecordDecompressor<R> {
 
     pub fn reset(&mut self) {
         self.decoder.reset();
-        self.first_decompression = true;
+        self.is_first_decompression = true;
         self.field_decompressors.clear();
         self.record_size = 0;
     }
 
-    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(),LasZipError> {
+    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
-                    LazItemType::Byte(_) => {
-                        self.add_field_decompressor(las::v1::ExtraBytesDecompressor::new(
-                            record_item.size as usize,
-                        ))
-                    }
+                    LazItemType::Byte(_) => self.add_field_decompressor(
+                        las::v1::LasExtraByteDecompressor::new(record_item.size as usize),
+                    ),
                     LazItemType::Point10 => {
-                        self.add_field_decompressor(las::v1::Point10Decompressor::new())
+                        self.add_field_decompressor(las::v1::LasPoint0Decompressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_decompressor(las::v1::GpsTimeDecompressor::new())
+                        self.add_field_decompressor(las::v1::LasGpsTimeDecompressor::new())
                     }
-                    LazItemType::RGB12 => self.add_field_decompressor(las::v1::RGBDecompressor::new()),
+                    LazItemType::RGB12 => {
+                        self.add_field_decompressor(las::v1::LasRGBDecompressor::new())
+                    }
                 },
                 2 => match record_item.item_type {
-                    LazItemType::Byte(_) => {
-                        self.add_field_decompressor(las::v2::ExtraBytesDecompressor::new(
-                            record_item.size as usize,
-                        ))
-                    }
+                    LazItemType::Byte(_) => self.add_field_decompressor(
+                        las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
+                    ),
                     LazItemType::Point10 => {
-                        self.add_field_decompressor(las::v2::Point10Decompressor::new())
+                        self.add_field_decompressor(las::v2::LasPoint10Decompressor::new())
                     }
                     LazItemType::GpsTime => {
                         self.add_field_decompressor(las::v2::GpsTimeDecompressor::new())
                     }
-                    LazItemType::RGB12 => self.add_field_decompressor(las::v2::RGBDecompressor::new()),
+                    LazItemType::RGB12 => {
+                        self.add_field_decompressor(las::v2::LasRGBDecompressor::new())
+                    }
                 },
-                _ => return  Err(LasZipError::UnsupportedLazItemVersion(
-                    record_item.item_type,
-                    record_item.version)),
+                _ => {
+                    return Err(LasZipError::UnsupportedLazItemVersion(
+                        record_item.item_type,
+                        record_item.version,
+                    ))
+                }
             }
         }
         Ok(())
     }
 }
 
-pub trait FieldCompressor<W: Write> {
+pub trait BufferFieldCompressor<W: Write> {
     fn size_of_field(&self) -> usize;
+
+    fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()>;
 
     fn compress_with(
         &mut self,
@@ -136,28 +214,91 @@ pub trait FieldCompressor<W: Write> {
     ) -> std::io::Result<()>;
 }
 
-pub struct RecordCompressor<W: Write> {
-    field_compressors: Vec<Box<dyn FieldCompressor<W>>>,
+pub trait PointFieldCompressor<W: Write, P> {
+    fn init_first_point(&mut self, dst: &mut W, first_point: &P) -> std::io::Result<()>;
+
+    fn compress_field_with(
+        &mut self,
+        encoder: &mut encoders::ArithmeticEncoder<W>,
+        current_point: &P,
+    ) -> std::io::Result<()>;
+}
+
+pub struct PointRecordCompressor<W: Write, P> {
+    compressors: Vec<Box<dyn PointFieldCompressor<W, P>>>,
+    is_first_compression: bool,
+    encoder: encoders::ArithmeticEncoder<W>,
+}
+
+impl<W: Write, P> PointRecordCompressor<W, P> {
+    pub fn new(output: W) -> Self {
+        Self {
+            compressors: vec![],
+            is_first_compression: true,
+            encoder: ArithmeticEncoder::new(output),
+        }
+    }
+
+    pub fn add_compressor<C: 'static + PointFieldCompressor<W, P>>(&mut self, c: C) {
+        self.compressors.push(Box::new(c));
+    }
+
+    pub fn add_boxed_compressor(&mut self, c: Box<PointFieldCompressor<W, P>>) {
+        self.compressors.push(c);
+    }
+
+    pub fn compress_next(&mut self, point: &P) -> std::io::Result<()> {
+        if self.is_first_compression {
+            for compressor in &mut self.compressors {
+                compressor.init_first_point(self.encoder.out_stream(), point)?;
+            }
+            self.is_first_compression = false;
+        } else {
+            for compressor in &mut self.compressors {
+                compressor.compress_field_with(&mut self.encoder, point)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn done(&mut self) -> std::io::Result<()> {
+        self.encoder.done()
+    }
+
+    pub fn into_stream(self) -> W {
+        self.encoder.into_stream()
+    }
+}
+
+pub struct BufferRecordCompressor<W: Write> {
+    is_first_compression: bool,
+    field_compressors: Vec<Box<dyn BufferFieldCompressor<W>>>,
     encoder: encoders::ArithmeticEncoder<W>,
     record_size: usize,
 }
 
-impl<W: Write> RecordCompressor<W> {
+impl<W: Write> BufferRecordCompressor<W> {
     pub fn new(output: W) -> Self {
         Self::with_encoder(encoders::ArithmeticEncoder::new(output))
     }
 
     pub fn with_encoder(encoder: encoders::ArithmeticEncoder<W>) -> Self {
         Self {
+            is_first_compression: true,
             field_compressors: vec![],
             encoder,
             record_size: 0,
         }
     }
 
-    pub fn add_field_compressor<T: 'static + FieldCompressor<W>>(&mut self, field: T) {
+    pub fn add_field_compressor<T: 'static + BufferFieldCompressor<W>>(&mut self, field: T) {
         self.record_size += field.size_of_field();
         self.field_compressors.push(Box::new(field));
+    }
+
+    pub fn add_boxed_compressor(&mut self, c: Box<BufferFieldCompressor<W>>) {
+        self.record_size += c.size_of_field();
+        self.field_compressors.push(c);
     }
 
     pub fn record_size(&self) -> usize {
@@ -165,17 +306,27 @@ impl<W: Write> RecordCompressor<W> {
     }
 
     pub fn compress(&mut self, input: &[u8]) -> std::io::Result<()> {
-
-        let mut field_start = 0;
-        for field in &mut self.field_compressors {
-            let field_end = field_start + field.size_of_field();
-            field.compress_with(&mut self.encoder, &input[field_start..field_end])?;
-            field_start = field_end;
+        if self.is_first_compression {
+            let mut field_start = 0;
+            for field in &mut self.field_compressors {
+                let field_end = field_start + field.size_of_field();
+                field.compress_first(self.encoder.out_stream(), &input[field_start..field_end])?;
+                field_start = field_end;
+            }
+            self.is_first_compression = false;
+        } else {
+            let mut field_start = 0;
+            for field in &mut self.field_compressors {
+                let field_end = field_start + field.size_of_field();
+                field.compress_with(&mut self.encoder, &input[field_start..field_end])?;
+                field_start = field_end;
+            }
         }
         Ok(())
     }
 
     pub fn reset(&mut self) {
+        self.is_first_compression = true;
         self.encoder.reset();
         self.field_compressors.clear();
         self.record_size = 0;
@@ -186,35 +337,38 @@ impl<W: Write> RecordCompressor<W> {
             match record_item.version {
                 1 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::v1::Point10Compressor::new())
+                        self.add_field_compressor(las::v1::LasPoint0Compressor::new())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_compressor(las::v1::GpsTimeCompressor::new())
+                        self.add_field_compressor(las::v1::LasGpsTimeCompressor::new())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_compressor(las::v1::RGBCompressor::new())
+                        self.add_field_compressor(las::v1::LasRGBCompressor::new())
                     }
                     LazItemType::Byte(_) => self.add_field_compressor(
-                        las::v1::ExtraBytesCompressor::new(record_item.size as usize),
+                        las::v1::LasExtraByteCompressor::new(record_item.size as usize),
                     ),
                 },
                 2 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::v2::Point10Compressor::new())
+                        self.add_field_compressor(las::v2::LasPoint10Compressor::new())
                     }
                     LazItemType::GpsTime => {
                         self.add_field_compressor(las::v2::GpsTimeCompressor::new())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_compressor(las::v2::RGBCompressor::new())
+                        self.add_field_compressor(las::v2::LasRGBCompressor::new())
                     }
                     LazItemType::Byte(_) => self.add_field_compressor(
-                        las::v2::ExtraBytesCompressor::new(record_item.size as usize),
+                        las::v2::LasExtraByteCompressor::new(record_item.size as usize),
                     ),
                 },
-                _ => return  Err(LasZipError::UnsupportedLazItemVersion(
-                    record_item.item_type,
-                    record_item.version)),
+                _ => {
+                    return Err(LasZipError::UnsupportedLazItemVersion(
+                        record_item.item_type,
+                        record_item.version,
+                    ))
+                }
             }
         }
         Ok(())
@@ -249,6 +403,7 @@ impl<T: Zero + Copy> StandardDiffMethod<T> {
         self.value
     }
 
+    #[allow(dead_code)]
     pub fn have_value(&self) -> bool {
         self.have_value
     }
@@ -262,7 +417,6 @@ impl<T: Zero + Copy> StandardDiffMethod<T> {
 }
 
 pub struct IntegerFieldDecompressor<IntType: Zero + Copy + PrimInt> {
-    decompressor_inited: bool,
     decompressor: decompressors::IntegerDecompressor,
     diff_method: StandardDiffMethod<IntType>,
 }
@@ -270,7 +424,6 @@ pub struct IntegerFieldDecompressor<IntType: Zero + Copy + PrimInt> {
 impl<IntType: Zero + Copy + PrimInt> IntegerFieldDecompressor<IntType> {
     pub fn new() -> Self {
         Self {
-            decompressor_inited: false,
             decompressor: decompressors::IntegerDecompressorBuilder::new()
                 .bits(std::mem::size_of::<IntType>() as u32 * 8)
                 .build(),
@@ -279,7 +432,7 @@ impl<IntType: Zero + Copy + PrimInt> IntegerFieldDecompressor<IntType> {
     }
 }
 
-impl<IntType, R> FieldDecompressor<R> for IntegerFieldDecompressor<IntType>
+impl<IntType, R> BufferFieldDecompressor<R> for IntegerFieldDecompressor<IntType>
 where
     i32: num_traits::cast::AsPrimitive<IntType>,
     IntType: Zero
@@ -295,6 +448,14 @@ where
         std::mem::size_of::<IntType>()
     }
 
+    fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
+        self.decompressor.init();
+        src.read_exact(first_point)?;
+        let r = IntType::unpack_from(&first_point).as_();
+        self.diff_method.push(r);
+        Ok(())
+    }
+
     fn decompress_with(
         &mut self,
         mut decoder: &mut decoders::ArithmeticDecoder<R>,
@@ -303,31 +464,19 @@ where
     where
         Self: Sized,
     {
-        if !self.decompressor_inited {
-            self.decompressor.init();
-        }
+        self.decompressor.init();
+        let v: IntType = self
+            .decompressor
+            .decompress(&mut decoder, self.diff_method.value().as_(), 0)?
+            .as_(); // i32 -> IntType
+        v.pack_into(&mut buf);
 
-        let r: IntType = if self.diff_method.have_value() {
-            let v: IntType = self
-                .decompressor
-                .decompress(&mut decoder, self.diff_method.value().as_(), 0)?
-                .as_(); // i32 -> IntType
-            v.pack_into(&mut buf);
-            v
-        } else {
-            // this is probably the first time we're reading stuff, read the record as is
-            decoder
-                .in_stream()
-                .read_exact(&mut buf[0..std::mem::size_of::<IntType>()])?;
-            IntType::unpack_from(&buf).as_()
-        };
-        self.diff_method.push(r);
+        self.diff_method.push(v);
         Ok(())
     }
 }
 
 pub struct IntegerFieldCompressor<IntType: Zero + Copy + PrimInt> {
-    compressor_inited: bool,
     compressor: compressors::IntegerCompressor,
     diff_method: StandardDiffMethod<IntType>,
 }
@@ -335,7 +484,6 @@ pub struct IntegerFieldCompressor<IntType: Zero + Copy + PrimInt> {
 impl<IntType: Zero + Copy + PrimInt> IntegerFieldCompressor<IntType> {
     pub fn new() -> Self {
         Self {
-            compressor_inited: false,
             compressor: compressors::IntegerCompressor::new(
                 std::mem::size_of::<IntType>() as u32 * 8,
                 1,
@@ -347,7 +495,7 @@ impl<IntType: Zero + Copy + PrimInt> IntegerFieldCompressor<IntType> {
     }
 }
 
-impl<IntType, W> FieldCompressor<W> for IntegerFieldCompressor<IntType>
+impl<IntType, W> BufferFieldCompressor<W> for IntegerFieldCompressor<IntType>
 where
     IntType: Zero + Copy + PrimInt + Packable + 'static + AsPrimitive<i32>,
     <IntType as Packable>::Type: AsPrimitive<IntType>,
@@ -357,29 +505,29 @@ where
         std::mem::size_of::<IntType>()
     }
 
+    fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
+        self.compressor.init();
+        let this_val: IntType = IntType::unpack_from(&buf).as_();
+        self.diff_method.push(this_val);
+        dst.write_all(&buf)
+    }
+
     fn compress_with(
         &mut self,
         mut encoder: &mut encoders::ArithmeticEncoder<W>,
         buf: &[u8],
     ) -> std::io::Result<()> {
         let this_val: IntType = IntType::unpack_from(&buf).as_();
-        if !self.compressor_inited {
-            self.compressor.init();
-        }
+        // Strange that wi init each time but this is as in laz-perf code
+        self.compressor.init();
+
         // Let the differ decide what values we're going to push
-        if self.diff_method.have_value() {
-            self.compressor.compress(
-                &mut encoder,
-                self.diff_method.value().as_(),
-                this_val.as_(),
-                0,
-            )?;
-        } else {
-            // differ is not ready for us to start encoding values
-            // for us, so we need to write raw into
-            // the outputstream
-            encoder.out_stream().write_all(&buf)?;
-        }
+        self.compressor.compress(
+            &mut encoder,
+            self.diff_method.value().as_(),
+            this_val.as_(),
+            0,
+        )?;
         self.diff_method.push(this_val);
         Ok(())
     }
@@ -396,7 +544,7 @@ mod test {
         let stream = std::io::Cursor::new(Vec::<u8>::new());
 
         let encoder = encoders::ArithmeticEncoder::new(stream);
-        let mut compressor = RecordCompressor::with_encoder(encoder);
+        let mut compressor = BufferRecordCompressor::with_encoder(encoder);
         compressor.done().unwrap();
 
         let stream = compressor.into_stream();
@@ -410,7 +558,7 @@ mod test {
         let stream = std::io::Cursor::new(Vec::<u8>::new());
 
         let encoder = encoders::ArithmeticEncoder::new(stream);
-        let mut compressor = RecordCompressor::with_encoder(encoder);
+        let mut compressor = BufferRecordCompressor::with_encoder(encoder);
         compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
         compressor.compress(&[0u8, 0u8, 0u8, 0u8]).unwrap();
         compressor.done().unwrap();
@@ -426,7 +574,7 @@ mod test {
         let stream = std::io::Cursor::new(Vec::<u8>::new());
 
         let encoder = encoders::ArithmeticEncoder::new(stream);
-        let mut compressor = RecordCompressor::with_encoder(encoder);
+        let mut compressor = BufferRecordCompressor::with_encoder(encoder);
         compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
         compressor.compress(&[17u8, 42u8, 35u8, 1u8]).unwrap();
         compressor.done().unwrap();
@@ -445,25 +593,24 @@ mod test {
         assert_eq!(&data, &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]);
     }
 
-
     #[test]
     #[should_panic]
     fn test_small_input_buffer() {
         let stream = std::io::Cursor::new(Vec::<u8>::new());
 
         let encoder = encoders::ArithmeticEncoder::new(stream);
-        let mut compressor = RecordCompressor::with_encoder(encoder);
+        let mut compressor = BufferRecordCompressor::with_encoder(encoder);
         compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
         compressor.compress(&[]).unwrap();
         compressor.done().unwrap();
     }
 
-        /*
-            fn test_packer_on<T: Packable>(val: T) {
-                let mut buf = [0u8, std::mem::size_of::<T>()];
-                T::pack(v, &mut buf);
-                let v = T::unpack(&buf);
-                assert_eq!(v, val);
-            }
-        */
+    /*
+        fn test_packer_on<T: Packable>(val: T) {
+            let mut buf = [0u8, std::mem::size_of::<T>()];
+            T::pack(v, &mut buf);
+            let v = T::unpack(&buf);
+            assert_eq!(v, val);
+        }
+    */
 }
