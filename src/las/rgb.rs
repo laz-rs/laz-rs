@@ -113,29 +113,51 @@ pub(crate) struct RGBWrapper<'a> {
     slc: &'a mut [u8],
 }
 
+impl<'a> RGBWrapper<'a> {
+    fn new(slc: &'a mut [u8]) -> Self {
+        if slc.len() < 6 {
+            panic!("RGB Wrapper expected a buffer a 6 bytes");
+        } else {
+            Self { slc }
+        }
+    }
+}
+
 impl<'a> LasRGB for RGBWrapper<'a> {
     fn red(&self) -> u16 {
-        u16::from_le_bytes([self.slc[0], self.slc[1]])
+        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(0), *self.slc.get_unchecked(1)]) }
     }
 
     fn green(&self) -> u16 {
-        u16::from_le_bytes([self.slc[2], self.slc[3]])
+        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(2), *self.slc.get_unchecked(3)]) }
     }
 
     fn blue(&self) -> u16 {
-        u16::from_le_bytes([self.slc[4], self.slc[5]])
+        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(4), *self.slc.get_unchecked(5)]) }
     }
 
     fn set_red(&mut self, new_val: u16) {
-        self.slc[0..2].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(0..2)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 
     fn set_green(&mut self, new_val: u16) {
-        self.slc[2..4].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(2..4)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 
     fn set_blue(&mut self, new_val: u16) {
-        self.slc[4..6].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(4..6)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 }
 
@@ -152,7 +174,8 @@ impl ColorDiff {
             | ((flag_diff(current.red(), current.green(), 0x00FF)
                 || flag_diff(current.red(), current.blue(), 0x00FF)
                 || flag_diff(current.red(), current.green(), 0xFF00)
-                || flag_diff(current.red(), current.blue(), 0xFF00)) as u8) << 6;
+                || flag_diff(current.red(), current.blue(), 0xFF00)) as u8)
+                << 6;
 
         Self { 0: v }
     }
@@ -717,7 +740,7 @@ pub mod v2 {
         }
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            let mut current = RGBWrapper { slc: first_point };
+            let mut current = RGBWrapper::new(first_point);
             self.init_first_point(src, &mut current)?;
             Ok(())
         }
@@ -727,7 +750,7 @@ pub mod v2 {
             mut decoder: &mut ArithmeticDecoder<R>,
             buf: &mut [u8],
         ) -> std::io::Result<()> {
-            let mut current = RGBWrapper { slc: buf };
+            let mut current = RGBWrapper::new(buf);
             self.decompress_field_with(&mut decoder, &mut current)?;
             Ok(())
         }
@@ -836,8 +859,8 @@ mod test {
             blue: 256,
         };
 
-        assert_eq!(ColorDiff::from_points(&a, &b).0, 0b01100000);
-        assert_eq!(ColorDiff::from_points(&b, &a).0, 0b00100000);
+        assert_eq!(ColorDiff::from_points(&a, &b).0, 0b00100000);
+        assert_eq!(ColorDiff::from_points(&b, &a).0, 0b01100000);
     }
 
     #[test]

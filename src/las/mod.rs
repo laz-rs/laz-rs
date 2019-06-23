@@ -1,6 +1,5 @@
 use std::io::Read;
 
-use crate::las::point10::{LasPoint0, Point0};
 use crate::las::rgb::LasRGB;
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -9,6 +8,8 @@ pub mod gps;
 pub mod laszip;
 pub mod point10;
 pub mod rgb;
+
+pub use point10::{LasPoint0, Point0};
 
 mod utils;
 
@@ -173,7 +174,7 @@ pub mod v1 {
 pub mod v2 {
     pub use crate::las::extra_bytes::v2::{LasExtraByteCompressor, LasExtraByteDecompressor};
     pub use crate::las::gps::v2::{GpsTimeCompressor, GpsTimeDecompressor};
-    pub use crate::las::point10::v2::{LasPoint10Compressor, LasPoint10Decompressor};
+    pub use crate::las::point10::v2::{LasPoint0Compressor, LasPoint0Decompressor};
     pub use crate::las::rgb::v2::{LasRGBCompressor, LasRGBDecompressor};
 }
 

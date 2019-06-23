@@ -181,7 +181,7 @@ impl<R: Read> BufferRecordDecompressor<R> {
                         las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
                     ),
                     LazItemType::Point10 => {
-                        self.add_field_decompressor(las::v2::LasPoint10Decompressor::new())
+                        self.add_field_decompressor(las::v2::LasPoint0Decompressor::new())
                     }
                     LazItemType::GpsTime => {
                         self.add_field_decompressor(las::v2::GpsTimeDecompressor::new())
@@ -351,7 +351,7 @@ impl<W: Write> BufferRecordCompressor<W> {
                 },
                 2 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::v2::LasPoint10Compressor::new())
+                        self.add_field_compressor(las::v2::LasPoint0Compressor::new())
                     }
                     LazItemType::GpsTime => {
                         self.add_field_compressor(las::v2::GpsTimeCompressor::new())

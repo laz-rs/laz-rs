@@ -241,25 +241,56 @@ pub(crate) struct Point0Wrapper<'a> {
     slc: &'a mut [u8],
 }
 
+impl<'a> Point0Wrapper<'a> {
+    fn new(slc: &'a mut [u8]) -> Self {
+        if slc.len() < 20 {
+            panic!("Point0Wrapper expected a buffer of 20 bytes");
+        } else {
+            Self { slc }
+        }
+    }
+}
+
 impl<'a> LasPoint0 for Point0Wrapper<'a> {
     fn x(&self) -> i32 {
-        i32::from_le_bytes([self.slc[0], self.slc[1], self.slc[2], self.slc[3]])
+        unsafe {
+            i32::from_le_bytes([
+                *self.slc.get_unchecked(0),
+                *self.slc.get_unchecked(1),
+                *self.slc.get_unchecked(2),
+                *self.slc.get_unchecked(3),
+            ])
+        }
     }
 
     fn y(&self) -> i32 {
-        i32::from_le_bytes([self.slc[4], self.slc[5], self.slc[6], self.slc[7]])
+        unsafe {
+            i32::from_le_bytes([
+                *self.slc.get_unchecked(4),
+                *self.slc.get_unchecked(5),
+                *self.slc.get_unchecked(6),
+                *self.slc.get_unchecked(7),
+            ])
+        }
     }
 
     fn z(&self) -> i32 {
-        i32::from_le_bytes([self.slc[8], self.slc[9], self.slc[10], self.slc[11]])
+        unsafe {
+            i32::from_le_bytes([
+                *self.slc.get_unchecked(8),
+                *self.slc.get_unchecked(9),
+                *self.slc.get_unchecked(10),
+                *self.slc.get_unchecked(11),
+            ])
+        }
     }
 
     fn intensity(&self) -> u16 {
-        u16::from_le_bytes([self.slc[12], self.slc[13]])
+        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(12), *self.slc.get_unchecked(13)]) }
     }
 
     fn bit_fields(&self) -> u8 {
-        u8::from_le_bytes([self.slc[14]])
+        unsafe { u8::from_le_bytes([*self.slc.get_unchecked(14)]) }
     }
 
     fn number_of_returns_of_given_pulse(&self) -> u8 {
@@ -279,55 +310,83 @@ impl<'a> LasPoint0 for Point0Wrapper<'a> {
     }
 
     fn classification(&self) -> u8 {
-        u8::from_le_bytes([self.slc[15]])
+        unsafe { u8::from_le_bytes([*self.slc.get_unchecked(15)]) }
     }
 
     fn scan_angle_rank(&self) -> i8 {
-        i8::from_le_bytes([self.slc[16]])
+        unsafe { i8::from_le_bytes([*self.slc.get_unchecked(16)]) }
     }
 
     fn user_data(&self) -> u8 {
-        u8::from_le_bytes([self.slc[17]])
+        unsafe { u8::from_le_bytes([*self.slc.get_unchecked(17)]) }
     }
 
     fn point_source_id(&self) -> u16 {
-        u16::from_le_bytes([self.slc[18], self.slc[19]])
+        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(18), *self.slc.get_unchecked(19)]) }
     }
 
     fn set_x(&mut self, new_val: i32) {
-        self.slc[0..4].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(0..4)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 
     fn set_y(&mut self, new_val: i32) {
-        self.slc[4..8].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(4..8)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 
     fn set_z(&mut self, new_val: i32) {
-        self.slc[8..12].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(8..12)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 
     fn set_intensity(&mut self, new_val: u16) {
-        self.slc[12..14].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(12..14)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 
     fn set_bit_fields(&mut self, new_val: u8) {
-        self.slc[14] = new_val
+        unsafe {
+            *self.slc.get_unchecked_mut(14) = new_val;
+        }
     }
 
     fn set_classification(&mut self, new_val: u8) {
-        self.slc[15] = new_val;
+        unsafe {
+            *self.slc.get_unchecked_mut(15) = new_val;
+        }
     }
 
     fn set_scan_angle_rank(&mut self, new_val: i8) {
-        self.slc[16] = new_val as u8;
+        unsafe {
+            *self.slc.get_unchecked_mut(16) = new_val as u8;
+        }
     }
 
     fn set_user_data(&mut self, new_val: u8) {
-        self.slc[17] = new_val;
+        unsafe {
+            *self.slc.get_unchecked_mut(17) = new_val;
+        }
     }
 
     fn set_point_source_id(&mut self, new_val: u16) {
-        self.slc[18..20].copy_from_slice(&new_val.to_le_bytes());
+        unsafe {
+            self.slc
+                .get_unchecked_mut(18..20)
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
     }
 }
 
@@ -999,7 +1058,7 @@ pub mod v2 {
         }
     }
 
-    pub struct LasPoint10Compressor {
+    pub struct LasPoint0Compressor {
         last_point: Point0,
         ic_intensity: IntegerCompressor,
         ic_point_source_id: IntegerCompressor,
@@ -1009,7 +1068,7 @@ pub mod v2 {
         common: Common,
     }
 
-    impl LasPoint10Compressor {
+    impl LasPoint0Compressor {
         pub fn new() -> Self {
             Self {
                 last_point: Default::default(),
@@ -1035,7 +1094,7 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write, P: LasPoint0> PointFieldCompressor<W, P> for LasPoint10Compressor {
+    impl<W: Write, P: LasPoint0> PointFieldCompressor<W, P> for LasPoint0Compressor {
         fn init_first_point(&mut self, mut dst: &mut W, first_point: &P) -> std::io::Result<()> {
             first_point.write_to(&mut dst)?;
             self.last_point.set_fields_from(first_point);
@@ -1049,14 +1108,15 @@ pub mod v2 {
         ) -> std::io::Result<()> {
             let r = current_point.return_number();
             let n = current_point.number_of_returns_of_given_pulse();
+            // According to table  m is in range 0..16
             let m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
+            // According to table l is in range 0..8
             let l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
 
-            let changed_values = Point10ChangedValues::from_points(
-                current_point,
-                &self.last_point,
-                self.common.last_intensity[m as usize],
-            );
+            let changed_values =
+                Point10ChangedValues::from_points(current_point, &self.last_point, *unsafe {
+                    self.common.last_intensity.get_unchecked(m as usize)
+                });
 
             // compress which other values have changed
 
@@ -1065,7 +1125,10 @@ pub mod v2 {
             if changed_values.bit_fields_changed() {
                 let b = current_point.bit_fields();
                 let last_b = self.last_point.bit_fields();
-                encoder.encode_symbol(&mut self.common.bit_byte[last_b as usize], b as u32)?;
+                encoder.encode_symbol(
+                    unsafe { self.common.bit_byte.get_unchecked_mut(last_b as usize) },
+                    b as u32,
+                )?;
             }
 
             if changed_values.intensity_changed() {
@@ -1080,7 +1143,11 @@ pub mod v2 {
 
             if changed_values.classification_changed() {
                 encoder.encode_symbol(
-                    &mut self.common.classification[self.last_point.classification as usize],
+                    unsafe {
+                        self.common
+                            .classification
+                            .get_unchecked_mut(self.last_point.classification as usize)
+                    },
                     current_point.classification() as u32,
                 )?;
             }
@@ -1088,7 +1155,11 @@ pub mod v2 {
             if changed_values.scan_angle_rank_changed() {
                 // the "as u8" before "as u32" is vital
                 encoder.encode_symbol(
-                    &mut self.common.scan_angle_rank[current_point.scan_direction_flag() as usize],
+                    unsafe {
+                        self.common
+                            .scan_angle_rank
+                            .get_unchecked_mut(current_point.scan_direction_flag() as usize)
+                    },
                     (current_point.scan_angle_rank() - self.last_point.scan_angle_rank) as u8
                         as u32,
                 )?;
@@ -1096,7 +1167,11 @@ pub mod v2 {
 
             if changed_values.user_data_changed() {
                 encoder.encode_symbol(
-                    &mut self.common.user_data[self.last_point.user_data as usize],
+                    unsafe {
+                        self.common
+                            .user_data
+                            .get_unchecked_mut(self.last_point.user_data as usize)
+                    },
                     current_point.user_data() as u32,
                 )?;
             }
@@ -1111,16 +1186,21 @@ pub mod v2 {
             }
 
             //compress x coordinates
-            let median = self.common.last_x_diff_median[m as usize].get();
-            let diff = current_point.x() - self.last_point.x();
+            let median = unsafe { self.common.last_x_diff_median.get_unchecked(m as usize) }.get();
+            let diff = current_point.x() - self.last_point.x;
             self.ic_dx
                 .compress(&mut encoder, median, diff, (n == 1) as u32)?;
-            self.common.last_x_diff_median[m as usize].add(diff);
+            unsafe { self.common.last_x_diff_median.get_unchecked_mut(m as usize) }.add(diff);
 
             //compress y coordinates
             let k_bits = self.ic_dx.k();
-            let median = self.common.last_y_diff_median[m as usize].get();
-            let diff = current_point.y() - self.last_point.y();
+            let median = unsafe {
+                self.common
+                    .last_y_diff_median
+                    .get_unchecked(m as usize)
+                    .get()
+            };
+            let diff = current_point.y() - self.last_point.y;
             let context = (n == 1) as u32
                 + if k_bits < 20 {
                     utils::u32_zero_bit(k_bits)
@@ -1128,7 +1208,12 @@ pub mod v2 {
                     20
                 };
             self.ic_dy.compress(&mut encoder, median, diff, context)?;
-            self.common.last_y_diff_median[m as usize].add(diff);
+            unsafe {
+                self.common
+                    .last_y_diff_median
+                    .get_unchecked_mut(m as usize)
+                    .add(diff);
+            }
 
             //compress z coordinates
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
@@ -1140,17 +1225,17 @@ pub mod v2 {
                 };
             self.ic_z.compress(
                 &mut encoder,
-                self.common.last_height[l as usize],
+                *unsafe { self.common.last_height.get_unchecked(l as usize) },
                 current_point.z(),
                 context,
             )?;
-            self.common.last_height[l as usize] = current_point.z();
+            unsafe { *self.common.last_height.get_unchecked_mut(l as usize) = current_point.z() };
             self.last_point.set_fields_from(current_point);
             Ok(())
         }
     }
 
-    impl<W: Write> BufferFieldCompressor<W> for LasPoint10Compressor {
+    impl<W: Write> BufferFieldCompressor<W> for LasPoint0Compressor {
         fn size_of_field(&self) -> usize {
             20
         }
@@ -1170,7 +1255,7 @@ pub mod v2 {
         }
     }
 
-    pub struct LasPoint10Decompressor {
+    pub struct LasPoint0Decompressor {
         last_point: Point0,
         ic_intensity: IntegerDecompressor,
         ic_point_source_id: IntegerDecompressor,
@@ -1181,7 +1266,7 @@ pub mod v2 {
         common: Common,
     }
 
-    impl LasPoint10Decompressor {
+    impl LasPoint0Decompressor {
         pub fn new() -> Self {
             Self {
                 last_point: Default::default(),
@@ -1209,7 +1294,7 @@ pub mod v2 {
         }
     }
 
-    impl<R: Read, P: LasPoint0> PointFieldDecompressor<R, P> for LasPoint10Decompressor {
+    impl<R: Read, P: LasPoint0> PointFieldDecompressor<R, P> for LasPoint0Decompressor {
         fn init_first_point(
             &mut self,
             mut src: &mut R,
@@ -1236,112 +1321,145 @@ pub mod v2 {
             let m;
             let l;
 
-            if changed_value.value != 0 {
-                // there was some change in one of the fields (other than x, y and z)
+            unsafe {
+                if changed_value.value != 0 {
+                    // there was some change in one of the fields (other than x, y and z)
 
-                if changed_value.bit_fields_changed() {
-                    let mut b = self.last_point.bit_fields();
-                    b = decoder.decode_symbol(&mut self.common.bit_byte[b as usize])? as u8;
-                    self.last_point.set_bit_fields(b);
-                }
+                    if changed_value.bit_fields_changed() {
+                        let mut b = self.last_point.bit_fields();
+                        b = decoder
+                            .decode_symbol(self.common.bit_byte.get_unchecked_mut(b as usize))?
+                            as u8;
+                        self.last_point.set_bit_fields(b);
+                    }
 
-                r = self.last_point.return_number();
-                n = self.last_point.number_of_returns_of_given_pulse();
-                m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
-                l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
+                    r = self.last_point.return_number();
+                    n = self.last_point.number_of_returns_of_given_pulse();
+                    // According to table m is in range 0..16
+                    m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
+                    // According to table l is in range 0..8
+                    l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
 
-                if changed_value.intensity_changed() {
-                    self.last_point.intensity = self.ic_intensity.decompress(
-                        &mut decoder,
-                        self.common.last_intensity[m as usize] as i32,
-                        if m < 3 { m as u32 } else { 3 },
-                    )? as u16;
-                    self.common.last_intensity[m as usize] = self.last_point.intensity();
-                } else {
-                    self.last_point.intensity = self.common.last_intensity[m as usize];
-                }
-
-                if changed_value.classification_changed() {
-                    self.last_point.set_classification(decoder.decode_symbol(
-                        &mut self.common.classification[self.last_point.classification() as usize],
-                    )? as u8);
-                }
-
-                if changed_value.scan_angle_rank_changed() {
-                    let val = decoder.decode_symbol(
-                        &mut self.common.scan_angle_rank
-                            [self.last_point.scan_direction_flag() as usize],
-                    )? as i8;
-                    self.last_point
-                        .set_scan_angle_rank(val + self.last_point.scan_angle_rank());
-                }
-
-                if changed_value.user_data_changed() {
-                    self.last_point.set_user_data(decoder.decode_symbol(
-                        &mut self.common.user_data[self.last_point.user_data() as usize],
-                    )? as u8);
-                }
-
-                if changed_value.point_source_id_changed() {
-                    self.last_point
-                        .set_point_source_id(self.ic_point_source_id.decompress(
+                    if changed_value.intensity_changed() {
+                        self.last_point.intensity = self.ic_intensity.decompress(
                             &mut decoder,
-                            self.last_point.point_source_id() as i32,
-                            0,
-                        )? as u16);
+                            *self.common.last_intensity.get_unchecked(m as usize) as i32,
+                            if m < 3 { m as u32 } else { 3 },
+                        )? as u16;
+                        *self.common.last_intensity.get_unchecked_mut(m as usize) =
+                            self.last_point.intensity;
+                    } else {
+                        self.last_point.intensity =
+                            *self.common.last_intensity.get_unchecked(m as usize);
+                    }
+
+                    if changed_value.classification_changed() {
+                        self.last_point.set_classification(
+                            decoder.decode_symbol(
+                                self.common
+                                    .classification
+                                    .get_unchecked_mut(self.last_point.classification as usize),
+                            )? as u8,
+                        );
+                    }
+
+                    if changed_value.scan_angle_rank_changed() {
+                        let val = decoder.decode_symbol(
+                            self.common
+                                .scan_angle_rank
+                                .get_unchecked_mut(self.last_point.scan_direction_flag as usize),
+                        )? as i8;
+                        self.last_point
+                            .set_scan_angle_rank(val + self.last_point.scan_angle_rank);
+                    }
+
+                    if changed_value.user_data_changed() {
+                        self.last_point.set_user_data(
+                            decoder.decode_symbol(
+                                self.common
+                                    .user_data
+                                    .get_unchecked_mut(self.last_point.user_data as usize),
+                            )? as u8,
+                        );
+                    }
+
+                    if changed_value.point_source_id_changed() {
+                        self.last_point
+                            .set_point_source_id(self.ic_point_source_id.decompress(
+                                &mut decoder,
+                                self.last_point.point_source_id as i32,
+                                0,
+                            )? as u16);
+                    }
+                } else {
+                    r = self.last_point.return_number();
+                    n = self.last_point.number_of_returns_of_given_pulse();
+                    m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
+                    l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
                 }
-            } else {
-                r = self.last_point.return_number();
-                n = self.last_point.number_of_returns_of_given_pulse();
-                m = utils::NUMBER_RETURN_MAP[n as usize][r as usize];
-                l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
+
+                // decompress x
+                let median = self
+                    .common
+                    .last_x_diff_median
+                    .get_unchecked(m as usize)
+                    .get();
+                let diff = self
+                    .ic_dx
+                    .decompress(&mut decoder, median, (n == 1) as u32)?;
+                self.last_point.x += diff;
+                self.common
+                    .last_x_diff_median
+                    .get_unchecked_mut(m as usize)
+                    .add(diff);
+
+                // decompress y
+                let median = self
+                    .common
+                    .last_y_diff_median
+                    .get_unchecked(m as usize)
+                    .get();
+                let k_bits = self.ic_dx.k();
+                let context = (n == 1) as u32
+                    + if k_bits < 20 {
+                        utils::u32_zero_bit(k_bits)
+                    } else {
+                        20
+                    };
+                let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
+                self.last_point.y += diff;
+                self.common
+                    .last_y_diff_median
+                    .get_unchecked_mut(m as usize)
+                    .add(diff);
+
+                // decompress z coordinate
+                let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
+                let context = (n == 1) as u32
+                    + if k_bits < 18 {
+                        utils::u32_zero_bit(k_bits)
+                    } else {
+                        18
+                    };
+                self.last_point.z = self.ic_z.decompress(
+                    &mut decoder,
+                    *self.common.last_height.get_unchecked(l as usize),
+                    context,
+                )?;
+                *self.common.last_height.get_unchecked_mut(l as usize) = self.last_point.z();
+                current_point.set_fields_from(&self.last_point);
+                Ok(())
             }
-
-            // decompress x
-            let median = self.common.last_x_diff_median[m as usize].get();
-            let diff = self
-                .ic_dx
-                .decompress(&mut decoder, median, (n == 1) as u32)?;
-            self.last_point.x += diff;
-            self.common.last_x_diff_median[m as usize].add(diff);
-
-            // decompress y
-            let median = self.common.last_y_diff_median[m as usize].get();
-            let k_bits = self.ic_dx.k();
-            let context = (n == 1) as u32
-                + if k_bits < 20 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    20
-                };
-            let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
-            self.last_point.y += diff;
-            self.common.last_y_diff_median[m as usize].add(diff);
-
-            // decompress z coordinate
-            let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
-            let context = (n == 1) as u32
-                + if k_bits < 18 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    18
-                };
-            self.last_point.z =
-                self.ic_z
-                    .decompress(&mut decoder, self.common.last_height[l as usize], context)?;
-            self.common.last_height[l as usize] = self.last_point.z();
-            current_point.set_fields_from(&self.last_point);
-            Ok(())
         }
     }
 
-    impl<R: Read> BufferFieldDecompressor<R> for LasPoint10Decompressor {
+    impl<R: Read> BufferFieldDecompressor<R> for LasPoint0Decompressor {
         fn size_of_field(&self) -> usize {
             20
         }
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            let mut current = Point0Wrapper { slc: first_point };
+            let mut current = Point0Wrapper::new(first_point);
             self.init_first_point(src, &mut current)?;
             Ok(())
         }
@@ -1351,7 +1469,7 @@ pub mod v2 {
             mut decoder: &mut ArithmeticDecoder<R>,
             buf: &mut [u8],
         ) -> std::io::Result<()> {
-            let mut current = Point0Wrapper { slc: buf };
+            let mut current = Point0Wrapper::new(buf);
             self.decompress_field_with(&mut decoder, &mut current)?;
             Ok(())
         }

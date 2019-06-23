@@ -17,7 +17,7 @@ fn main() {
     let mut expected_buff = [0u8; POINT_SIZE];
 
     let mut compressor = BufferRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
-    compressor.add_field_compressor(point10::v2::LasPoint10Compressor::new());
+    compressor.add_field_compressor(point10::v2::LasPoint0Compressor::new());
     compressor.add_field_compressor(gps::v2::GpsTimeCompressor::new());
     compressor.add_field_compressor(rgb::v2::LasRGBCompressor::new());
 
@@ -32,7 +32,7 @@ fn main() {
     let mut compression_output = compressor.into_stream();
     compression_output.set_position(0);
     let mut decompressor = BufferRecordDecompressor::new(compression_output);
-    decompressor.add_field_decompressor(point10::v2::LasPoint10Decompressor::new());
+    decompressor.add_field_decompressor(point10::v2::LasPoint0Decompressor::new());
     decompressor.add_field_decompressor(gps::v2::GpsTimeDecompressor::new());
     decompressor.add_field_decompressor(rgb::v2::LasRGBDecompressor::new());
 

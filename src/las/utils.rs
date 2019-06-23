@@ -51,57 +51,59 @@ impl<T: Zero + Copy + PartialOrd> StreamingMedian<T> {
     }
 
     pub fn add(&mut self, v: T) {
-        if self.high {
-            if v < self.values[2] {
-                self.values[4] = self.values[3];
-                self.values[3] = self.values[2];
-                if v < self.values[0] {
-                    self.values[2] = self.values[1];
-                    self.values[1] = self.values[0];
-                    self.values[0] = v;
-                } else if v < self.values[1] {
-                    self.values[2] = self.values[1];
-                    self.values[1] = v;
+        unsafe {
+            if self.high {
+                if v < *self.values.get_unchecked(2) {
+                    *self.values.get_unchecked_mut(4) = *self.values.get_unchecked(3);
+                    *self.values.get_unchecked_mut(3) = *self.values.get_unchecked(2);
+                    if v < *self.values.get_unchecked(0) {
+                        *self.values.get_unchecked_mut(2) = *self.values.get_unchecked(1);
+                        *self.values.get_unchecked_mut(1) = *self.values.get_unchecked(0);
+                        *self.values.get_unchecked_mut(0) = v;
+                    } else if v < *self.values.get_unchecked(1) {
+                        *self.values.get_unchecked_mut(2) = *self.values.get_unchecked(1);
+                        *self.values.get_unchecked_mut(1) = v;
+                    } else {
+                        *self.values.get_unchecked_mut(2) = v;
+                    }
                 } else {
-                    self.values[2] = v;
+                    if v < *self.values.get_unchecked(3) {
+                        *self.values.get_unchecked_mut(4) = *self.values.get_unchecked(3);
+                        *self.values.get_unchecked_mut(3) = v;
+                    } else {
+                        *self.values.get_unchecked_mut(4) = v;
+                    }
+                    self.high = false;
                 }
             } else {
-                if v < self.values[3] {
-                    self.values[4] = self.values[3];
-                    self.values[3] = v;
+                if *self.values.get_unchecked(2) < v {
+                    *self.values.get_unchecked_mut(0) = *self.values.get_unchecked(1);
+                    *self.values.get_unchecked_mut(1) = *self.values.get_unchecked(2);
+                    if *self.values.get_unchecked(4) < v {
+                        *self.values.get_unchecked_mut(2) = *self.values.get_unchecked(3);
+                        *self.values.get_unchecked_mut(3) = *self.values.get_unchecked(4);
+                        *self.values.get_unchecked_mut(4) = v;
+                    } else if *self.values.get_unchecked(3) < v {
+                        *self.values.get_unchecked_mut(2) = *self.values.get_unchecked(3);
+                        *self.values.get_unchecked_mut(3) = v;
+                    } else {
+                        *self.values.get_unchecked_mut(2) = v;
+                    }
                 } else {
-                    self.values[4] = v;
+                    if *self.values.get_unchecked(1) < v {
+                        *self.values.get_unchecked_mut(0) = *self.values.get_unchecked(1);
+                        *self.values.get_unchecked_mut(1) = v;
+                    } else {
+                        *self.values.get_unchecked_mut(0) = v;
+                    }
+                    self.high = true;
                 }
-                self.high = false;
-            }
-        } else {
-            if self.values[2] < v {
-                self.values[0] = self.values[1];
-                self.values[1] = self.values[2];
-                if self.values[4] < v {
-                    self.values[2] = self.values[3];
-                    self.values[3] = self.values[4];
-                    self.values[4] = v;
-                } else if self.values[3] < v {
-                    self.values[2] = self.values[3];
-                    self.values[3] = v;
-                } else {
-                    self.values[2] = v;
-                }
-            } else {
-                if self.values[1] < v {
-                    self.values[0] = self.values[1];
-                    self.values[1] = v;
-                } else {
-                    self.values[0] = v;
-                }
-                self.high = true;
             }
         }
     }
 
     pub fn get(&self) -> T {
-        self.values[2]
+        unsafe { *self.values.get_unchecked(2) }
     }
 }
 

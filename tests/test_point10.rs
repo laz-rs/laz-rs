@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use laz::las::gps::{v2::GpsTimeCompressor, v2::GpsTimeDecompressor, GpsTime};
-use laz::las::point10::{v2::LasPoint10Compressor, v2::LasPoint10Decompressor, Point0};
+use laz::las::point10::{v2::LasPoint0Compressor, v2::LasPoint0Decompressor, Point0};
 use laz::las::rgb::{v2::LasRGBCompressor, v2::LasRGBDecompressor, RGB};
 use laz::packers::Packable;
 use laz::record::{BufferRecordCompressor, BufferRecordDecompressor};
@@ -9,7 +9,7 @@ use laz::record::{BufferRecordCompressor, BufferRecordDecompressor};
 #[test]
 fn test_compression_decompression_of_point_10() {
     let mut compressor = BufferRecordCompressor::new(std::io::Cursor::new(Vec::<u8>::new()));
-    compressor.add_field_compressor(LasPoint10Compressor::new());
+    compressor.add_field_compressor(LasPoint0Compressor::new());
 
     let n: i32 = 10000;
     let mut buf = [0u8; 20];
@@ -37,7 +37,7 @@ fn test_compression_decompression_of_point_10() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = BufferRecordDecompressor::new(std::io::Cursor::new(compressed_data));
-    decompressor.add_field_decompressor(LasPoint10Decompressor::new());
+    decompressor.add_field_decompressor(LasPoint0Decompressor::new());
 
     for i in 0..n {
         decompressor.decompress(&mut buf).unwrap();

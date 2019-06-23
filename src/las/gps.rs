@@ -511,156 +511,245 @@ pub mod v2 {
             let this_val = GpsTime {
                 value: current_point.gps_time().to_bits() as i64,
             };
-            if self.common.last_gps_time_diffs[self.common.last] == 0 {
-                if this_val.value == self.common.last_gps_times[self.common.last].value {
-                    encoder.encode_symbol(&mut self.common.gps_time_0_diff, 0)?;
-                } else {
-                    // calculate the difference between the two doubles as an integer
-                    let curr_gps_time_diff_64 =
-                        this_val.value - self.common.last_gps_times[self.common.last].value;
-                    let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
-
-                    if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
-                        // this difference is small enough to be represented with 32 bits
-                        encoder.encode_symbol(&mut self.common.gps_time_0_diff, 1)?;
-                        self.ic_gps_time
-                            .compress(&mut encoder, 0, curr_gps_time_diff_32, 0)?;
-                        self.common.last_gps_time_diffs[self.common.last] = curr_gps_time_diff_32;
-                        self.common.multi_extreme_counters[self.common.last] = 0;
+            assert!(self.common.last < 4);
+            unsafe {
+                if *self
+                    .common
+                    .last_gps_time_diffs
+                    .get_unchecked(self.common.last)
+                    == 0
+                {
+                    if this_val.value
+                        == self
+                            .common
+                            .last_gps_times
+                            .get_unchecked(self.common.last)
+                            .value
+                    {
+                        encoder.encode_symbol(&mut self.common.gps_time_0_diff, 0)?;
                     } else {
-                        // the difference is huge
-                        // maybe the double belongs to another time sequence
-                        for i in 1..4 {
-                            let other_gps_time_diff_64 = this_val.value
-                                - self.common.last_gps_times[((self.common.last + i) & 3)].value;
-                            let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
+                        // calculate the difference between the two doubles as an integer
+                        let curr_gps_time_diff_64 = this_val.value
+                            - self
+                                .common
+                                .last_gps_times
+                                .get_unchecked(self.common.last)
+                                .value;
+                        let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
-                            if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
-                                // it belongs to another sequence
-                                encoder.encode_symbol(
-                                    &mut self.common.gps_time_0_diff,
-                                    (i + 2) as u32,
-                                )?;
-                                self.common.last = (self.common.last + i) & 3;
-                                return self.compress_field_with(&mut encoder, current_point);
-                            }
-                        }
-                        // no other sequence found. start new sequence.
-                        encoder.encode_symbol(&mut self.common.gps_time_0_diff, 2)?;
-                        self.ic_gps_time.compress(
-                            &mut encoder,
-                            (self.common.last_gps_times[self.common.last].value >> 32) as i32,
-                            (this_val.value >> 32) as i32,
-                            8,
-                        )?;
+                        if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
+                            // this difference is small enough to be represented with 32 bits
+                            encoder.encode_symbol(&mut self.common.gps_time_0_diff, 1)?;
+                            self.ic_gps_time
+                                .compress(&mut encoder, 0, curr_gps_time_diff_32, 0)?;
+                            *self
+                                .common
+                                .last_gps_time_diffs
+                                .get_unchecked_mut(self.common.last) = curr_gps_time_diff_32;
+                            *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked_mut(self.common.last) = 0;
+                        } else {
+                            // the difference is huge
+                            // maybe the double belongs to another time sequence
+                            for i in 1..4 {
+                                let other_gps_time_diff_64 = this_val.value
+                                    - self
+                                        .common
+                                        .last_gps_times
+                                        .get_unchecked((self.common.last + i) & 3)
+                                        .value;
+                                let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
-                        encoder.write_int(this_val.value as u32)?;
-
-                        self.common.next = (self.common.next + 1) & 3;
-                        self.common.last = self.common.next;
-                        self.common.last_gps_time_diffs[self.common.last] = 0;
-                        self.common.multi_extreme_counters[self.common.last] = 0;
-                    }
-                    self.common.last_gps_times[self.common.last] = this_val;
-                }
-            } else {
-                //the last integer difference was *not* zero
-                if this_val.value == self.common.last_gps_times[self.common.last as usize].value {
-                    // if the doubles have not changed use a special symbol
-                    encoder.encode_symbol(
-                        &mut self.common.gps_time_multi,
-                        LASZIP_GPS_TIME_MULTI_UNCHANGED as u32,
-                    )?;
-                } else {
-                    // the last integer difference was *not* zero
-                    let curr_gps_time_diff_64 =
-                        this_val.value - self.common.last_gps_times[self.common.last].value;
-                    let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
-
-                    // if the current gps time difference can be represented with 32 bits
-                    if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
-                        // compute multiplier between current and last integer difference
-                        let multi_f = curr_gps_time_diff_32 as f32
-                            / self.common.last_gps_time_diffs[self.common.last] as f32;
-                        let multi = i32_quantize(multi_f);
-
-                        // compress the residual curr_gps_time_diff in dependance on the multiplier
-                        if multi == 1 {
-                            // this is the case we assume we get most often for regular spaced pulses
-                            encoder.encode_symbol(&mut self.common.gps_time_multi, 1)?;
-                            self.ic_gps_time.compress(
-                                &mut encoder,
-                                self.common.last_gps_time_diffs[self.common.last],
-                                curr_gps_time_diff_32,
-                                1,
-                            )?;
-                            self.common.multi_extreme_counters[self.common.last] = 0;
-                        } else if multi > 0 {
-                            if multi < LASZIP_GPS_TIME_MULTI {
-                                // positive multipliers up to LASZIP_GPSTIME_MULTI are compressed directly
-                                encoder
-                                    .encode_symbol(&mut self.common.gps_time_multi, multi as u32)?;
-                                let context = if multi < 10 { 2u32 } else { 3u32 };
-                                self.ic_gps_time.compress(
-                                    &mut encoder,
-                                    multi.wrapping_mul(
-                                        self.common.last_gps_time_diffs[self.common.last],
-                                    ),
-                                    curr_gps_time_diff_32,
-                                    context,
-                                )?;
-                            } else {
-                                encoder.encode_symbol(
-                                    &mut self.common.gps_time_multi,
-                                    LASZIP_GPS_TIME_MULTI as u32,
-                                )?;
-                                self.ic_gps_time.compress(
-                                    &mut encoder,
-                                    LASZIP_GPS_TIME_MULTI.wrapping_mul(
-                                        self.common.last_gps_time_diffs[self.common.last],
-                                    ),
-                                    curr_gps_time_diff_32,
-                                    4,
-                                )?;
-
-                                let multi_extreme_counter = &mut self.common.multi_extreme_counters[self.common.last];
-                                *multi_extreme_counter +=1 ;
-                                if *multi_extreme_counter > 3 {
-                                    self.common.last_gps_time_diffs[self.common.last] =
-                                        curr_gps_time_diff_32;
-                                    *multi_extreme_counter = 0;
+                                if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
+                                    // it belongs to another sequence
+                                    encoder.encode_symbol(
+                                        &mut self.common.gps_time_0_diff,
+                                        (i + 2) as u32,
+                                    )?;
+                                    self.common.last = (self.common.last + i) & 3;
+                                    return self.compress_field_with(&mut encoder, current_point);
                                 }
                             }
-                        } else if multi < 0 {
-                            if multi > LASZIP_GPS_TIME_MULTI_MINUS {
-                                // negative multipliers larger than LASZIP_GPSTIME_MULTI_MINUS are compressed directly
-                                encoder.encode_symbol(
-                                    &mut self.common.gps_time_multi,
-                                    (LASZIP_GPS_TIME_MULTI - multi) as u32,
-                                )?;
+                            // no other sequence found. start new sequence.
+                            encoder.encode_symbol(&mut self.common.gps_time_0_diff, 2)?;
+                            self.ic_gps_time.compress(
+                                &mut encoder,
+                                (self
+                                    .common
+                                    .last_gps_times
+                                    .get_unchecked(self.common.last)
+                                    .value
+                                    >> 32) as i32,
+                                (this_val.value >> 32) as i32,
+                                8,
+                            )?;
+
+                            encoder.write_int(this_val.value as u32)?;
+
+                            self.common.next = (self.common.next + 1) & 3;
+                            self.common.last = self.common.next;
+                            *self
+                                .common
+                                .last_gps_time_diffs
+                                .get_unchecked_mut(self.common.last) = 0;
+                            *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked_mut(self.common.last) = 0;
+                        }
+                        *self
+                            .common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.last) = this_val;
+                    }
+                } else {
+                    //the last integer difference was *not* zero
+                    if this_val.value
+                        == self
+                            .common
+                            .last_gps_times
+                            .get_unchecked(self.common.last)
+                            .value
+                    {
+                        // if the doubles have not changed use a special symbol
+                        encoder.encode_symbol(
+                            &mut self.common.gps_time_multi,
+                            LASZIP_GPS_TIME_MULTI_UNCHANGED as u32,
+                        )?;
+                    } else {
+                        // the last integer difference was *not* zero
+                        let curr_gps_time_diff_64 = this_val.value
+                            - self
+                                .common
+                                .last_gps_times
+                                .get_unchecked(self.common.last)
+                                .value;
+                        let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
+
+                        // if the current gps time difference can be represented with 32 bits
+                        if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
+                            // compute multiplier between current and last integer difference
+                            let multi_f = curr_gps_time_diff_32 as f32
+                                / *self
+                                    .common
+                                    .last_gps_time_diffs
+                                    .get_unchecked(self.common.last)
+                                    as f32;
+                            let multi = i32_quantize(multi_f);
+
+                            // compress the residual curr_gps_time_diff in dependance on the multiplier
+                            if multi == 1 {
+                                // this is the case we assume we get most often for regular spaced pulses
+                                encoder.encode_symbol(&mut self.common.gps_time_multi, 1)?;
                                 self.ic_gps_time.compress(
                                     &mut encoder,
-                                    multi.wrapping_mul(
-                                        self.common.last_gps_time_diffs[self.common.last],
-                                    ),
+                                    *self
+                                        .common
+                                        .last_gps_time_diffs
+                                        .get_unchecked(self.common.last),
                                     curr_gps_time_diff_32,
-                                    5,
+                                    1,
                                 )?;
+                                *self
+                                    .common
+                                    .multi_extreme_counters
+                                    .get_unchecked_mut(self.common.last) = 0;
+                            } else if multi > 0 {
+                                if multi < LASZIP_GPS_TIME_MULTI {
+                                    // positive multipliers up to LASZIP_GPSTIME_MULTI are compressed directly
+                                    encoder.encode_symbol(
+                                        &mut self.common.gps_time_multi,
+                                        multi as u32,
+                                    )?;
+                                    let context = if multi < 10 { 2u32 } else { 3u32 };
+                                    self.ic_gps_time.compress(
+                                        &mut encoder,
+                                        multi.wrapping_mul(
+                                            *self
+                                                .common
+                                                .last_gps_time_diffs
+                                                .get_unchecked(self.common.last),
+                                        ),
+                                        curr_gps_time_diff_32,
+                                        context,
+                                    )?;
+                                } else {
+                                    encoder.encode_symbol(
+                                        &mut self.common.gps_time_multi,
+                                        LASZIP_GPS_TIME_MULTI as u32,
+                                    )?;
+                                    self.ic_gps_time.compress(
+                                        &mut encoder,
+                                        LASZIP_GPS_TIME_MULTI.wrapping_mul(
+                                            *self
+                                                .common
+                                                .last_gps_time_diffs
+                                                .get_unchecked(self.common.last),
+                                        ),
+                                        curr_gps_time_diff_32,
+                                        4,
+                                    )?;
+
+                                    let multi_extreme_counter =
+                                        &mut self.common.multi_extreme_counters[self.common.last];
+                                    *multi_extreme_counter += 1;
+                                    if *multi_extreme_counter > 3 {
+                                        self.common.last_gps_time_diffs[self.common.last] =
+                                            curr_gps_time_diff_32;
+                                        *multi_extreme_counter = 0;
+                                    }
+                                }
+                            } else if multi < 0 {
+                                if multi > LASZIP_GPS_TIME_MULTI_MINUS {
+                                    // negative multipliers larger than LASZIP_GPSTIME_MULTI_MINUS are compressed directly
+                                    encoder.encode_symbol(
+                                        &mut self.common.gps_time_multi,
+                                        (LASZIP_GPS_TIME_MULTI - multi) as u32,
+                                    )?;
+                                    self.ic_gps_time.compress(
+                                        &mut encoder,
+                                        multi.wrapping_mul(
+                                            self.common.last_gps_time_diffs[self.common.last],
+                                        ),
+                                        curr_gps_time_diff_32,
+                                        5,
+                                    )?;
+                                } else {
+                                    encoder.encode_symbol(
+                                        &mut self.common.gps_time_multi,
+                                        (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS)
+                                            as u32,
+                                    )?;
+                                    self.ic_gps_time.compress(
+                                        &mut encoder,
+                                        LASZIP_GPS_TIME_MULTI_MINUS.wrapping_mul(
+                                            self.common.last_gps_time_diffs[self.common.last],
+                                        ),
+                                        curr_gps_time_diff_32,
+                                        6,
+                                    )?;
+                                    let multi_extreme_counter =
+                                        &mut self.common.multi_extreme_counters[self.common.last];
+                                    *multi_extreme_counter += 1;
+                                    if *multi_extreme_counter > 3 {
+                                        self.common.last_gps_time_diffs[self.common.last] =
+                                            curr_gps_time_diff_32;
+                                        *multi_extreme_counter = 0;
+                                    }
+                                }
                             } else {
-                                encoder.encode_symbol(
-                                    &mut self.common.gps_time_multi,
-                                    (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS) as u32,
-                                )?;
+                                encoder.encode_symbol(&mut self.common.gps_time_multi, 0)?;
                                 self.ic_gps_time.compress(
                                     &mut encoder,
-                                    LASZIP_GPS_TIME_MULTI_MINUS.wrapping_mul(
-                                        self.common.last_gps_time_diffs[self.common.last],
-                                    ),
+                                    0,
                                     curr_gps_time_diff_32,
-                                    6,
+                                    7,
                                 )?;
-                                let multi_extreme_counter = &mut self.common.multi_extreme_counters[self.common.last];
-                                *multi_extreme_counter +=1 ;
+                                let multi_extreme_counter =
+                                    &mut self.common.multi_extreme_counters[self.common.last];
+                                *multi_extreme_counter += 1;
                                 if *multi_extreme_counter > 3 {
                                     self.common.last_gps_time_diffs[self.common.last] =
                                         curr_gps_time_diff_32;
@@ -668,59 +757,58 @@ pub mod v2 {
                                 }
                             }
                         } else {
-                            encoder.encode_symbol(&mut self.common.gps_time_multi, 0)?;
-                            self.ic_gps_time
-                                .compress(&mut encoder, 0, curr_gps_time_diff_32, 7)?;
-                            let multi_extreme_counter = &mut self.common.multi_extreme_counters[self.common.last];
-                            *multi_extreme_counter +=1 ;
-                            if *multi_extreme_counter > 3 {
-                                self.common.last_gps_time_diffs[self.common.last] =
-                                    curr_gps_time_diff_32;
-                                *multi_extreme_counter = 0;
+                            // the difference is huge
+                            // maybe the double belongs to another time sequence
+                            for i in 1..4 {
+                                let other_gps_time_diff_64 = this_val.value
+                                    - self.common.last_gps_times[((self.common.last + i) & 3)]
+                                        .value;
+                                let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
+
+                                if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
+                                    // it belongs to this sequence
+                                    encoder.encode_symbol(
+                                        &mut self.common.gps_time_multi,
+                                        (LASZIP_GPS_TIME_MULTI_CODE_FULL + i as i32) as u32,
+                                    )?;
+                                    self.common.last = (self.common.last + i) & 3;
+                                    return self.compress_field_with(&mut encoder, current_point);
+                                }
                             }
+
+                            // no other sequence found start a new one
+                            encoder.encode_symbol(
+                                &mut self.common.gps_time_multi,
+                                LASZIP_GPS_TIME_MULTI_CODE_FULL as u32,
+                            )?;
+                            self.ic_gps_time.compress(
+                                &mut encoder,
+                                (self.common.last_gps_times[self.common.last as usize].value >> 32)
+                                    as i32,
+                                (this_val.value >> 32) as i32,
+                                8,
+                            )?;
+
+                            encoder.write_int(this_val.value as u32)?;
+                            self.common.next = (self.common.next + 1) & 3;
+                            self.common.last = self.common.next;
+                            *self
+                                .common
+                                .last_gps_time_diffs
+                                .get_unchecked_mut(self.common.last) = 0;
+                            *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked_mut(self.common.last) = 0;
                         }
-                    } else {
-                        // the difference is huge
-                        // maybe the double belongs to another time sequence
-                        for i in 1..4 {
-                            let other_gps_time_diff_64 = this_val.value
-                                - self.common.last_gps_times[((self.common.last + i) & 3)].value;
-                            let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
-
-                            if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
-                                // it belongs to this sequence
-                                encoder.encode_symbol(
-                                    &mut self.common.gps_time_multi,
-                                    (LASZIP_GPS_TIME_MULTI_CODE_FULL + i as i32) as u32,
-                                )?;
-                                self.common.last = (self.common.last + i) & 3;
-                                return self.compress_field_with(&mut encoder, current_point);
-                            }
-                        }
-
-                        // no other sequence found start a new one
-                        encoder.encode_symbol(
-                            &mut self.common.gps_time_multi,
-                            LASZIP_GPS_TIME_MULTI_CODE_FULL as u32,
-                        )?;
-                        self.ic_gps_time.compress(
-                            &mut encoder,
-                            (self.common.last_gps_times[self.common.last as usize].value >> 32)
-                                as i32,
-                            (this_val.value >> 32) as i32,
-                            8,
-                        )?;
-
-                        encoder.write_int(this_val.value as u32)?;
-                        self.common.next = (self.common.next + 1) & 3;
-                        self.common.last = self.common.next;
-                        self.common.last_gps_time_diffs[self.common.last] = 0;
-                        self.common.multi_extreme_counters[self.common.last] = 0;
+                        *self
+                            .common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.last) = this_val;
                     }
-                    self.common.last_gps_times[self.common.last] = this_val;
                 }
+                Ok(())
             }
-            Ok(())
         }
     }
 
@@ -779,149 +867,270 @@ pub mod v2 {
             last_point: &mut P,
         ) -> std::io::Result<()> {
             let mut multi: i32;
+            assert!(self.common.last < 4);
+            unsafe {
+                if *self
+                    .common
+                    .last_gps_time_diffs
+                    .get_unchecked(self.common.last)
+                    == 0
+                {
+                    // it the last integer difference was zero
+                    multi = decoder.decode_symbol(&mut self.common.gps_time_0_diff)? as i32;
 
-            if self.common.last_gps_time_diffs[self.common.last as usize] == 0 {
-                // it the last integer difference was zero
-                multi = decoder.decode_symbol(&mut self.common.gps_time_0_diff)? as i32;
-
-                if multi == 1 {
-                    // the difference can be represented with 32 bits
-                    self.common.last_gps_time_diffs[self.common.last as usize] =
-                        self.ic_gps_time.decompress(&mut decoder, 0, 0)?;
-                    self.common.last_gps_times[self.common.last as usize].value +=
-                        self.common.last_gps_time_diffs[self.common.last as usize] as i64;
-                    self.common.multi_extreme_counters[self.common.last as usize] = 0;
-                } else if multi == 2 {
-                    // the difference is huge
-                    self.common.next = (self.common.next + 1) & 3;
-                    self.common.last_gps_times[self.common.next as usize].value =
-                        self.ic_gps_time.decompress(
+                    if multi == 1 {
+                        // the difference can be represented with 32 bits
+                        *self
+                            .common
+                            .last_gps_time_diffs
+                            .get_unchecked_mut(self.common.last) =
+                            self.ic_gps_time.decompress(&mut decoder, 0, 0)?;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.last)
+                            .value += *self
+                            .common
+                            .last_gps_time_diffs
+                            .get_unchecked(self.common.last)
+                            as i64;
+                        *self
+                            .common
+                            .multi_extreme_counters
+                            .get_unchecked_mut(self.common.last) = 0;
+                    } else if multi == 2 {
+                        // the difference is huge
+                        self.common.next = (self.common.next + 1) & 3;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.next)
+                            .value = self.ic_gps_time.decompress(
                             &mut decoder,
-                            (self.common.last_gps_times[self.common.last as usize].value >> 32)
-                                as i32,
+                            (self
+                                .common
+                                .last_gps_times
+                                .get_unchecked(self.common.last)
+                                .value
+                                >> 32) as i32,
                             8,
                         )? as i64;
-                    self.common.last_gps_times[self.common.next as usize].value <<= 32;
-                    self.common.last_gps_times[self.common.next as usize].value |=
-                        decoder.read_int()? as i64;
-                    self.common.last = self.common.next;
-                    self.common.last_gps_time_diffs[self.common.last as usize] = 0;
-                    self.common.multi_extreme_counters[self.common.last as usize] = 0;
-                } else if multi > 2 {
-                    // we switch to another sequence
-                    self.common.last = (self.common.last + multi as usize - 2) & 3;
-                    self.decompress_field_with(&mut decoder, last_point)?;
-                }
-            } else {
-                multi = decoder.decode_symbol(&mut self.common.gps_time_multi)? as i32;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.next)
+                            .value <<= 32;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.next)
+                            .value |= decoder.read_int()? as i64;
 
-                if multi == 1 {
-                    self.common.last_gps_times[self.common.last as usize].value +=
-                        self.ic_gps_time.decompress(
+                        self.common.last = self.common.next;
+                        *self
+                            .common
+                            .last_gps_time_diffs
+                            .get_unchecked_mut(self.common.last) = 0;
+                        *self
+                            .common
+                            .multi_extreme_counters
+                            .get_unchecked_mut(self.common.last) = 0;
+                    } else if multi > 2 {
+                        // we switch to another sequence
+                        self.common.last = (self.common.last + multi as usize - 2) & 3;
+                        self.decompress_field_with(&mut decoder, last_point)?;
+                    }
+                } else {
+                    multi = decoder.decode_symbol(&mut self.common.gps_time_multi)? as i32;
+
+                    if multi == 1 {
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.last)
+                            .value += self.ic_gps_time.decompress(
                             &mut decoder,
-                            self.common.last_gps_time_diffs[self.common.last as usize],
+                            *self
+                                .common
+                                .last_gps_time_diffs
+                                .get_unchecked(self.common.last as usize),
                             1,
                         )? as i64;
-                    self.common.multi_extreme_counters[self.common.last as usize] = 0;
-                } else if multi < LASZIP_GPS_TIME_MULTI_UNCHANGED {
-                    let gps_time_diff: i32;
-                    if multi == 0 {
-                        gps_time_diff = self.ic_gps_time.decompress(&mut decoder, 0, 7)?;
-                        self.common.multi_extreme_counters[self.common.last as usize] += 1;
-                        if self.common.multi_extreme_counters[self.common.last as usize] > 3 {
-                            self.common.last_gps_time_diffs[self.common.last as usize] =
-                                gps_time_diff;
-                            self.common.multi_extreme_counters[self.common.last as usize] = 0;
-                        }
-                    } else if multi < LASZIP_GPS_TIME_MULTI {
-                        // TODO this can be made shorter, the if only changes the context param
-                        if multi < 10 {
-                            gps_time_diff = self.ic_gps_time.decompress(
-                                &mut decoder,
-                                multi.wrapping_mul(
-                                    self.common.last_gps_time_diffs[self.common.last as usize],
-                                ),
-                                2,
-                            )?;
-                        } else {
-                            gps_time_diff = self.ic_gps_time.decompress(
-                                &mut decoder,
-                                multi.wrapping_mul(
-                                    self.common.last_gps_time_diffs[self.common.last as usize],
-                                ),
-                                3,
-                            )?;
-                        }
-                    }
-                    // < LASZIP_GPS_TIME_MULTI
-                    else if multi == LASZIP_GPS_TIME_MULTI {
-                        gps_time_diff = self.ic_gps_time.decompress(
-                            &mut decoder,
-                            multi.wrapping_mul(
-                                self.common.last_gps_time_diffs[self.common.last as usize],
-                            ),
-                            4,
-                        )?;
-                        self.common.multi_extreme_counters[self.common.last as usize] += 1;
-                        if self.common.multi_extreme_counters[self.common.last as usize] > 3 {
-                            self.common.last_gps_time_diffs[self.common.last as usize] =
-                                gps_time_diff;
-                            self.common.multi_extreme_counters[self.common.last as usize] = 0;
-                        }
-                    } else {
-                        multi = LASZIP_GPS_TIME_MULTI - multi;
-                        if multi > LASZIP_GPS_TIME_MULTI_MINUS {
-                            gps_time_diff = self.ic_gps_time.decompress(
-                                &mut decoder,
-                                multi.wrapping_mul(
-                                    self.common.last_gps_time_diffs[self.common.last as usize],
-                                ),
-                                5,
-                            )?;
-                        } else {
-                            gps_time_diff = self.ic_gps_time.decompress(
-                                &mut decoder,
-                                LASZIP_GPS_TIME_MULTI_MINUS.wrapping_mul(
-                                    self.common.last_gps_time_diffs[self.common.last as usize],
-                                ),
-                                6,
-                            )?;
-                            self.common.multi_extreme_counters[self.common.last as usize] += 1;
-                            if self.common.multi_extreme_counters[self.common.last as usize] > 3 {
-                                self.common.last_gps_time_diffs[self.common.last as usize] =
-                                    gps_time_diff;
-                                self.common.multi_extreme_counters[self.common.last as usize] = 0;
+                        *self
+                            .common
+                            .multi_extreme_counters
+                            .get_unchecked_mut(self.common.last) = 0;
+                    } else if multi < LASZIP_GPS_TIME_MULTI_UNCHANGED {
+                        let gps_time_diff: i32;
+                        if multi == 0 {
+                            gps_time_diff = self.ic_gps_time.decompress(&mut decoder, 0, 7)?;
+                            *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked_mut(self.common.last) += 1;
+                            if *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked(self.common.last as usize)
+                                > 3
+                            {
+                                *self
+                                    .common
+                                    .last_gps_time_diffs
+                                    .get_unchecked_mut(self.common.last) = gps_time_diff;
+                                *self
+                                    .common
+                                    .multi_extreme_counters
+                                    .get_unchecked_mut(self.common.last) = 0;
+                            }
+                        } else if multi < LASZIP_GPS_TIME_MULTI {
+                            // TODO this can be made shorter, the if only changes the context param
+                            if multi < 10 {
+                                gps_time_diff = self.ic_gps_time.decompress(
+                                    &mut decoder,
+                                    multi.wrapping_mul(
+                                        *self
+                                            .common
+                                            .last_gps_time_diffs
+                                            .get_unchecked(self.common.last),
+                                    ),
+                                    2,
+                                )?;
+                            } else {
+                                gps_time_diff = self.ic_gps_time.decompress(
+                                    &mut decoder,
+                                    multi.wrapping_mul(
+                                        *self
+                                            .common
+                                            .last_gps_time_diffs
+                                            .get_unchecked(self.common.last),
+                                    ),
+                                    3,
+                                )?;
                             }
                         }
-                    }
-                    self.common.last_gps_times[self.common.last as usize].value +=
-                        gps_time_diff as i64;
-                } else if multi == LASZIP_GPS_TIME_MULTI_CODE_FULL {
-                    self.common.next = (self.common.next + 1) & 3;
-                    self.common.last_gps_times[self.common.next as usize].value =
-                        self.ic_gps_time.decompress(
+                        // < LASZIP_GPS_TIME_MULTI
+                        else if multi == LASZIP_GPS_TIME_MULTI {
+                            gps_time_diff = self.ic_gps_time.decompress(
+                                &mut decoder,
+                                multi.wrapping_mul(
+                                    *self
+                                        .common
+                                        .last_gps_time_diffs
+                                        .get_unchecked(self.common.last),
+                                ),
+                                4,
+                            )?;
+                            *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked_mut(self.common.last) += 1;
+                            if *self
+                                .common
+                                .multi_extreme_counters
+                                .get_unchecked_mut(self.common.last)
+                                > 3
+                            {
+                                *self
+                                    .common
+                                    .last_gps_time_diffs
+                                    .get_unchecked_mut(self.common.last) = gps_time_diff;
+                                *self
+                                    .common
+                                    .multi_extreme_counters
+                                    .get_unchecked_mut(self.common.last) = 0;
+                            }
+                        } else {
+                            multi = LASZIP_GPS_TIME_MULTI - multi;
+                            if multi > LASZIP_GPS_TIME_MULTI_MINUS {
+                                gps_time_diff = self.ic_gps_time.decompress(
+                                    &mut decoder,
+                                    multi.wrapping_mul(
+                                        *self
+                                            .common
+                                            .last_gps_time_diffs
+                                            .get_unchecked(self.common.last),
+                                    ),
+                                    5,
+                                )?;
+                            } else {
+                                gps_time_diff = self.ic_gps_time.decompress(
+                                    &mut decoder,
+                                    LASZIP_GPS_TIME_MULTI_MINUS.wrapping_mul(
+                                        *self
+                                            .common
+                                            .last_gps_time_diffs
+                                            .get_unchecked(self.common.last),
+                                    ),
+                                    6,
+                                )?;
+                                *self
+                                    .common
+                                    .multi_extreme_counters
+                                    .get_unchecked_mut(self.common.last) += 1;
+                                if *self
+                                    .common
+                                    .multi_extreme_counters
+                                    .get_unchecked_mut(self.common.last)
+                                    > 3
+                                {
+                                    *self
+                                        .common
+                                        .last_gps_time_diffs
+                                        .get_unchecked_mut(self.common.last) = gps_time_diff;
+                                    *self
+                                        .common
+                                        .multi_extreme_counters
+                                        .get_unchecked_mut(self.common.last) = 0;
+                                }
+                            }
+                        }
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.last)
+                            .value += gps_time_diff as i64;
+                    } else if multi == LASZIP_GPS_TIME_MULTI_CODE_FULL {
+                        self.common.next = (self.common.next + 1) & 3;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.next)
+                            .value = self.ic_gps_time.decompress(
                             &mut decoder,
-                            (self.common.last_gps_times[self.common.last as usize].value >> 32)
-                                as i32,
+                            (self
+                                .common
+                                .last_gps_times
+                                .get_unchecked(self.common.last)
+                                .value
+                                >> 32) as i32,
                             8,
                         )? as i64;
-                    self.common.last_gps_times[self.common.next as usize].value <<= 32;
-                    self.common.last_gps_times[self.common.next as usize].value |=
-                        decoder.read_int()? as i64;
-                    self.common.last = self.common.next;
-                    self.common.last_gps_time_diffs[self.common.last as usize] = 0;
-                    self.common.multi_extreme_counters[self.common.last as usize] = 0;
-                } else if multi > LASZIP_GPS_TIME_MULTI_CODE_FULL {
-                    self.common.last = (self.common.last + multi as usize
-                        - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
-                        & 3;
-                    self.decompress_field_with(&mut decoder, last_point)?;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.next)
+                            .value <<= 32;
+                        self.common
+                            .last_gps_times
+                            .get_unchecked_mut(self.common.next)
+                            .value |= decoder.read_int()? as i64;
+                        self.common.last = self.common.next;
+                        *self
+                            .common
+                            .last_gps_time_diffs
+                            .get_unchecked_mut(self.common.last) = 0;
+                        *self
+                            .common
+                            .multi_extreme_counters
+                            .get_unchecked_mut(self.common.last) = 0;
+                    } else if multi > LASZIP_GPS_TIME_MULTI_CODE_FULL {
+                        self.common.last = (self.common.last + multi as usize
+                            - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
+                            & 3;
+                        self.decompress_field_with(&mut decoder, last_point)?;
+                    }
                 }
+                last_point.set_gps_time(f64::from_bits(
+                    self.common
+                        .last_gps_times
+                        .get_unchecked(self.common.last)
+                        .value as u64,
+                ));
+                Ok(())
             }
-            last_point.set_gps_time(f64::from_bits(
-                self.common.last_gps_times[self.common.last as usize].value as u64,
-            ));
-            Ok(())
         }
     }
 

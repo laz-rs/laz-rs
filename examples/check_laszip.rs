@@ -24,7 +24,6 @@ fn main() {
         .unwrap();
     let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
 
-
     let mut las_file = std::io::BufReader::new(File::open(&args[2]).unwrap());
     las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
 
@@ -51,12 +50,14 @@ fn main() {
         assert_eq!(
             &expected_buff[0..20],
             &buf[0..20],
-            "point10  decompression not ok, {}", i
+            "point10  decompression not ok, {}",
+            i
         );
         assert_eq!(
             &expected_buff[20..28],
             &buf[20..28],
-            "gps time decompression not ok {}", i
+            "gps time decompression not ok {}",
+            i
         );
         assert_eq!(&expected_buff[28..], &buf[28..], "rgb decompression not ok");
         compressor.compress_one(&expected_buff).unwrap();
@@ -88,6 +89,11 @@ fn main() {
             "gps compression not ok: {}",
             i
         );
-        assert_eq!(&expected_buff[28..], &buf[28..], "rgb compression not ok: {}", i);
+        assert_eq!(
+            &expected_buff[28..],
+            &buf[28..],
+            "rgb compression not ok: {}",
+            i
+        );
     }
 }
