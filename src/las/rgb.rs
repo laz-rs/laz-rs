@@ -149,11 +149,10 @@ impl ColorDiff {
             | (flag_diff(last.green(), current.green(), 0xFF00) as u8) << 3
             | (flag_diff(last.blue(), current.blue(), 0x00FF) as u8) << 4
             | (flag_diff(last.blue(), current.blue(), 0xFF00) as u8) << 5
-            | ((flag_diff(current.red(), current.green(), 0x00FF) as u8)
-                | (flag_diff(current.red(), current.blue(), 0x00FF) as u8)
-                | (flag_diff(current.red(), current.green(), 0xFF00) as u8)
-                | (flag_diff(current.red(), last.blue(), 0xFF00) as u8))
-                << 6;
+            | ((flag_diff(current.red(), current.green(), 0x00FF)
+                || flag_diff(current.red(), current.blue(), 0x00FF)
+                || flag_diff(current.red(), current.green(), 0xFF00)
+                || flag_diff(current.red(), current.blue(), 0xFF00)) as u8) << 6;
 
         Self { 0: v }
     }
@@ -523,7 +522,6 @@ pub mod v2 {
             let mut corr;
 
             let color_diff = ColorDiff::from_points(current_point, &self.last);
-
             encoder.encode_symbol(&mut self.byte_used, color_diff.0 as u32)?;
 
             if color_diff.lower_red_byte_changed() {
@@ -652,17 +650,17 @@ pub mod v2 {
                         - lower_byte(self.last.green()) as i32)
                         / 2;
                     this_val.blue = (corr
-                        .wrapping_add(u8_clamp(diff + lower_byte(self.last.blue()) as i32) as u8))
+                        .wrapping_add(u8_clamp(diff + lower_byte(self.last.blue) as i32) as u8))
                         as u16;
                 } else {
                     this_val.blue = self.last.blue() & 0x00FF;
                 }
 
-                diff = upper_byte(this_val.red) as i32 - upper_byte(self.last.red()) as i32;
+                diff = upper_byte(this_val.red) as i32 - upper_byte(self.last.red) as i32;
                 if color_diff.upper_green_byte_changed() {
                     corr = decoder.decode_symbol(&mut self.rgb_diff_3)? as u8;
                     this_val.green |= (corr
-                        .wrapping_add(u8_clamp(diff + upper_byte(self.last.green()) as i32))
+                        .wrapping_add(u8_clamp(diff + upper_byte(self.last.green) as i32))
                         as u16)
                         << 8;
                 } else {
@@ -672,15 +670,15 @@ pub mod v2 {
                 if color_diff.upper_blue_byte_changed() {
                     corr = decoder.decode_symbol(&mut self.rgb_diff_5)? as u8;
                     diff = (diff + upper_byte(this_val.green) as i32
-                        - upper_byte(self.last.green()) as i32)
+                        - upper_byte(self.last.green) as i32)
                         / 2;
 
                     this_val.blue |= ((corr
-                        + (u8_clamp(diff + upper_byte(self.last.blue()) as i32)) as u8)
+                        + (u8_clamp(diff + upper_byte(self.last.blue) as i32)) as u8)
                         as u16)
                         << 08;
                 } else {
-                    this_val.blue |= self.last.blue() & 0xFF00;
+                    this_val.blue |= self.last.blue & 0xFF00;
                 }
             } else {
                 this_val.green = this_val.red;
