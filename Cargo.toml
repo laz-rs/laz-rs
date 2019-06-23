@@ -4,9 +4,13 @@ version = "0.1.0"
 authors = ["tmontaigu <thomas.montaigu@laposte.net>"]
 edition = "2018"
 license-file = "COPYING"
+repository = "https://github.com/tmontaigu/laz-rs"
+readme = "README.md"
+description = "Rust port of Laszip compression. of the LAS format"
 exclude = [
     "tests/data",
 ]
+
 
 
 [dependencies]
