@@ -42,6 +42,7 @@ pub const DEFAULT_DECOMPRESS_CONTEXTS: u32 = 0;
 
 const COMPRESS_ONLY_K: bool = false;
 
+#[derive(Clone)]
 pub struct IntegerDecompressor {
     k: u32,
 
@@ -74,7 +75,7 @@ impl IntegerDecompressor {
                 range = range >> 1;
                 corr_bits += 1;
             }
-            if corr_range == (1u32 << corr_bits - 1) {
+            if corr_range == 1u32 << (corr_bits - 1) {
                 corr_bits -= 1;
             }
             // the corrector must fall into this interval

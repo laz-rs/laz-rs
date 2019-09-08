@@ -94,9 +94,9 @@ use crate::models;
 use crate::models::DM_LENGTH_SHIFT;
 
 // threshold for renormalization
-pub const AC_MAX_LENGTH: u32 = 0xFFFFFFFF;
+pub const AC_MAX_LENGTH: u32 = 0xFFFF_FFFF;
 // maximum AC interval length
-pub const AC_MIN_LENGTH: u32 = 0x01000000;
+pub const AC_MIN_LENGTH: u32 = 0x0100_0000;
 
 pub struct ArithmeticDecoder<T: Read> {
     in_stream: T,

@@ -1,6 +1,6 @@
 use laz::record::{PointRecordCompressor, PointRecordDecompressor};
 
-use laz::las::point10::{LasPoint0, Point0};
+use laz::las::point0::{LasPoint0, Point0};
 use laz::las::v1;
 use laz::las::{Point1, Point2, Point3};
 use laz::record::{

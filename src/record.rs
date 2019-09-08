@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 
 use num_traits::{zero, AsPrimitive, PrimInt, Zero};
 
@@ -11,9 +11,35 @@ use crate::las;
 use crate::las::laszip::{LasZipError, LazItem, LazItemType};
 use crate::packers::Packable;
 
-//TODO since all field compressor do not actually compress the 1st point
-// but write it directly to the dst the FieldCompressor trait should maybe define
-// "compress_first" & FieldDecompressor have "decompress_first"
+use byteorder::{LittleEndian, ReadBytesExt};
+
+pub trait PointFieldDecompressor<R: Read, P> {
+    fn init_first_point(&mut self, src: &mut R, first_point: &mut P) -> std::io::Result<()>;
+
+    fn decompress_field_with(
+        &mut self,
+        decoder: &mut decoders::ArithmeticDecoder<R>,
+        current_point: &mut P,
+    ) -> std::io::Result<()>;
+}
+
+pub trait LayeredPointFieldDecompressor<R: Read, P> {
+    fn init_first_point(
+        &mut self,
+        src: &mut R,
+        first_point: &mut P,
+        context: &mut usize,
+    ) -> std::io::Result<()>;
+
+    fn decompress_field_with(
+        &mut self,
+        current_point: &mut P,
+        context: &mut usize,
+    ) -> std::io::Result<()>;
+
+    fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()>;
+    fn read_layers(&mut self, src: &mut R) -> std::io::Result<()>;
+}
 
 pub trait BufferFieldDecompressor<R: Read> {
     fn size_of_field(&self) -> usize;
@@ -27,16 +53,48 @@ pub trait BufferFieldDecompressor<R: Read> {
     ) -> std::io::Result<()>;
 }
 
-pub trait PointFieldDecompressor<R: Read, P> {
-    fn init_first_point(&mut self, src: &mut R, first_point: &mut P) -> std::io::Result<()>;
+pub trait BufferLayeredFieldDecompressor<R: Read> {
+    fn size_of_field(&self) -> usize;
+
+    fn init_first_point(
+        &mut self,
+        src: &mut R,
+        first_point: &mut [u8],
+        context: &mut usize,
+    ) -> std::io::Result<()>;
 
     fn decompress_field_with(
         &mut self,
-        decoder: &mut decoders::ArithmeticDecoder<R>,
-        current_point: &mut P,
+        current_point: &mut [u8],
+        context: &mut usize,
     ) -> std::io::Result<()>;
+
+    fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()>;
+    fn read_layers(&mut self, src: &mut R) -> std::io::Result<()>;
 }
 
+pub trait RecordDecompressor<R> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError>;
+    fn record_size(&self) -> usize;
+
+    fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()>;
+    fn reset(&mut self);
+
+    fn borrow_stream_mut(&mut self) -> &mut R;
+
+    fn into_stream(self) -> R;
+    fn box_into_stream(self: Box<Self>) -> R;
+}
+
+/***************************************************************************************************
+                    Record Decompressors implementations
+***************************************************************************************************/
+
+/// PointRecordDecompressor decompresses data using PointFieldDecompressor.
+/// The Points data is organized as follow;
+///
+/// 1) 1 Raw Point (as per ASPRS LAS definition)
+/// 2) n compressed Points
 pub struct PointRecordDecompressor<R: Read, P: Default> {
     point_fields_decompressor: Vec<Box<dyn PointFieldDecompressor<R, P>>>,
     decoder: decoders::ArithmeticDecoder<R>,
@@ -60,7 +118,7 @@ impl<R: Read, P: Default> PointRecordDecompressor<R, P> {
             .push(Box::new(field_decompressor));
     }
 
-    pub fn add_boxed_decompressor(&mut self, d: Box<PointFieldDecompressor<R, P>>) {
+    pub fn add_boxed_decompressor(&mut self, d: Box<dyn PointFieldDecompressor<R, P>>) {
         self.point_fields_decompressor.push(d);
     }
 
@@ -78,6 +136,76 @@ impl<R: Read, P: Default> PointRecordDecompressor<R, P> {
             }
         }
         Ok(current_point)
+    }
+}
+
+/// LayeredPointRecordDecompressor decompresses data using LayeredPointFieldDecompressor.
+/// The Points data is organized in layer as follow:
+///
+/// 1) 1 Raw Point (as per ASPRS LAS definition)
+/// 2) Number of remaining points in the chunk
+/// 3) Number of bytes for each layer of the chunk
+/// 4) Data of the layers
+pub struct LayeredPointRecordDecompressor<R: Read, P> {
+    point_fields_decompressor: Vec<Box<dyn LayeredPointFieldDecompressor<R, P>>>,
+    input: R,
+    first_decompression: bool,
+    point_count: u32,
+    point_read: u32,
+}
+
+impl<R: Read, P: Default> LayeredPointRecordDecompressor<R, P> {
+    pub fn new(input: R) -> Self {
+        Self {
+            point_fields_decompressor: vec![],
+            input,
+            first_decompression: true,
+            point_count: 0,
+            point_read: 0,
+        }
+    }
+
+    pub fn add_decompressor<D: LayeredPointFieldDecompressor<R, P> + 'static>(
+        &mut self,
+        field_decompressor: D,
+    ) {
+        self.point_fields_decompressor
+            .push(Box::new(field_decompressor));
+    }
+
+    pub fn add_boxed_decompressor(&mut self, d: Box<dyn LayeredPointFieldDecompressor<R, P>>) {
+        self.point_fields_decompressor.push(d);
+    }
+
+    pub fn decompress_next(&mut self) -> std::io::Result<P> {
+        let mut current_point = P::default();
+        let mut context = 0usize;
+
+        if self.first_decompression {
+            for field in &mut self.point_fields_decompressor {
+                field.init_first_point(&mut self.input, &mut current_point, &mut context)?;
+            }
+
+            self.point_count = self.input.read_u32::<LittleEndian>()?;
+            for field_reader in &mut self.point_fields_decompressor {
+                field_reader.read_layers_sizes(&mut self.input)?;
+            }
+            for field_reader in &mut self.point_fields_decompressor {
+                field_reader.read_layers(&mut self.input)?;
+            }
+            self.first_decompression = false;
+        } else {
+            //TODO if point_read >= point_count what do we do ?
+            for field in &mut self.point_fields_decompressor {
+                field.decompress_field_with(&mut current_point, &mut context)?;
+            }
+            self.point_read += 1;
+        }
+        Ok(current_point)
+    }
+
+    pub fn into_inner(self) -> R {
+        self.input
     }
 }
 
@@ -107,7 +235,7 @@ impl<R: Read> BufferRecordDecompressor<R> {
         self.field_decompressors.push(Box::new(field));
     }
 
-    pub fn add_boxed_decompressor(&mut self, d: Box<BufferFieldDecompressor<R>>) {
+    pub fn add_boxed_decompressor(&mut self, d: Box<dyn BufferFieldDecompressor<R>>) {
         self.record_size += d.size_of_field();
         self.field_decompressors.push(d);
     }
@@ -158,8 +286,10 @@ impl<R: Read> BufferRecordDecompressor<R> {
         self.field_decompressors.clear();
         self.record_size = 0;
     }
+}
 
-    pub fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
+impl<R: Read> RecordDecompressor<R> for BufferRecordDecompressor<R> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
@@ -175,6 +305,12 @@ impl<R: Read> BufferRecordDecompressor<R> {
                     LazItemType::RGB12 => {
                         self.add_field_decompressor(las::v1::LasRGBDecompressor::new())
                     }
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            record_item.item_type,
+                            record_item.version,
+                        ))
+                    }
                 },
                 2 => match record_item.item_type {
                     LazItemType::Byte(_) => self.add_field_decompressor(
@@ -189,6 +325,12 @@ impl<R: Read> BufferRecordDecompressor<R> {
                     LazItemType::RGB12 => {
                         self.add_field_decompressor(las::v2::LasRGBDecompressor::new())
                     }
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            record_item.item_type,
+                            record_item.version,
+                        ))
+                    }
                 },
                 _ => {
                     return Err(LasZipError::UnsupportedLazItemVersion(
@@ -200,6 +342,171 @@ impl<R: Read> BufferRecordDecompressor<R> {
         }
         Ok(())
     }
+
+    fn record_size(&self) -> usize {
+        self.record_size()
+    }
+
+    fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        self.decompress(out)
+    }
+
+    fn reset(&mut self) {
+        self.reset();
+    }
+
+    fn borrow_stream_mut(&mut self) -> &mut R {
+        self.decoder.in_stream()
+    }
+
+    fn into_stream(self) -> R {
+        self.decoder.into_stream()
+    }
+
+    fn box_into_stream(self: Box<Self>) -> R {
+        self.decoder.into_stream()
+    }
+}
+
+pub struct BufferLayeredRecordDecompressor<R: Read + Seek> {
+    field_decompressors: Vec<Box<dyn BufferLayeredFieldDecompressor<R>>>,
+    input: R,
+    is_first_decompression: bool,
+    record_size: usize,
+    context: usize,
+}
+
+impl<R: Read + Seek> BufferLayeredRecordDecompressor<R> {
+    pub fn new(input: R) -> Self {
+        Self {
+            field_decompressors: vec![],
+            input,
+            is_first_decompression: true,
+            record_size: 0,
+            context: 0,
+        }
+    }
+    pub fn add_field_decompressor<T: 'static + BufferLayeredFieldDecompressor<R>>(
+        &mut self,
+        field: T,
+    ) {
+        self.record_size += field.size_of_field();
+        self.field_decompressors.push(Box::new(field));
+    }
+
+    pub fn record_size(&self) -> usize {
+        self.record_size
+    }
+
+    pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        if self.is_first_decompression {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.init_first_point(
+                    &mut self.input,
+                    &mut out[field_start..field_end],
+                    &mut self.context,
+                )?;
+                field_start = field_end;
+            }
+
+            let _count = self.input.read_u32::<LittleEndian>()?;
+            for field in &mut self.field_decompressors {
+                field.read_layers_sizes(&mut self.input)?;
+            }
+            for field in &mut self.field_decompressors {
+                field.read_layers(&mut self.input)?;
+            }
+            self.is_first_decompression = false;
+        } else {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.decompress_field_with(&mut out[field_start..field_end], &mut self.context)?;
+                field_start = field_end;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<R: Read + Seek> RecordDecompressor<R> for BufferLayeredRecordDecompressor<R> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
+        for record_item in laz_items {
+            match record_item.version {
+                3 => match record_item.item_type {
+                    LazItemType::Point14 => {
+                        self.add_field_decompressor(las::v3::LasPoint6Decompressor::new())
+                    }
+                    LazItemType::RGB14 => {
+                        self.add_field_decompressor(las::v3::LasRGBDecompressor::new())
+                    }
+                    LazItemType::RGBNIR14 => {
+                        self.add_field_decompressor(las::v3::LasRGBNIRDecompressor::new())
+                    }
+                    LazItemType::Byte14(count) => self.add_field_decompressor(
+                        las::v3::LasExtraByteDecompressor::new(count as usize),
+                    ),
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            record_item.item_type,
+                            record_item.version,
+                        ))
+                    }
+                },
+                _ => {
+                    return Err(LasZipError::UnsupportedLazItemVersion(
+                        record_item.item_type,
+                        record_item.version,
+                    ))
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn record_size(&self) -> usize {
+        self.field_decompressors
+            .iter()
+            .map(|decompressor| decompressor.size_of_field())
+            .sum()
+    }
+
+    fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        self.decompress(out)
+    }
+
+    fn reset(&mut self) {
+        self.is_first_decompression = true;
+        self.field_decompressors.clear();
+    }
+
+    fn borrow_stream_mut(&mut self) -> &mut R {
+        &mut self.input
+    }
+
+    fn into_stream(self) -> R {
+        self.input
+    }
+
+    fn box_into_stream(self: Box<Self>) -> R {
+        self.input
+    }
+}
+
+/***************************************************************************************************
+                    Record Compressors implementations
+***************************************************************************************************/
+
+pub trait PointFieldCompressor<W: Write, P> {
+    fn init_first_point(&mut self, dst: &mut W, first_point: &P) -> std::io::Result<()>;
+
+    fn compress_field_with(
+        &mut self,
+        encoder: &mut encoders::ArithmeticEncoder<W>,
+        current_point: &P,
+    ) -> std::io::Result<()>;
 }
 
 pub trait BufferFieldCompressor<W: Write> {
@@ -211,16 +518,6 @@ pub trait BufferFieldCompressor<W: Write> {
         &mut self,
         encoder: &mut encoders::ArithmeticEncoder<W>,
         buf: &[u8],
-    ) -> std::io::Result<()>;
-}
-
-pub trait PointFieldCompressor<W: Write, P> {
-    fn init_first_point(&mut self, dst: &mut W, first_point: &P) -> std::io::Result<()>;
-
-    fn compress_field_with(
-        &mut self,
-        encoder: &mut encoders::ArithmeticEncoder<W>,
-        current_point: &P,
     ) -> std::io::Result<()>;
 }
 
@@ -243,7 +540,7 @@ impl<W: Write, P> PointRecordCompressor<W, P> {
         self.compressors.push(Box::new(c));
     }
 
-    pub fn add_boxed_compressor(&mut self, c: Box<PointFieldCompressor<W, P>>) {
+    pub fn add_boxed_compressor(&mut self, c: Box<dyn PointFieldCompressor<W, P>>) {
         self.compressors.push(c);
     }
 
@@ -270,6 +567,12 @@ impl<W: Write, P> PointRecordCompressor<W, P> {
     }
 }
 
+//FIXME idea to reduce code copy pasta
+/*
+pub struct BufferDecompressor<R: Read, InternalPointType> {
+    field_decompressors: Vec<Box<dyn LayeredPointFieldDecompressor<R, InternalPointType>>>,
+}
+*/
 pub struct BufferRecordCompressor<W: Write> {
     is_first_compression: bool,
     field_compressors: Vec<Box<dyn BufferFieldCompressor<W>>>,
@@ -296,7 +599,7 @@ impl<W: Write> BufferRecordCompressor<W> {
         self.field_compressors.push(Box::new(field));
     }
 
-    pub fn add_boxed_compressor(&mut self, c: Box<BufferFieldCompressor<W>>) {
+    pub fn add_boxed_compressor(&mut self, c: Box<dyn BufferFieldCompressor<W>>) {
         self.record_size += c.size_of_field();
         self.field_compressors.push(c);
     }
@@ -348,6 +651,12 @@ impl<W: Write> BufferRecordCompressor<W> {
                     LazItemType::Byte(_) => self.add_field_compressor(
                         las::v1::LasExtraByteCompressor::new(record_item.size as usize),
                     ),
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            record_item.item_type,
+                            record_item.version,
+                        ))
+                    }
                 },
                 2 => match record_item.item_type {
                     LazItemType::Point10 => {
@@ -362,6 +671,12 @@ impl<W: Write> BufferRecordCompressor<W> {
                     LazItemType::Byte(_) => self.add_field_compressor(
                         las::v2::LasExtraByteCompressor::new(record_item.size as usize),
                     ),
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            record_item.item_type,
+                            record_item.version,
+                        ))
+                    }
                 },
                 _ => {
                     return Err(LasZipError::UnsupportedLazItemVersion(
@@ -604,13 +919,4 @@ mod test {
         compressor.compress(&[]).unwrap();
         compressor.done().unwrap();
     }
-
-    /*
-        fn test_packer_on<T: Packable>(val: T) {
-            let mut buf = [0u8, std::mem::size_of::<T>()];
-            T::pack(v, &mut buf);
-            let v = T::unpack(&buf);
-            assert_eq!(v, val);
-        }
-    */
 }

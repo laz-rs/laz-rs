@@ -7,7 +7,12 @@ use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
 pub use crate::errors::LasZipError;
-use crate::record::{BufferRecordCompressor, BufferRecordDecompressor};
+use crate::las::point6::Point6;
+use crate::las::rgbnir::RGBNIR;
+use crate::record::{
+    BufferLayeredRecordDecompressor, BufferRecordCompressor, BufferRecordDecompressor,
+    RecordDecompressor,
+};
 
 const SUPPORTED_VERSION: u32 = 2;
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
@@ -42,14 +47,16 @@ impl Version {
 
 #[derive(Debug, Copy, Clone)]
 pub enum LazItemType {
-    //0
-    Point10,
-    //6
-    GpsTime,
-    //7
-    RGB12,
-    //8
     Byte(u16),
+    Point10,
+    GpsTime,
+    RGB12,
+    //WavePacket13,
+    Point14,
+    RGB14,
+    RGBNIR14,
+    //WavePacket14,
+    Byte14(u16),
 }
 
 impl From<LazItemType> for u16 {
@@ -59,6 +66,12 @@ impl From<LazItemType> for u16 {
             LazItemType::Point10 => 6,
             LazItemType::GpsTime => 7,
             LazItemType::RGB12 => 8,
+            //LazItemType::WavePacket13 => 9,
+            LazItemType::Point14 => 10,
+            LazItemType::RGB14 => 11,
+            LazItemType::RGBNIR14 => 12,
+            //LazItemType::WavePacket14 => 13,
+            LazItemType::Byte14(_) => 14,
         }
     }
 }
@@ -80,6 +93,12 @@ impl LazItem {
             6 => LazItemType::Point10,
             7 => LazItemType::GpsTime,
             8 => LazItemType::RGB12,
+            //9 => LazItemType::WavePacket13,
+            10 => LazItemType::Point14,
+            11 => LazItemType::RGB14,
+            12 => LazItemType::RGBNIR14,
+            //13 => LazItemType::WavePacket14,
+            14 => LazItemType::Byte14(size),
             _ => return Err(LasZipError::UnknownLazItem(item_type)),
         };
         Ok(Self {
@@ -120,6 +139,10 @@ impl LazItemRecordBuilder {
                     LazItemType::Point10 => 20,
                     LazItemType::GpsTime => 8,
                     LazItemType::RGB12 => 6,
+                    LazItemType::Point14 => Point6::SIZE as u16,
+                    LazItemType::RGB14 => 6,
+                    LazItemType::RGBNIR14 => RGBNIR::SIZE as u16,
+                    LazItemType::Byte14(n) => n,
                 };
                 LazItem {
                     item_type: *item_type,
@@ -257,6 +280,11 @@ impl LazVlr {
         write_laz_items_to(&self.items, &mut dst)?;
         Ok(())
     }
+
+    pub fn chunk_size(&self) -> u32 {
+        self.chunk_size
+    }
+
     pub fn items(&self) -> &Vec<LazItem> {
         &self.items
     }
@@ -311,17 +339,45 @@ impl LazVlrBuilder {
     }
 }
 
+//TODO fix unwraps
+pub fn record_decompressor_from_laz_items<R: Read + Seek + 'static>(
+    items: &Vec<LazItem>,
+    input: R,
+) -> Box<dyn RecordDecompressor<R>> {
+    let first_version = items[0].version;
+    if !items.iter().all(|item| item.version == first_version) {
+        // Technically we could mix version 1&2 and 3&4
+        // we just cannot mix non-layered decompressor and layered-decompressor
+        panic!("All laz items must have save version");
+    }
+
+    match first_version {
+        1 | 2 => {
+            let mut decompressor = BufferRecordDecompressor::new(input);
+            decompressor.set_fields_from(items).unwrap();
+            Box::new(decompressor)
+        }
+        3 | 4 => {
+            let mut decompressor = BufferLayeredRecordDecompressor::new(input);
+            decompressor.set_fields_from(items).unwrap();
+            Box::new(decompressor)
+        }
+        _ => panic!("Unknown laz item version {}", first_version),
+    }
+}
+
 //TODO: would it be possible to extract some logic to a ChunkedCompressor & ChunkedDecompressor ?
-pub struct LasZipDecompressor<R: Read + Seek> {
+//TODO low low low priority: possible to make the Seek trait optional ?
+pub struct LasZipDecompressor<R: Read + Seek + Sized + 'static> {
     vlr: LazVlr,
-    record_decompressor: BufferRecordDecompressor<R>,
+    record_decompressor: Box<dyn RecordDecompressor<R>>,
     chunk_points_read: u32,
     offset_to_chunk_table: i64,
     data_start: u64,
     chunk_table: Option<Vec<u64>>,
 }
 
-impl<R: Read + Seek> LasZipDecompressor<R> {
+impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
     pub fn new_with_record_data(
         source: R,
         laszip_vlr_record_data: &[u8],
@@ -331,15 +387,15 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
     }
 
     pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
-        if vlr.compressor != CompressorType::PointWiseChunked {
+        if vlr.compressor != CompressorType::PointWiseChunked
+            && vlr.compressor != CompressorType::LayeredChunked
+        {
             return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
         }
 
         let offset_to_chunk_table = source.read_i64::<LittleEndian>()?;
         let data_start = source.seek(SeekFrom::Current(0))?;
-        let mut record_decompressor =
-            BufferRecordDecompressor::with_decoder(ArithmeticDecoder::new(source));
-        record_decompressor.set_fields_from(&vlr.items)?;
+        let record_decompressor = record_decompressor_from_laz_items(&vlr.items, source);
 
         Ok(Self {
             vlr,
@@ -355,14 +411,13 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
         if self.chunk_points_read == self.vlr.chunk_size {
             self.reset_for_new_chunk();
         }
-
-        self.record_decompressor.decompress(&mut out)?;
+        self.record_decompressor.decompress_next(&mut out)?;
         self.chunk_points_read += 1;
         Ok(())
     }
 
     pub fn into_stream(self) -> R {
-        self.record_decompressor.into_stream()
+        self.record_decompressor.box_into_stream()
     }
 
     pub fn seek(&mut self, point_idx: u64) -> std::io::Result<()> {
@@ -385,7 +440,7 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
                 }
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
                 self.record_decompressor
-                    .borrow_mut_stream()
+                    .borrow_stream_mut()
                     .seek(SeekFrom::Start(chunk_table[chunk_of_point as usize] as u64))?;
 
                 self.reset_for_new_chunk();
@@ -394,19 +449,19 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
                     self.decompress_one(&mut tmp_out)?;
                     let current_pos = self
                         .record_decompressor
-                        .borrow_mut_stream()
+                        .borrow_stream_mut()
                         .seek(SeekFrom::Current(0))?;
 
                     if current_pos >= self.offset_to_chunk_table as u64 {
                         self.record_decompressor
-                            .borrow_mut_stream()
+                            .borrow_stream_mut()
                             .seek(SeekFrom::End(0))?;
                         return Ok(());
                     }
                 }
             } else if let Some(start_of_chunk) = chunk_table.get(chunk_of_point as usize) {
                 self.record_decompressor
-                    .borrow_mut_stream()
+                    .borrow_stream_mut()
                     .seek(SeekFrom::Start(*start_of_chunk as u64))?;
                 self.reset_for_new_chunk();
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
@@ -419,9 +474,9 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
                 // points compressed)
 
                 // Seek to the end so that the next call to decompress causes en error
-                // like "Failed to fill whole buffer (seeking past end is allowed by the Trait
+                // like "Failed to fill whole buffer (seeking past end is allowed by the Seek Trait)
                 self.record_decompressor
-                    .borrow_mut_stream()
+                    .borrow_stream_mut()
                     .seek(SeekFrom::End(0))?;
             }
             Ok(())
@@ -433,10 +488,6 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
 
     fn reset_for_new_chunk(&mut self) {
         self.chunk_points_read = 0;
-        self.reset_internal_decompressor();
-    }
-
-    fn reset_internal_decompressor(&mut self) {
         self.record_decompressor.reset();
         //we can safely unwrap here, as set_field would have failed in the ::new()
         self.record_decompressor
@@ -445,7 +496,7 @@ impl<R: Read + Seek> LasZipDecompressor<R> {
     }
 
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
-        let mut stream = self.record_decompressor.borrow_mut_stream();
+        let mut stream = self.record_decompressor.borrow_stream_mut();
         let current_pos = stream.seek(SeekFrom::Current(0))?;
         if self.offset_to_chunk_table == -1 {
             // Compressor was writing to non seekable stream

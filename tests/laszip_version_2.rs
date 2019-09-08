@@ -32,7 +32,7 @@ macro_rules! loop_test_on_buffer {
                 laz_vlr.items().clone(),
             )
             .unwrap();
-            let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr).unwrap();
+            let mut decompressor = LasZipDecompressor::new(laz_file, laz_vlr).unwrap();
 
             // write the laz record_data in a buffer, to use it later to create
             // our decompressor
@@ -71,8 +71,7 @@ macro_rules! loop_test_on_buffer {
             let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
             assert_eq!(my_laz_vlr.items_size(), $point_size);
 
-            let mut decompressor =
-                LasZipDecompressor::new(&mut compression_output, my_laz_vlr).unwrap();
+            let mut decompressor = LasZipDecompressor::new(compression_output, my_laz_vlr).unwrap();
 
             las_file.seek(SeekFrom::Start($las_point_start)).unwrap();
             for i in 0..NUM_POINTS {
