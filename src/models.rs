@@ -34,7 +34,7 @@ pub(crate) const BM_MAX_COUNT: u32 = 1 << BM_LENGTH_SHIFT;
 // for adaptive models
 pub(crate) const BM_LENGTH_SHIFT: u32 = 13;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ArithmeticModel {
     pub(crate) symbols: u32,
     pub(crate) compress: bool,
@@ -170,7 +170,7 @@ impl ArithmeticModel {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct ArithmeticBitModel {
     pub(crate) bit_0_count: u32,
     pub(crate) bit_count: u32,

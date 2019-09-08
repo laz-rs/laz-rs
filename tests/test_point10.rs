@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use laz::las::gps::{v2::GpsTimeCompressor, v2::GpsTimeDecompressor, GpsTime};
-use laz::las::point10::{v2::LasPoint0Compressor, v2::LasPoint0Decompressor, Point0};
+use laz::las::point0::{v2::LasPoint0Compressor, v2::LasPoint0Decompressor, Point0};
 use laz::las::rgb::{v2::LasRGBCompressor, v2::LasRGBDecompressor, RGB};
 use laz::packers::Packable;
 use laz::record::{BufferRecordCompressor, BufferRecordDecompressor};

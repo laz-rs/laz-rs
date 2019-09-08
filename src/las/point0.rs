@@ -67,7 +67,6 @@ pub trait LasPoint0 {
         self.set_y(src.read_i32::<LittleEndian>()?);
         self.set_z(src.read_i32::<LittleEndian>()?);
         self.set_intensity(src.read_u16::<LittleEndian>()?);
-
         self.set_bit_fields(src.read_u8()?);
         self.set_classification(src.read_u8()?);
         self.set_scan_angle_rank(src.read_i8()?);
@@ -80,9 +79,7 @@ pub trait LasPoint0 {
         dst.write_i32::<LittleEndian>(self.x())?;
         dst.write_i32::<LittleEndian>(self.y())?;
         dst.write_i32::<LittleEndian>(self.z())?;
-
         dst.write_u16::<LittleEndian>(self.intensity())?;
-
         dst.write_u8(self.bit_fields())?;
         dst.write_u8(self.classification())?;
         dst.write_i8(self.scan_angle_rank())?;
@@ -515,7 +512,7 @@ pub mod v1 {
     };
 
     use super::Point0;
-    use crate::las::point10::{LasPoint0, Point0Wrapper};
+    use crate::las::point0::{LasPoint0, Point0Wrapper};
 
     /// find median difference from 3 preceding differences
     fn median_diff(diff_array: &[i32; 3]) -> i32 {
@@ -643,7 +640,6 @@ pub mod v1 {
             )?;
 
             let changed_value = decoder.decode_symbol(&mut self.changed_values_model)? as i32;
-            //TODO use get or insert
             if changed_value != 0 {
                 if (changed_value & 32) != 0 {
                     self.last_point.intensity = self.ic_intensity.decompress(
@@ -654,48 +650,40 @@ pub mod v1 {
                 }
 
                 if (changed_value & 16) != 0 {
-                    let model = &mut self.bit_byte_models[self.last_point.bit_fields() as usize];
-                    if (*model).is_none() {
-                        *model = Some(ArithmeticModelBuilder::new(256).build());
-                    }
+                    let model = self.bit_byte_models[self.last_point.bit_fields() as usize]
+                        .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
                     self.last_point
-                        .set_bit_fields(decoder.decode_symbol((*model).as_mut().unwrap())? as u8);
+                        .set_bit_fields(decoder.decode_symbol(model)? as u8);
                 }
 
                 if (changed_value & 8) != 0 {
-                    let model =
-                        &mut self.classification_models[self.last_point.classification as usize];
-                    if (*model).is_none() {
-                        *model = Some(ArithmeticModelBuilder::new(256).build());
-                    }
-                    self.last_point.set_classification(
-                        decoder.decode_symbol((*model).as_mut().unwrap())? as u8,
-                    );
+                    let model = self.classification_models[self.last_point.classification as usize]
+                        .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
+                    self.last_point
+                        .set_classification(decoder.decode_symbol(model)? as u8);
                 }
 
                 if (changed_value & 4) != 0 {
                     self.last_point
                         .set_scan_angle_rank(self.ic_scan_angle_rank.decompress(
                             &mut decoder,
-                            self.last_point.scan_angle_rank() as i32,
+                            self.last_point.scan_angle_rank as i32,
                             (k_bits < 3) as u32,
                         )? as i8);
                 }
 
                 if (changed_value & 2) != 0 {
-                    let model = &mut self.user_data_models[self.last_point.user_data() as usize];
-                    if (*model).is_none() {
-                        *model = Some(ArithmeticModelBuilder::new(256).build());
-                    }
+                    let model = self.user_data_models[self.last_point.user_data as usize]
+                        .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
                     self.last_point
-                        .set_user_data(decoder.decode_symbol((*model).as_mut().unwrap())? as u8);
+                        .set_user_data(decoder.decode_symbol(model)? as u8);
                 }
 
                 if (changed_value & 1) != 0 {
                     self.last_point
                         .set_point_source_id(self.ic_point_source_id.decompress(
                             &mut decoder,
-                            self.last_point.point_source_id() as i32,
+                            self.last_point.point_source_id as i32,
                             DEFAULT_DECOMPRESS_CONTEXTS,
                         )? as u16);
                 }
@@ -935,7 +923,7 @@ pub mod v2 {
     };
 
     use super::Point0;
-    use crate::las::point10::{LasPoint0, Point0Wrapper};
+    use crate::las::point0::{LasPoint0, Point0Wrapper};
 
     struct Point10ChangedValues {
         value: i32,
@@ -1369,8 +1357,8 @@ pub mod v2 {
                                 .scan_angle_rank
                                 .get_unchecked_mut(self.last_point.scan_direction_flag as usize),
                         )? as i8;
-                        self.last_point
-                            .set_scan_angle_rank(val + self.last_point.scan_angle_rank);
+                        self.last_point.scan_angle_rank =
+                            self.last_point.scan_angle_rank.wrapping_add(val);
                     }
 
                     if changed_value.user_data_changed() {

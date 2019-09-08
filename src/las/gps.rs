@@ -29,6 +29,7 @@ use std::io::Read;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::packers::Packable;
+use std::ops::{Add, AddAssign};
 
 const LASZIP_GPS_TIME_MULTI: i32 = 500;
 const LASZIP_GPS_TIME_MULTI_MINUS: i32 = -10;
@@ -58,9 +59,54 @@ pub trait LasGpsTime {
     }
 }
 
+/// Struct to store GpsTime
+/// As the value (f64 as per LAS spec) needs to be reinterpreted (no simply converted with 'as') to i64 (or u64)
+/// during compression / decompression this struct provides a convenient wrapper
 #[derive(Default, Copy, Clone, Debug, PartialEq)]
 pub struct GpsTime {
     pub value: i64,
+}
+
+impl From<f64> for GpsTime {
+    fn from(v: f64) -> Self {
+        Self {
+            value: v.to_bits() as i64,
+        }
+    }
+}
+
+impl From<i64> for GpsTime {
+    fn from(v: i64) -> Self {
+        Self { value: v }
+    }
+}
+
+impl Add<f64> for GpsTime {
+    type Output = Self;
+
+    fn add(self, rhs: f64) -> Self::Output {
+        Self::from(self.value + rhs.to_bits() as i64)
+    }
+}
+
+impl Add<i64> for GpsTime {
+    type Output = Self;
+
+    fn add(self, rhs: i64) -> Self::Output {
+        Self::from(self.value + rhs)
+    }
+}
+
+impl AddAssign<f64> for GpsTime {
+    fn add_assign(&mut self, rhs: f64) {
+        self.value += rhs.to_bits() as i64;
+    }
+}
+
+impl AddAssign<i64> for GpsTime {
+    fn add_assign(&mut self, rhs: i64) {
+        self.value += rhs;
+    }
 }
 
 impl LasGpsTime for GpsTime {
@@ -82,7 +128,7 @@ impl Packable for GpsTime {
             u32::unpack_from(&input[std::mem::size_of::<u32>()..(2 * std::mem::size_of::<u32>())]);
 
         GpsTime {
-            value: (upper as i64) << 32 | lower as i64,
+            value: i64::from(upper) << 32 | i64::from(lower),
         }
     }
 

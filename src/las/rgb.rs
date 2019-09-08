@@ -38,7 +38,7 @@ fn u8_clamp(n: i32) -> u8 {
 
 #[inline(always)]
 fn lower_byte(n: u16) -> u8 {
-    (n & 0x00FF) as u8
+    (n & 0x00_FF) as u8
 }
 
 #[inline(always)]
@@ -82,7 +82,9 @@ pub struct RGB {
     pub green: u16,
     pub blue: u16,
 }
-
+impl RGB {
+    pub const SIZE: usize = 6;
+}
 impl LasRGB for RGB {
     fn red(&self) -> u16 {
         self.red
@@ -274,7 +276,7 @@ pub mod v1 {
             first_point.set_fields_from(&self.last);
             Ok(())
         }
-        //TODO mutate direclty instead of using set methods
+        //TODO mutate directly instead of using set methods
         fn decompress_field_with(
             &mut self,
             mut decoder: &mut ArithmeticDecoder<R>,
@@ -593,14 +595,14 @@ pub mod v2 {
     }
 
     pub struct LasRGBDecompressor {
-        last: RGB,
-        byte_used: ArithmeticModel,
-        rgb_diff_0: ArithmeticModel,
-        rgb_diff_1: ArithmeticModel,
-        rgb_diff_2: ArithmeticModel,
-        rgb_diff_3: ArithmeticModel,
-        rgb_diff_4: ArithmeticModel,
-        rgb_diff_5: ArithmeticModel,
+        pub(crate) last: RGB,
+        pub(crate) byte_used: ArithmeticModel,
+        pub(crate) rgb_diff_0: ArithmeticModel,
+        pub(crate) rgb_diff_1: ArithmeticModel,
+        pub(crate) rgb_diff_2: ArithmeticModel,
+        pub(crate) rgb_diff_3: ArithmeticModel,
+        pub(crate) rgb_diff_4: ArithmeticModel,
+        pub(crate) rgb_diff_5: ArithmeticModel,
     }
 
     impl LasRGBDecompressor {
@@ -697,9 +699,9 @@ pub mod v2 {
                         / 2;
 
                     this_val.blue |= ((corr
-                        + (u8_clamp(diff + upper_byte(self.last.blue) as i32)) as u8)
+                        .wrapping_add(u8_clamp(diff + upper_byte(self.last.blue) as i32)))
                         as u16)
-                        << 08;
+                        << 8;
                 } else {
                     this_val.blue |= self.last.blue & 0xFF00;
                 }
@@ -755,6 +757,124 @@ pub mod v2 {
             Ok(())
         }
     }
+}
+
+pub mod v3 {
+    //! Version 3 of the compression / decompression algorithm
+    //! is the same as the version 2, but with the support for the contexts system
+    use super::v2::LasRGBDecompressor as LasRGBDecompressorV2;
+    use crate::decoders::ArithmeticDecoder;
+    use crate::las::rgb::{LasRGB, RGB};
+    use crate::las::utils::copy_bytes_into_decoder;
+    use crate::record::{
+        BufferLayeredFieldDecompressor, LayeredPointFieldDecompressor, PointFieldDecompressor,
+    };
+    use byteorder::{LittleEndian, ReadBytesExt};
+    use std::io::{Cursor, Read, Seek};
+
+    struct LasContextRGB {
+        decompressor: LasRGBDecompressorV2,
+        unused: bool,
+    }
+
+    impl LasContextRGB {
+        fn from_rgb(rgb: &RGB) -> Self {
+            let mut me = Self {
+                decompressor: LasRGBDecompressorV2::new(),
+                unused: false,
+            };
+            me.decompressor.last = *rgb;
+            me
+        }
+    }
+
+    pub struct LasRGBDecompressor {
+        pub(crate) decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
+        pub(crate) changed_rgb: bool,
+        pub(crate) requested_rgb: bool,
+        layer_size: u32,
+        // 4
+        contexts: Vec<LasContextRGB>,
+        last_context_used: usize,
+    }
+
+    impl LasRGBDecompressor {
+        pub fn new() -> Self {
+            let rgb = RGB::default();
+            Self {
+                decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
+                changed_rgb: false,
+                requested_rgb: true,
+                layer_size: 0,
+                contexts: (0..4)
+                    .into_iter()
+                    .map(|_i| LasContextRGB::from_rgb(&rgb))
+                    .collect(),
+                last_context_used: 0,
+            }
+        }
+    }
+
+    impl<R: Read + Seek, P: LasRGB> LayeredPointFieldDecompressor<R, P> for LasRGBDecompressor {
+        fn init_first_point(
+            &mut self,
+            src: &mut R,
+            first_point: &mut P,
+            context: &mut usize,
+        ) -> std::io::Result<()> {
+            for rgb_context in &mut self.contexts {
+                rgb_context.unused = true;
+            }
+
+            let rgb = &mut self.contexts[*context].decompressor.last;
+            rgb.read_from(src)?;
+            first_point.set_fields_from(rgb);
+            Ok(())
+        }
+
+        fn decompress_field_with(
+            &mut self,
+            current_point: &mut P,
+            context: &mut usize,
+        ) -> std::io::Result<()> {
+            // If the context changed we may have to do an initialization
+            if self.last_context_used != *context {
+                if self.contexts[*context].unused {
+                    self.contexts[*context] = LasContextRGB::from_rgb(
+                        &self.contexts[self.last_context_used].decompressor.last,
+                    )
+                }
+            }
+
+            let the_context = &mut self.contexts[*context];
+            if self.changed_rgb {
+                the_context
+                    .decompressor
+                    .decompress_field_with(&mut self.decoder, current_point)?;
+            }
+
+            self.last_context_used = *context;
+            current_point.set_fields_from(&the_context.decompressor.last);
+            Ok(())
+        }
+
+        fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()> {
+            self.layer_size = src.read_u32::<LittleEndian>()?;
+            Ok(())
+        }
+
+        fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
+            self.changed_rgb = copy_bytes_into_decoder(
+                self.requested_rgb,
+                self.layer_size as usize,
+                &mut self.decoder,
+                src,
+            )?;
+            Ok(())
+        }
+    }
+
+    impl_buffer_decompressor_for_typed_decompressor!(LasRGBDecompressor, RGB);
 }
 
 #[cfg(test)]
