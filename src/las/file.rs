@@ -1,7 +1,9 @@
 #![allow(dead_code)]
-use crate::las::laszip::LazVlr;
+use crate::las::laszip::{LazVlr, LasZipDecompressor};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{Read, Seek, SeekFrom};
+
+
 
 #[derive(Debug)]
 pub struct QuickHeader {
@@ -60,7 +62,6 @@ impl Vlr {
         src.read_u16::<LittleEndian>()?; // reserved
         let mut user_id = [0u8; 16];
         src.read_exact(&mut user_id)?;
-        println!("{:?}", user_id);
 
         let record_id = src.read_u16::<LittleEndian>()?;
         let record_length = src.read_u16::<LittleEndian>()?;
@@ -80,53 +81,55 @@ impl Vlr {
         })
     }
 }
-pub trait LasPointIO {
-    fn read_from<R: Read>(&mut self, src: &mut R) -> std::io::Result<()>;
+
+
+
+pub trait LasPointReader {
+    fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()>;
 }
 
-pub struct UncompressedTypedPointReader<R: Read, P: LasPointIO + Default> {
-    src: R,
-    point_type: std::marker::PhantomData<P>,
-}
-
-impl<R: Read, P: LasPointIO + Default> UncompressedTypedPointReader<R, P> {
-    fn new(src: R) -> Self {
-        Self {
-            src,
-            point_type: std::marker::PhantomData,
-        }
-    }
-
-    fn read_next(&mut self) -> std::io::Result<P> {
-        let mut p = P::default();
-        p.read_from(&mut self.src)?;
-        Ok(p)
-    }
-}
-
-pub struct PointReader<R: Read> {
+struct RawPointReader<R: Read> {
     src: R,
 }
 
-impl<R: Read> PointReader<R> {
-    fn read_next_point_buffer(&mut self, _out: &mut [u8]) -> std::io::Result<()> {
-        unimplemented!()
-    }
-
-    fn read_next_as<P: LasPointIO>(&mut self) -> std::io::Result<P> {
-        unimplemented!()
+impl<R: Read> LasPointReader for RawPointReader<R> {
+    fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()> {
+        self.src.read_exact(buffer)
     }
 }
 
-pub struct TypedSimpleReader<R: Read + Seek, P: LasPointIO + Default> {
+impl<R: Read + Seek> LasPointReader for LasZipDecompressor<R> {
+    fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()> {
+        self.decompress_one(buffer)
+    }
+}
+
+pub struct SimpleReader {
     pub header: QuickHeader,
-    pub laszip_vlr: Option<LazVlr>,
-    point_reader: UncompressedTypedPointReader<R, P>,
+    point_reader: Box<dyn LasPointReader>,
+    internal_buffer: Vec<u8>,
+    current_index: u64,
 }
 
-impl<R: Read + Seek, P: LasPointIO + Default> TypedSimpleReader<R, P> {
-    pub fn new(mut src: R) -> std::io::Result<Self> {
-        let header = QuickHeader::read_from(&mut src)?;
+const IS_COMPRESSED_MASK: u8 = 0x80;
+fn is_point_format_compressed(point_format_id: u8) -> bool {
+    point_format_id & IS_COMPRESSED_MASK == IS_COMPRESSED_MASK
+}
+fn point_format_id_compressed_to_uncompressd(point_format_id: u8) -> u8 {
+    point_format_id & 0x3f
+}
+
+fn point_format_id_uncompressed_to_compressed(point_format_id: u8) -> u8 {
+    point_format_id | 0x80
+}
+
+
+
+
+
+impl SimpleReader {
+    pub fn new<R: Read + Seek + 'static>(mut src: R) -> std::io::Result<Self> {
+        let mut header = QuickHeader::read_from(&mut src)?;
         src.seek(SeekFrom::Start(header.header_size as u64))?;
         let mut laszip_vlr = None;
         for _i in 0..header.num_vlrs {
@@ -138,39 +141,36 @@ impl<R: Read + Seek, P: LasPointIO + Default> TypedSimpleReader<R, P> {
                 laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
             }
         }
-        let point_reader = UncompressedTypedPointReader::new(src);
+        src.seek(SeekFrom::Start(header.offset_to_points as u64))?;
+        let point_reader: Box<dyn LasPointReader> =
+        if is_point_format_compressed(header.point_format_id) {
+           Box::new(LasZipDecompressor::new(src, laszip_vlr.expect("Compressed data, but no Laszip Vlr found")).unwrap())
+        } else {
+            Box::new(RawPointReader{src})
+        };
+        header.point_format_id = point_format_id_compressed_to_uncompressd(header.point_format_id);
+        let internal_buffer = vec![0u8; header.point_size as usize];
         Ok(Self {
             header,
-            laszip_vlr,
             point_reader,
+            internal_buffer,
+            current_index: 0
         })
     }
-}
 
-pub struct SimpleReader<R: Read + Seek> {
-    pub src: R,
-    pub header: QuickHeader,
-    pub laszip_vlr: Option<LazVlr>,
-}
 
-impl<R: Read + Seek> SimpleReader<R> {
-    pub fn new(mut src: R) -> std::io::Result<Self> {
-        let header = QuickHeader::read_from(&mut src)?;
-        src.seek(SeekFrom::Start(header.header_size as u64))?;
-        let mut laszip_vlr = None;
-        for _i in 0..header.num_vlrs {
-            let vlr = Vlr::read_from(&mut src)?;
-            if vlr.record_id == 22204
-                && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
-                    == "laszip encoded"
-            {
-                laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
+    pub fn read_next(&mut self) -> Option<std::io::Result<&[u8]>> {
+        if self.current_index < self.header.num_points {
+            if let Err(e) = self.point_reader.read_next_into(&mut self.internal_buffer) {
+                Some(Err(e))
+            } else {
+                self.current_index += 1;
+                Some(Ok(self.internal_buffer.as_slice()))
             }
+        } else {
+            None
         }
-        Ok(Self {
-            src,
-            header,
-            laszip_vlr,
-        })
     }
 }
+
+

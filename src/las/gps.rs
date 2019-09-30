@@ -23,13 +23,14 @@
     6 June 2019: Translated to Rust
 ===============================================================================
 */
+//! Defines the different version of compressors and decompressors for the GpsTime
 
 use std::io::Read;
+use std::ops::{Add, AddAssign};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::packers::Packable;
-use std::ops::{Add, AddAssign};
 
 const LASZIP_GPS_TIME_MULTI: i32 = 500;
 const LASZIP_GPS_TIME_MULTI_MINUS: i32 = -10;
@@ -60,7 +61,9 @@ pub trait LasGpsTime {
 }
 
 /// Struct to store GpsTime
-/// As the value (f64 as per LAS spec) needs to be reinterpreted (no simply converted with 'as') to i64 (or u64)
+///
+/// As the value (f64 as per LAS spec) needs to be reinterpreted
+/// (not simply converted with 'as') to i64 (or u64)
 /// during compression / decompression this struct provides a convenient wrapper
 #[derive(Default, Copy, Clone, Debug, PartialEq)]
 pub struct GpsTime {
@@ -72,6 +75,12 @@ impl From<f64> for GpsTime {
         Self {
             value: v.to_bits() as i64,
         }
+    }
+}
+
+impl From<GpsTime> for i64 {
+    fn from(gps: GpsTime) -> Self {
+        gps.value
     }
 }
 
@@ -109,6 +118,14 @@ impl AddAssign<i64> for GpsTime {
     }
 }
 
+impl From<GpsTime> for f64 {
+    fn from(gps: GpsTime) -> Self {
+        {
+            f64::from_bits(gps.value as u64)
+        }
+    }
+}
+
 impl LasGpsTime for GpsTime {
     fn gps_time(&self) -> f64 {
         f64::from_bits(self.value as u64)
@@ -119,6 +136,7 @@ impl LasGpsTime for GpsTime {
     }
 }
 
+//TODO This can be optimized !
 impl Packable for GpsTime {
     type Type = GpsTime;
 
@@ -147,21 +165,20 @@ impl Packable for GpsTime {
 pub mod v1 {
     use std::io::{Read, Write};
 
-    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
     use num_traits::clamp;
 
     use crate::compressors::{
-        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
+        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
     use crate::las::gps::LasGpsTime;
+    use crate::las::utils::read_and_unpack;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{
-        BufferFieldCompressor, BufferFieldDecompressor, PointFieldCompressor,
-        PointFieldDecompressor,
+        FieldCompressor, FieldDecompressor,
     };
 
     use super::GpsTime;
@@ -194,88 +211,6 @@ pub mod v1 {
         }
     }
 
-    impl<R: Read, P: LasGpsTime> PointFieldDecompressor<R, P> for LasGpsTimeDecompressor {
-        fn init_first_point(&mut self, src: &mut R, first_point: &mut P) -> std::io::Result<()> {
-            let gps_value = src.read_f64::<LittleEndian>()?;
-            first_point.set_gps_time(gps_value);
-            self.last_gps = gps_value.to_bits() as i64;
-            Ok(())
-        }
-
-        fn decompress_field_with(
-            &mut self,
-            mut decoder: &mut ArithmeticDecoder<R>,
-            current_point: &mut P,
-        ) -> std::io::Result<()> {
-            let multi;
-            if self.last_gps_time_diff == 0 {
-                multi = decoder.decode_symbol(&mut self.gps_time_0_diff_model)?;
-                if multi == 1 {
-                    // the difference can be represented with 32 bits
-                    self.last_gps_time_diff = self.ic_gps_time.decompress(&mut decoder, 0, 0)?;
-                    self.last_gps += self.last_gps_time_diff as i64;
-                } else if multi == 2 {
-                    // the difference is huge,
-                    // the gps was written as is
-                    self.last_gps = decoder.read_int_64()? as i64;
-                }
-            } else {
-                multi = decoder.decode_symbol(&mut self.gps_time_multi_model)?;
-
-                if multi < LASZIP_GPS_TIME_MULTI_MAX - 2 {
-                    let gps_time_diff: i32;
-                    if multi == 1 {
-                        gps_time_diff = self.ic_gps_time.decompress(
-                            &mut decoder,
-                            self.last_gps_time_diff,
-                            1,
-                        )?;
-                        self.last_gps_time_diff = gps_time_diff;
-                        self.multi_extreme_counter = 0;
-                    } else if multi == 0 {
-                        gps_time_diff = self.ic_gps_time.decompress(
-                            &mut decoder,
-                            self.last_gps_time_diff / 4,
-                            2,
-                        )?;
-                        self.multi_extreme_counter += 1;
-                        if self.multi_extreme_counter > 3 {
-                            self.last_gps_time_diff = gps_time_diff;
-                            self.multi_extreme_counter = 0;
-                        }
-                    } else {
-                        let context = if multi < 10 {
-                            3
-                        } else if multi < 50 {
-                            4
-                        } else {
-                            5
-                        };
-
-                        gps_time_diff = self.ic_gps_time.decompress(
-                            &mut decoder,
-                            self.last_gps_time_diff * multi as i32,
-                            context,
-                        )?;
-
-                        if multi == LASZIP_GPS_TIME_MULTI_MAX - 3 {
-                            self.multi_extreme_counter += 1;
-                            if self.multi_extreme_counter > 3 {
-                                self.last_gps_time_diff = gps_time_diff;
-                                self.multi_extreme_counter = 0;
-                            }
-                        }
-                    }
-                    self.last_gps += gps_time_diff as i64;
-                } else if multi < LASZIP_GPS_TIME_MULTI_MAX - 1 {
-                    self.last_gps = decoder.read_int_64()? as i64;
-                }
-            }
-            current_point.set_gps_time(f64::from_bits(self.last_gps as u64));
-            Ok(())
-        }
-    }
-
     pub struct LasGpsTimeCompressor {
         last_gps: i64,
         gps_time_multi_model: ArithmeticModel,
@@ -302,18 +237,22 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write, P: LasGpsTime> PointFieldCompressor<W, P> for LasGpsTimeCompressor {
-        fn init_first_point(&mut self, dst: &mut W, first_point: &P) -> std::io::Result<()> {
-            dst.write_f64::<LittleEndian>(first_point.gps_time())?;
-            self.last_gps = first_point.gps_time().to_bits() as i64;
-            Ok(())
+    impl<W: Write> FieldCompressor<W> for LasGpsTimeCompressor {
+        fn size_of_field(&self) -> usize {
+            std::mem::size_of::<f64>()
         }
 
-        fn compress_field_with(
+        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
+            self.last_gps = GpsTime::unpack_from(buf).into();
+            dst.write_all(buf)
+        }
+
+        fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            current_point: &P,
+            buf: &[u8],
         ) -> std::io::Result<()> {
+            let current_point = GpsTime::unpack_from(buf);
             let current_gps_time_value = current_point.gps_time().to_bits() as i64;
 
             if self.last_gps_time_diff == 0 {
@@ -430,37 +369,13 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write> BufferFieldCompressor<W> for LasGpsTimeCompressor {
-        fn size_of_field(&self) -> usize {
-            std::mem::size_of::<f64>()
-        }
-
-        fn compress_first(&mut self, mut dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            let current = GpsTime::unpack_from(buf);
-            self.init_first_point(&mut dst, &current)?;
-            Ok(())
-        }
-
-        fn compress_with(
-            &mut self,
-            mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
-        ) -> std::io::Result<()> {
-            let current = GpsTime::unpack_from(buf);
-            self.compress_field_with(&mut encoder, &current)?;
-            Ok(())
-        }
-    }
-
-    impl<R: Read> BufferFieldDecompressor<R> for LasGpsTimeDecompressor {
+    impl<R: Read> FieldDecompressor<R> for LasGpsTimeDecompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<f64>()
         }
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            let mut current_value = GpsTime::default();
-            self.init_first_point(src, &mut current_value)?;
-            current_value.pack_into(first_point);
+            self.last_gps = i64::from(read_and_unpack::<_, GpsTime>(src, first_point)?);
             Ok(())
         }
 
@@ -469,34 +384,92 @@ pub mod v1 {
             mut decoder: &mut ArithmeticDecoder<R>,
             buf: &mut [u8],
         ) -> std::io::Result<()> {
-            let mut current_value = GpsTime::default();
-            self.decompress_field_with(&mut decoder, &mut current_value)?;
-            current_value.pack_into(buf);
+            let multi;
+            if self.last_gps_time_diff == 0 {
+                multi = decoder.decode_symbol(&mut self.gps_time_0_diff_model)?;
+                if multi == 1 {
+                    // the difference can be represented with 32 bits
+                    self.last_gps_time_diff = self.ic_gps_time.decompress(&mut decoder, 0, 0)?;
+                    self.last_gps += self.last_gps_time_diff as i64;
+                } else if multi == 2 {
+                    // the difference is huge,
+                    // the gps was written as is
+                    self.last_gps = decoder.read_int_64()? as i64;
+                }
+            } else {
+                multi = decoder.decode_symbol(&mut self.gps_time_multi_model)?;
+
+                if multi < LASZIP_GPS_TIME_MULTI_MAX - 2 {
+                    let gps_time_diff: i32;
+                    if multi == 1 {
+                        gps_time_diff = self.ic_gps_time.decompress(
+                            &mut decoder,
+                            self.last_gps_time_diff,
+                            1,
+                        )?;
+                        self.last_gps_time_diff = gps_time_diff;
+                        self.multi_extreme_counter = 0;
+                    } else if multi == 0 {
+                        gps_time_diff = self.ic_gps_time.decompress(
+                            &mut decoder,
+                            self.last_gps_time_diff / 4,
+                            2,
+                        )?;
+                        self.multi_extreme_counter += 1;
+                        if self.multi_extreme_counter > 3 {
+                            self.last_gps_time_diff = gps_time_diff;
+                            self.multi_extreme_counter = 0;
+                        }
+                    } else {
+                        let context = if multi < 10 {
+                            3
+                        } else if multi < 50 {
+                            4
+                        } else {
+                            5
+                        };
+
+                        gps_time_diff = self.ic_gps_time.decompress(
+                            &mut decoder,
+                            self.last_gps_time_diff * multi as i32,
+                            context,
+                        )?;
+
+                        if multi == LASZIP_GPS_TIME_MULTI_MAX - 3 {
+                            self.multi_extreme_counter += 1;
+                            if self.multi_extreme_counter > 3 {
+                                self.last_gps_time_diff = gps_time_diff;
+                                self.multi_extreme_counter = 0;
+                            }
+                        }
+                    }
+                    self.last_gps += gps_time_diff as i64;
+                } else if multi < LASZIP_GPS_TIME_MULTI_MAX - 1 {
+                    self.last_gps = decoder.read_int_64()? as i64;
+                }
+            }
+            GpsTime::from(self.last_gps).pack_into(buf);
             Ok(())
         }
     }
-
 }
 
 pub mod v2 {
     use std::io::{Read, Write};
 
-    use byteorder::{LittleEndian, WriteBytesExt};
-
     use crate::compressors::{IntegerCompressor, IntegerCompressorBuilder};
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::gps::LasGpsTime;
+    use crate::las::utils::read_and_unpack;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{
-        BufferFieldCompressor, BufferFieldDecompressor, PointFieldCompressor,
-        PointFieldDecompressor,
+        FieldCompressor, FieldDecompressor,
     };
 
     use super::{
-        i32_quantize, GpsTime, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
+        GpsTime, i32_quantize, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
         LASZIP_GPS_TIME_MULTI_MINUS, LASZIP_GPS_TIME_MULTI_TOTAL, LASZIP_GPS_TIME_MULTI_UNCHANGED,
     };
 
@@ -543,20 +516,23 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write, P: LasGpsTime> PointFieldCompressor<W, P> for GpsTimeCompressor {
-        fn init_first_point(&mut self, dst: &mut W, first_point: &P) -> std::io::Result<()> {
-            self.common.last_gps_times[0].value = first_point.gps_time().to_bits() as i64;
-            dst.write_f64::<LittleEndian>(first_point.gps_time())
+
+    impl<W: Write> FieldCompressor<W> for GpsTimeCompressor {
+        fn size_of_field(&self) -> usize {
+            std::mem::size_of::<i64>()
         }
 
-        fn compress_field_with(
+        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
+           self.common.last_gps_times[0] = GpsTime::unpack_from(buf);
+           dst.write_all(buf)
+        }
+
+        fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            current_point: &P,
+            buf: &[u8],
         ) -> std::io::Result<()> {
-            let this_val = GpsTime {
-                value: current_point.gps_time().to_bits() as i64,
-            };
+            let this_val = GpsTime::unpack_from(&buf);
             assert!(self.common.last < 4);
             unsafe {
                 if *self
@@ -567,20 +543,20 @@ pub mod v2 {
                 {
                     if this_val.value
                         == self
-                            .common
-                            .last_gps_times
-                            .get_unchecked(self.common.last)
-                            .value
+                        .common
+                        .last_gps_times
+                        .get_unchecked(self.common.last)
+                        .value
                     {
                         encoder.encode_symbol(&mut self.common.gps_time_0_diff, 0)?;
                     } else {
                         // calculate the difference between the two doubles as an integer
                         let curr_gps_time_diff_64 = this_val.value
                             - self
-                                .common
-                                .last_gps_times
-                                .get_unchecked(self.common.last)
-                                .value;
+                            .common
+                            .last_gps_times
+                            .get_unchecked(self.common.last)
+                            .value;
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
@@ -602,10 +578,10 @@ pub mod v2 {
                             for i in 1..4 {
                                 let other_gps_time_diff_64 = this_val.value
                                     - self
-                                        .common
-                                        .last_gps_times
-                                        .get_unchecked((self.common.last + i) & 3)
-                                        .value;
+                                    .common
+                                    .last_gps_times
+                                    .get_unchecked((self.common.last + i) & 3)
+                                    .value;
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
@@ -615,7 +591,7 @@ pub mod v2 {
                                         (i + 2) as u32,
                                     )?;
                                     self.common.last = (self.common.last + i) & 3;
-                                    return self.compress_field_with(&mut encoder, current_point);
+                                    return self.compress_with(&mut encoder, buf);
                                 }
                             }
                             // no other sequence found. start new sequence.
@@ -654,10 +630,10 @@ pub mod v2 {
                     //the last integer difference was *not* zero
                     if this_val.value
                         == self
-                            .common
-                            .last_gps_times
-                            .get_unchecked(self.common.last)
-                            .value
+                        .common
+                        .last_gps_times
+                        .get_unchecked(self.common.last)
+                        .value
                     {
                         // if the doubles have not changed use a special symbol
                         encoder.encode_symbol(
@@ -668,10 +644,10 @@ pub mod v2 {
                         // the last integer difference was *not* zero
                         let curr_gps_time_diff_64 = this_val.value
                             - self
-                                .common
-                                .last_gps_times
-                                .get_unchecked(self.common.last)
-                                .value;
+                            .common
+                            .last_gps_times
+                            .get_unchecked(self.common.last)
+                            .value;
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         // if the current gps time difference can be represented with 32 bits
@@ -679,10 +655,10 @@ pub mod v2 {
                             // compute multiplier between current and last integer difference
                             let multi_f = curr_gps_time_diff_32 as f32
                                 / *self
-                                    .common
-                                    .last_gps_time_diffs
-                                    .get_unchecked(self.common.last)
-                                    as f32;
+                                .common
+                                .last_gps_time_diffs
+                                .get_unchecked(self.common.last)
+                                as f32;
                             let multi = i32_quantize(multi_f);
 
                             // compress the residual curr_gps_time_diff in dependance on the multiplier
@@ -808,7 +784,7 @@ pub mod v2 {
                             for i in 1..4 {
                                 let other_gps_time_diff_64 = this_val.value
                                     - self.common.last_gps_times[((self.common.last + i) & 3)]
-                                        .value;
+                                    .value;
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
@@ -818,7 +794,7 @@ pub mod v2 {
                                         (LASZIP_GPS_TIME_MULTI_CODE_FULL + i as i32) as u32,
                                     )?;
                                     self.common.last = (self.common.last + i) & 3;
-                                    return self.compress_field_with(&mut encoder, current_point);
+                                    return self.compress_with(&mut encoder, buf);
                                 }
                             }
 
@@ -858,27 +834,6 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write> BufferFieldCompressor<W> for GpsTimeCompressor {
-        fn size_of_field(&self) -> usize {
-            std::mem::size_of::<i64>()
-        }
-
-        fn compress_first(&mut self, mut dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            let this_val = GpsTime::unpack_from(&buf);
-            self.init_first_point(&mut dst, &this_val)
-        }
-
-        fn compress_with(
-            &mut self,
-            mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
-        ) -> std::io::Result<()> {
-            let this_val = GpsTime::unpack_from(&buf);
-            self.compress_field_with(&mut encoder, &this_val)?;
-            Ok(())
-        }
-    }
-
     pub struct GpsTimeDecompressor {
         common: Common,
         ic_gps_time: IntegerDecompressor,
@@ -896,21 +851,24 @@ pub mod v2 {
         }
     }
 
-    impl<R: Read, P: LasGpsTime> PointFieldDecompressor<R, P> for GpsTimeDecompressor {
-        fn init_first_point(
-            &mut self,
-            mut src: &mut R,
-            first_point: &mut P,
-        ) -> std::io::Result<()> {
-            self.common.last_gps_times[0].read_from(&mut src)?;
-            first_point.set_gps_time(f64::from_bits(self.common.last_gps_times[0].value as u64));
+
+
+    impl<R: Read> FieldDecompressor<R> for GpsTimeDecompressor {
+        fn size_of_field(&self) -> usize {
+            std::mem::size_of::<i64>()
+        }
+
+        fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
+            unsafe {
+                *self.common.last_gps_times.get_unchecked_mut(0) = read_and_unpack::<_, GpsTime>(src, first_point)?;
+            }
             Ok(())
         }
 
-        fn decompress_field_with(
+        fn decompress_with(
             &mut self,
             mut decoder: &mut ArithmeticDecoder<R>,
-            last_point: &mut P,
+            buf: &mut [u8],
         ) -> std::io::Result<()> {
             let mut multi: i32;
             assert!(self.common.last < 4);
@@ -980,7 +938,7 @@ pub mod v2 {
                     } else if multi > 2 {
                         // we switch to another sequence
                         self.common.last = (self.common.last + multi as usize - 2) & 3;
-                        self.decompress_field_with(&mut decoder, last_point)?;
+                        self.decompress_with(&mut decoder, buf)?;
                     }
                 } else {
                     multi = decoder.decode_symbol(&mut self.common.gps_time_multi)? as i32;
@@ -1166,41 +1124,15 @@ pub mod v2 {
                         self.common.last = (self.common.last + multi as usize
                             - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
                             & 3;
-                        self.decompress_field_with(&mut decoder, last_point)?;
+                        self.decompress_with(&mut decoder, buf)?;
                     }
                 }
-                last_point.set_gps_time(f64::from_bits(
-                    self.common
-                        .last_gps_times
-                        .get_unchecked(self.common.last)
-                        .value as u64,
-                ));
+                self.common
+                    .last_gps_times
+                    .get_unchecked(self.common.last)
+                    .pack_into(buf);
                 Ok(())
             }
-        }
-    }
-
-    impl<R: Read> BufferFieldDecompressor<R> for GpsTimeDecompressor {
-        fn size_of_field(&self) -> usize {
-            std::mem::size_of::<i64>()
-        }
-
-        fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            let mut current_value = GpsTime::default();
-            self.init_first_point(src, &mut current_value)?;
-            current_value.pack_into(first_point);
-            Ok(())
-        }
-
-        fn decompress_with(
-            &mut self,
-            mut decoder: &mut ArithmeticDecoder<R>,
-            buf: &mut [u8],
-        ) -> std::io::Result<()> {
-            let mut current_value = GpsTime::default();
-            self.decompress_field_with(&mut decoder, &mut current_value)?;
-            current_value.pack_into(buf);
-            Ok(())
         }
     }
 }

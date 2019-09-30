@@ -1,3 +1,9 @@
+//! Module with the important struct that people wishing
+//! to compress or decompress LAZ data can use
+//!
+//! It defines the LaszipCompressor & LaszipDecompressor
+//! as well as the Laszip VLr data  and how to build it
+
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -7,21 +13,19 @@ use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
 pub use crate::errors::LasZipError;
+use crate::las::Point0;
 use crate::las::point6::Point6;
-use crate::las::rgbnir::RGBNIR;
-use crate::record::{
-    BufferLayeredRecordDecompressor, BufferRecordCompressor, BufferRecordDecompressor,
-    RecordDecompressor,
-};
+use crate::las::rgb::RGB;
+use crate::record::{LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor, RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor};
+use crate::las::nir::Nir;
 
-const SUPPORTED_VERSION: u32 = 2;
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &'static str = "laszip encoded";
 pub const LASZIP_RECORD_ID: u16 = 22204;
 pub const LASZIP_DESCRIPTION: &'static str = "http://laszip.org";
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 struct Version {
     major: u8,
     minor: u8,
@@ -45,6 +49,8 @@ impl Version {
     }
 }
 
+
+// The different type of data / fields found in the definition of LAS points
 #[derive(Debug, Copy, Clone)]
 pub enum LazItemType {
     Byte(u16),
@@ -76,6 +82,10 @@ impl From<LazItemType> for u16 {
     }
 }
 
+/// Struct stored as part of the laszip's vlr record_data
+///
+/// This gives information about the dimension encoded and the version used
+/// when encoding the data.
 #[derive(Debug, Copy, Clone)]
 pub struct LazItem {
     // coded on a u16
@@ -121,6 +131,107 @@ pub struct LazItemRecordBuilder {
 }
 
 impl LazItemRecordBuilder {
+    //TODO What about extrabytes
+    pub fn point0() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point10,
+                size: Point0::SIZE as u16,
+                version: 2,
+            }
+        ]
+    }
+
+    pub fn point1() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point10,
+                size: Point0::SIZE as u16,
+                version: 2,
+            },
+            LazItem {
+                item_type: LazItemType::GpsTime,
+                size: 8,
+                version: 2,
+            }
+        ]
+    }
+
+    pub fn point2() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point10,
+                size: Point0::SIZE as u16,
+                version: 2,
+            },
+            LazItem {
+                item_type: LazItemType::RGB12,
+                size: RGB::SIZE as u16,
+                version: 2,
+            }
+        ]
+    }
+
+    pub fn point3() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point10,
+                size: Point0::SIZE as u16,
+                version: 2,
+            },
+            LazItem {
+                item_type: LazItemType::GpsTime,
+                size: 8,
+                version: 2,
+            },
+            LazItem {
+                item_type: LazItemType::RGB12,
+                size: RGB::SIZE as u16,
+                version: 2,
+            }
+        ]
+    }
+
+    pub fn point6() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point14,
+                size: Point6::SIZE as u16,
+                version: 3,
+            }
+        ]
+    }
+
+    pub fn point7() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point14,
+                size: Point6::SIZE as u16,
+                version: 3,
+            },
+            LazItem {
+                item_type: LazItemType::RGB14,
+                size: RGB::SIZE as u16,
+                version: 3,
+            }
+        ]
+    }
+
+    pub fn point8() -> Vec<LazItem> {
+        vec![
+            LazItem {
+                item_type: LazItemType::Point14,
+                size: Point6::SIZE as u16,
+                version: 3,
+            },
+            LazItem {
+                item_type: LazItemType::RGBNIR14,
+                size: (RGB::SIZE + Nir::SIZE ) as u16 ,
+                version: 3,
+            }
+        ]
+    }
+
     pub fn new() -> Self {
         Self { items: vec![] }
     }
@@ -141,13 +252,23 @@ impl LazItemRecordBuilder {
                     LazItemType::RGB12 => 6,
                     LazItemType::Point14 => Point6::SIZE as u16,
                     LazItemType::RGB14 => 6,
-                    LazItemType::RGBNIR14 => RGBNIR::SIZE as u16,
+                    LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
                     LazItemType::Byte14(n) => n,
+                };
+                let version = match item_type {
+                    LazItemType::Byte(_) => 2,
+                    LazItemType::Point10 => 2,
+                    LazItemType::GpsTime => 2,
+                    LazItemType::RGB12 => 2,
+                    LazItemType::Point14 => 3,
+                    LazItemType::RGB14 => 3,
+                    LazItemType::RGBNIR14 => 3,
+                    LazItemType::Byte14(_) => 3,
                 };
                 LazItem {
                     item_type: *item_type,
                     size,
-                    version: SUPPORTED_VERSION as u16,
+                    version,
                 }
             })
             .collect()
@@ -175,12 +296,12 @@ fn write_laz_items_to<W: Write>(laz_items: &Vec<LazItem>, mut dst: &mut W) -> st
 pub enum CompressorType {
     // TODO might need a better name
     None = 0,
-    // No chunks, or rather only 1 chunk with all the points ?
+    /// No chunks, or rather only 1 chunk with all the points
     PointWise = 1,
-    // Compress points into chunks with chunk_size points in each chunks
+    /// Compress points into chunks with chunk_size points in each chunks
     PointWiseChunked = 2,
-    // This seems to only be allowed for compressing POINT14 type
-    // more than that, its the only allowed CompressorType for this data type
+    /// Compress points into chunk, but also separate the different point dimension / fields
+    /// into layers. This CompressorType is only use for point 6,7,8,9,10
     LayeredChunked = 3,
 }
 
@@ -202,7 +323,9 @@ impl Default for CompressorType {
     }
 }
 
-#[derive(Debug)]
+
+/// The data stored in the record_data of the Laszip Vlr
+#[derive(Debug, Clone)]
 pub struct LazVlr {
     // coded on u16
     compressor: CompressorType,
@@ -211,6 +334,7 @@ pub struct LazVlr {
 
     version: Version,
     options: u32,
+    /// Number of points per chunk
     chunk_size: u32,
 
     // -1 if unused
@@ -222,6 +346,7 @@ pub struct LazVlr {
 }
 
 impl LazVlr {
+    // TODO should impl default instead
     pub fn new() -> Self {
         Self {
             compressor: CompressorType::default(),
@@ -245,11 +370,13 @@ impl LazVlr {
         me
     }
 
+    /// Tries to read the Vlr information from the record_data buffer
     pub fn from_buffer(record_data: &[u8]) -> Result<Self, LasZipError> {
         let mut cursor = std::io::Cursor::new(record_data);
         Self::read_from(&mut cursor)
     }
 
+    /// Tries to read the Vlr information from the record_data source
     pub fn read_from<R: Read>(mut src: &mut R) -> Result<Self, LasZipError> {
         let compressor_type = src.read_u16::<LittleEndian>()?;
         let compressor = match CompressorType::from_u16(compressor_type) {
@@ -269,6 +396,8 @@ impl LazVlr {
         })
     }
 
+    /// Writes the Vlr to the source, this only write the 'record_data' the
+    /// header should be written before-hand
     pub fn write_to<W: Write>(&self, mut dst: &mut W) -> std::io::Result<()> {
         dst.write_u16::<LittleEndian>(self.compressor as u16)?;
         dst.write_u16::<LittleEndian>(self.coder)?;
@@ -289,6 +418,8 @@ impl LazVlr {
         &self.items
     }
 
+    /// Returns the sum of the size of the laz_items, which should correspond to the
+    /// expected size of points (uncompressed).
     pub fn items_size(&self) -> u64 {
         u64::from(self.items.iter().map(|item| item.size).sum::<u16>())
     }
@@ -353,12 +484,12 @@ pub fn record_decompressor_from_laz_items<R: Read + Seek + 'static>(
 
     match first_version {
         1 | 2 => {
-            let mut decompressor = BufferRecordDecompressor::new(input);
+            let mut decompressor = SequentialPointRecordDecompressor::new(input);
             decompressor.set_fields_from(items).unwrap();
             Box::new(decompressor)
         }
         3 | 4 => {
-            let mut decompressor = BufferLayeredRecordDecompressor::new(input);
+            let mut decompressor = LayeredPointRecordDecompressor::new(input);
             decompressor.set_fields_from(items).unwrap();
             Box::new(decompressor)
         }
@@ -366,8 +497,32 @@ pub fn record_decompressor_from_laz_items<R: Read + Seek + 'static>(
     }
 }
 
-//TODO: would it be possible to extract some logic to a ChunkedCompressor & ChunkedDecompressor ?
-//TODO low low low priority: possible to make the Seek trait optional ?
+
+pub fn record_compressor_from_laz_items<W: Write + 'static>(items: &Vec<LazItem>, output: W) -> Box<dyn RecordCompressor<W>> {
+    let first_version = items[0].version;
+    if !items.iter().all(|item| item.version == first_version) {
+        // Technically we could mix version 1&2 and 3&4
+        // we just cannot mix non-layered decompressor and layered-decompressor
+        panic!("All laz items must have save version");
+    }
+
+    match first_version {
+        1 | 2 => {
+            let mut compressor = SequentialPointRecordCompressor::new(output);
+            compressor.set_fields_from(items).unwrap();
+            Box::new(compressor)
+        }
+        3 | 4 => {
+            let mut compressor = LayeredPointRecordCompressor::new(output);
+            compressor.set_fields_from(items).unwrap();
+            Box::new(compressor)
+        }
+        _ => panic!("Unknown laz item version {}", first_version),
+    }
+}
+
+//TODO possible to make the Seek trait optional ?
+/// Struct that handles the decompression of the points inside the source
 pub struct LasZipDecompressor<R: Read + Seek + Sized + 'static> {
     vlr: LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R>>,
@@ -407,6 +562,11 @@ impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
         })
     }
 
+    /// Decompress the next point and write the uncompressed data to the out buffer.
+    ///
+    /// - The buffer should have at least enough byte to store the decompressed data
+    /// - The data is written in the buffer exactly as it would have been in a LAS File
+    ///     in Little Endian order,
     pub fn decompress_one(&mut self, mut out: &mut [u8]) -> std::io::Result<()> {
         if self.chunk_points_read == self.vlr.chunk_size {
             self.reset_for_new_chunk();
@@ -420,6 +580,7 @@ impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
         self.record_decompressor.box_into_stream()
     }
 
+    // FIXME Seeking in Layered Compressed data is untested, make sure it works
     pub fn seek(&mut self, point_idx: u64) -> std::io::Result<()> {
         if let Some(chunk_table) = &self.chunk_table {
             let chunk_of_point = point_idx / self.vlr.chunk_size as u64;
@@ -540,10 +701,10 @@ impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
         Ok(())
     }
 }
-
+/// Struct that handles the compression of the points into the given destination
 pub struct LasZipCompressor<W: Write> {
     vlr: LazVlr,
-    record_compressor: BufferRecordCompressor<W>,
+    record_compressor: Box<dyn RecordCompressor<W>>,
     first_point: bool,
     chunk_point_written: u32,
     chunk_sizes: Vec<usize>,
@@ -554,15 +715,15 @@ pub struct LasZipCompressor<W: Write> {
 // FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
-impl<W: Write + Seek> LasZipCompressor<W> {
+
+impl<W: Write + Seek + 'static> LasZipCompressor<W> {
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_laz_items(items);
         Self::from_laz_vlr(output, vlr)
     }
 
     pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Result<Self, LasZipError> {
-        let mut record_compressor = BufferRecordCompressor::new(output);
-        record_compressor.set_fields_from(&vlr.items)?;
+        let record_compressor = record_compressor_from_laz_items(&vlr.items, output);
         Ok(Self {
             vlr,
             record_compressor,
@@ -574,9 +735,17 @@ impl<W: Write + Seek> LasZipCompressor<W> {
         })
     }
 
+    /// Compress the point and write the compressed data to the destination given when
+    /// the compressor was constructed
+    ///
+    /// The data is written in the buffer is expected to be exactly
+    /// as it would have been in a LAS File, that is:
+    ///
+    /// - The fields/dimensions are in the same order than the LAS spec says
+    /// - The data in the buffer is in Little Endian order
     pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
         if self.first_point {
-            let stream = self.record_compressor.borrow_mut_stream();
+            let stream = self.record_compressor.borrow_stream_mut();
             self.start_pos = stream.seek(SeekFrom::Current(0))?;
             stream.write_i64::<LittleEndian>(-1)?;
             self.last_chunk_pos = self.start_pos + std::mem::size_of::<i64>() as u64;
@@ -593,7 +762,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
             self.chunk_point_written = 0;
         }
 
-        self.record_compressor.compress(&input)?;
+        self.record_compressor.compress_next(&input)?;
         self.chunk_point_written += 1;
         Ok(())
     }
@@ -611,16 +780,16 @@ impl<W: Write + Seek> LasZipCompressor<W> {
     }
 
     pub fn into_stream(self) -> W {
-        self.record_compressor.into_stream()
+        self.record_compressor.box_into_stream()
     }
 
     pub fn get_mut(&mut self) -> &mut W {
-        self.record_compressor.borrow_mut_stream()
+        self.record_compressor.borrow_stream_mut()
     }
 
     fn write_chunk_table(&mut self) -> std::io::Result<()> {
         // Write header
-        let mut stream = self.record_compressor.borrow_mut_stream();
+        let mut stream = self.record_compressor.borrow_stream_mut();
         stream.write_u32::<LittleEndian>(0)?;
         stream.write_u32::<LittleEndian>(self.chunk_sizes.len() as u32)?;
 
@@ -642,7 +811,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
     fn update_chunk_table(&mut self) -> std::io::Result<()> {
         let current_pos = self
             .record_compressor
-            .borrow_mut_stream()
+            .borrow_stream_mut()
             .seek(SeekFrom::Current(0))?;
         self.chunk_sizes
             .push((current_pos - self.last_chunk_pos) as usize);
@@ -651,7 +820,7 @@ impl<W: Write + Seek> LasZipCompressor<W> {
     }
 
     fn update_chunk_table_offset(&mut self) -> std::io::Result<()> {
-        let stream = self.record_compressor.borrow_mut_stream();
+        let stream = self.record_compressor.borrow_stream_mut();
         let start_of_chunk_table_pos = stream.seek(SeekFrom::Current(0))?;
         stream.seek(SeekFrom::Start(self.start_pos))?;
         stream.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;

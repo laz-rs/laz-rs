@@ -24,6 +24,11 @@
     6 June 2019: Translated to Rust
 ===============================================================================
 */
+//! Defines the different version of compressors and decompressors for ExtraBytes contained in points
+
+
+// Just re-export v1 as v2 as they are both the same implementation
+pub use v1 as v2;
 
 pub trait LasExtraBytes {
     fn extra_bytes(&self) -> &[u8];
@@ -54,30 +59,15 @@ impl LasExtraBytes for ExtraBytes {
     }
 }
 
-pub(crate) struct ExtraByteWrapper<'a> {
-    slc: &'a mut [u8],
-}
-
-impl<'a> LasExtraBytes for ExtraByteWrapper<'a> {
-    fn extra_bytes(&self) -> &[u8] {
-        &self.slc
-    }
-
-    fn set_extra_bytes(&mut self, extra_bytes: &[u8]) {
-        self.slc.copy_from_slice(extra_bytes);
-    }
-}
 
 pub mod v1 {
     use std::io::{Read, Write};
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::extra_bytes::{ExtraByteWrapper, ExtraBytes, LasExtraBytes};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::record::{
-        BufferFieldCompressor, BufferFieldDecompressor, PointFieldCompressor,
-        PointFieldDecompressor,
+        FieldCompressor, FieldDecompressor,
     };
 
     pub struct LasExtraByteCompressor {
@@ -101,19 +91,23 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write, P: LasExtraBytes> PointFieldCompressor<W, P> for LasExtraByteCompressor {
-        fn init_first_point(&mut self, dst: &mut W, first_point: &P) -> std::io::Result<()> {
-            dst.write_all(first_point.extra_bytes())?;
-            self.last_bytes.copy_from_slice(first_point.extra_bytes());
-            Ok(())
+
+    impl<W: Write> FieldCompressor<W> for LasExtraByteCompressor {
+        fn size_of_field(&self) -> usize {
+            self.count
         }
 
-        fn compress_field_with(
+        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
+            self.last_bytes.copy_from_slice(buf);
+            dst.write_all(buf)
+        }
+
+        fn compress_with(
             &mut self,
             encoder: &mut ArithmeticEncoder<W>,
-            current_point: &P,
+            buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_bytes = current_point.extra_bytes();
+            let current_bytes = buf;
             for i in 0..self.count {
                 self.diffs[i] = (current_bytes[i]).wrapping_sub(self.last_bytes[i]);
                 self.last_bytes[i] = current_bytes[i];
@@ -121,31 +115,6 @@ pub mod v1 {
             for (diff, mut model) in self.diffs.iter().zip(self.models.iter_mut()) {
                 encoder.encode_symbol(&mut model, *diff as u32)?;
             }
-            Ok(())
-        }
-    }
-
-    impl<W: Write> BufferFieldCompressor<W> for LasExtraByteCompressor {
-        fn size_of_field(&self) -> usize {
-            self.count
-        }
-
-        fn compress_first(&mut self, mut dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            let bytes = vec![0u8; self.count];
-            let mut current = ExtraBytes { bytes };
-            current.set_extra_bytes(buf);
-            self.init_first_point(&mut dst, &current)
-        }
-
-        fn compress_with(
-            &mut self,
-            mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
-        ) -> std::io::Result<()> {
-            let bytes = vec![0u8; self.count];
-            let mut current = ExtraBytes { bytes };
-            current.set_extra_bytes(buf);
-            self.compress_field_with(&mut encoder, &current)?;
             Ok(())
         }
     }
@@ -171,65 +140,46 @@ pub mod v1 {
         }
     }
 
-    impl<R: Read, P: LasExtraBytes> PointFieldDecompressor<R, P> for LasExtraByteDecompressor {
-        fn init_first_point(&mut self, src: &mut R, first_point: &mut P) -> std::io::Result<()> {
-            src.read_exact(&mut self.last_bytes)?;
-            first_point.set_extra_bytes(&self.last_bytes);
-            Ok(())
-        }
 
-        fn decompress_field_with(
-            &mut self,
-            decoder: &mut ArithmeticDecoder<R>,
-            current_point: &mut P,
-        ) -> std::io::Result<()> {
-            for i in 0..self.count {
-                let sym = decoder.decode_symbol(&mut self.models[i])? as u8;
-                self.diffs[i] = self.last_bytes[i].wrapping_add(sym);
-            }
-            current_point.set_extra_bytes(&self.diffs);
-            self.last_bytes.clone_from(&self.diffs);
-            Ok(())
-        }
-    }
-
-    impl<R: Read> BufferFieldDecompressor<R> for LasExtraByteDecompressor {
+    impl<R: Read> FieldDecompressor<R> for LasExtraByteDecompressor {
         fn size_of_field(&self) -> usize {
             self.count
         }
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            let mut eb = ExtraByteWrapper { slc: first_point };
-            self.init_first_point(src, &mut eb)?;
+            src.read_exact(first_point)?;
+            self.last_bytes.copy_from_slice(first_point);
             Ok(())
         }
 
+        //TODO this can probaly be 'obtimized'
         fn decompress_with(
             &mut self,
-            mut decoder: &mut ArithmeticDecoder<R>,
+            decoder: &mut ArithmeticDecoder<R>,
             buf: &mut [u8],
         ) -> std::io::Result<()> {
-            let mut eb = ExtraByteWrapper { slc: buf };
-            self.decompress_field_with(&mut decoder, &mut eb)?;
+            for i in 0..self.count {
+                let sym = decoder.decode_symbol(&mut self.models[i])? as u8;
+                self.diffs[i] = self.last_bytes[i].wrapping_add(sym);
+            }
+            self.last_bytes.copy_from_slice(&self.diffs);
+            buf.copy_from_slice(&self.last_bytes);
             Ok(())
         }
     }
-
 }
 
-// Just re-export v1 as v2 as they are both the same implementation
-pub use v1 as v2;
-
 pub mod v3 {
-    use super::LasExtraBytes;
-    use crate::decoders::ArithmeticDecoder;
-    use std::io::{Cursor, Read, Seek, Write};
+    use std::io::{Cursor, Read, Seek};
 
+    use byteorder::{LittleEndian, ReadBytesExt};
+
+    use crate::decoders::ArithmeticDecoder;
     use crate::las::extra_bytes::ExtraBytes;
     use crate::las::utils::copy_bytes_into_decoder;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
-    use crate::record::{BufferLayeredFieldDecompressor, LayeredPointFieldDecompressor};
-    use byteorder::{LittleEndian, ReadBytesExt};
+    use crate::record::LayeredFieldDecompressor;
+
 
     struct ExtraBytesContext {
         last_bytes: ExtraBytes,
@@ -274,13 +224,16 @@ pub mod v3 {
         }
     }
 
-    impl<R: Read + Seek, P: LasExtraBytes> LayeredPointFieldDecompressor<R, P>
-        for LasExtraByteDecompressor
-    {
+
+    impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasExtraByteDecompressor {
+        fn size_of_field(&self) -> usize {
+            self.num_extra_bytes
+        }
+
         fn init_first_point(
             &mut self,
             src: &mut R,
-            first_point: &mut P,
+            first_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
             for eb_context in &mut self.contexts {
@@ -288,19 +241,17 @@ pub mod v3 {
             }
 
             let the_context = &mut self.contexts[*context];
-            for i in 0..self.num_extra_bytes {
-                the_context.last_bytes.bytes[i] = src.read_u8()?
-            }
+            src.read_exact(first_point)?;
+            the_context.last_bytes.bytes.copy_from_slice(first_point);
 
             self.last_context_used = *context;
             the_context.unused = false;
-            first_point.set_extra_bytes(the_context.last_bytes.extra_bytes());
             Ok(())
         }
 
         fn decompress_field_with(
             &mut self,
-            current_point: &mut P,
+            current_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
             if self.last_context_used != *context {
@@ -325,7 +276,7 @@ pub mod v3 {
                     *last_value = new_value as u8;
                 }
             }
-            current_point.set_extra_bytes(&the_context.last_bytes.bytes);
+            current_point.copy_from_slice(&the_context.last_bytes.bytes);
             self.last_context_used = *context;
             Ok(())
         }
@@ -347,51 +298,6 @@ pub mod v3 {
                 )?;
             }
             Ok(())
-        }
-    }
-
-    impl<R: Read + Seek> BufferLayeredFieldDecompressor<R> for LasExtraByteDecompressor {
-        fn size_of_field(&self) -> usize {
-            self.num_extra_bytes
-        }
-
-        fn init_first_point(
-            &mut self,
-            src: &mut R,
-            first_point: &mut [u8],
-            context: &mut usize,
-        ) -> std::io::Result<()> {
-            //FIXME creating a vec each time seems inefficient
-            let mut point = ExtraBytes::new(self.num_extra_bytes);
-            <Self as LayeredPointFieldDecompressor<R, ExtraBytes>>::init_first_point(
-                self, src, &mut point, context,
-            )?;
-            let mut cursor = Cursor::new(first_point);
-            cursor.write_all(&point.bytes)?;
-            Ok(())
-        }
-
-        fn decompress_field_with(
-            &mut self,
-            current_point: &mut [u8],
-            context: &mut usize,
-        ) -> std::io::Result<()> {
-            //FIXME creating a vec each time seems inefficient
-            let mut point = ExtraBytes::new(self.num_extra_bytes);
-            <Self as LayeredPointFieldDecompressor<R, ExtraBytes>>::decompress_field_with(
-                self, &mut point, context,
-            )?;
-            let mut cursor = Cursor::new(current_point);
-            cursor.write_all(&point.bytes)?;
-            Ok(())
-        }
-
-        fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()> {
-            <Self as LayeredPointFieldDecompressor<R, ExtraBytes>>::read_layers_sizes(self, src)
-        }
-
-        fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
-            <Self as LayeredPointFieldDecompressor<R, ExtraBytes>>::read_layers(self, src)
         }
     }
 }

@@ -4,10 +4,7 @@ use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use i32;
-use laz::record::{
-    BufferRecordCompressor, BufferRecordDecompressor, IntegerFieldCompressor,
-    IntegerFieldDecompressor,
-};
+use laz::record::{SequentialPointRecordCompressor, SequentialPointRecordDecompressor, IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor};
 
 unsafe fn to_slice<T>(value: &T) -> &[u8] {
     let p: *const T = value;
@@ -17,19 +14,19 @@ unsafe fn to_slice<T>(value: &T) -> &[u8] {
 
 #[test]
 fn test_i32_compression_decompression() {
-    let mut compressor = BufferRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
 
     let n = 20000i32;
     for i in 0..n {
         let slc = unsafe { to_slice(&i) };
-        compressor.compress(&slc).unwrap();
+        compressor.compress_next(&slc).unwrap();
     }
     compressor.done().unwrap();
 
     let compressed_data = compressor.into_stream().into_inner();
 
-    let mut decompressor = BufferRecordDecompressor::new(Cursor::new(compressed_data));
+    let mut decompressor = SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field_decompressor(IntegerFieldDecompressor::<i32>::new());
 
     for i in 0..n {
@@ -43,19 +40,19 @@ fn test_i32_compression_decompression() {
 
 #[test]
 fn test_u32_compression_decompression() {
-    let mut compressor = BufferRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(IntegerFieldCompressor::<u32>::new());
 
     let n = 20000u32;
     for i in 0..n {
         let slc = unsafe { to_slice(&i) };
-        compressor.compress(&slc).unwrap();
+        compressor.compress_next(&slc).unwrap();
     }
     compressor.done().unwrap();
 
     let compressed_data = compressor.into_stream().into_inner();
 
-    let mut decompressor = BufferRecordDecompressor::new(Cursor::new(compressed_data));
+    let mut decompressor = SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field_decompressor(IntegerFieldDecompressor::<u32>::new());
 
     for i in 0..n {
@@ -88,7 +85,7 @@ fn test_compress_decompress_simple_struct() {
         }
     }
 
-    let mut compressor = BufferRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
     compressor.add_field_compressor(IntegerFieldCompressor::<i16>::new());
 
@@ -100,13 +97,13 @@ fn test_compress_decompress_simple_struct() {
             b: (i + 1000) as i16,
         };
         p.write_to(&mut cursor);
-        compressor.compress(&buf).unwrap();
+        compressor.compress_next(&buf).unwrap();
     }
     compressor.done().unwrap();
 
     let compressed_data = compressor.into_stream().into_inner();
 
-    let mut decompressor = BufferRecordDecompressor::new(Cursor::new(compressed_data));
+    let mut decompressor = SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field_decompressor(IntegerFieldDecompressor::<i32>::new());
     decompressor.add_field_decompressor(IntegerFieldDecompressor::<i16>::new());
 
