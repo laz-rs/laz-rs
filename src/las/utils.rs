@@ -28,7 +28,9 @@ use std::ops::{BitAnd, BitXor};
 
 use crate::decoders::ArithmeticDecoder;
 use num_traits::Zero;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use crate::encoders::ArithmeticEncoder;
+use crate::packers::Packable;
 
 #[inline]
 pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
@@ -166,9 +168,30 @@ pub const NUMBER_RETURN_LEVEL: [[u8; 8]; 8] = [
 ];
 
 #[inline]
-pub fn u32_zero_bit(n: u32) -> u32 {
+pub(crate) fn u32_zero_bit(n: u32) -> u32 {
     n & 0xFF_FF_FF_FEu32
 }
+
+#[inline(always)]
+pub(crate) fn lower_byte(n: u16) -> u8 {
+    (n & 0x00_FF) as u8
+}
+
+#[inline(always)]
+pub(crate) fn upper_byte(n: u16) -> u8 {
+    (n >> 8) as u8
+}
+
+#[inline(always)]
+pub(crate) fn lower_byte_changed(lhs: u16, rhs: u16) -> bool {
+    lower_byte(lhs) != lower_byte(rhs)
+}
+
+#[inline(always)]
+pub(crate) fn upper_byte_changed(lhs: u16, rhs: u16) -> bool {
+    upper_byte(lhs) != upper_byte(rhs)
+}
+
 
 #[inline]
 pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
@@ -196,39 +219,24 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     }
 }
 
-macro_rules! impl_buffer_decompressor_for_typed_decompressor {
-    ($TypedDecompressor:ident, $InternalPointType:ident) => {
-        impl<R: Read + Seek> BufferLayeredFieldDecompressor<R> for $TypedDecompressor {
-            fn size_of_field(&self) -> usize {
-                $InternalPointType::SIZE
-            }
-
-            fn init_first_point(&mut self, src: &mut R, first_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
-                let mut point = $InternalPointType::default();
-                <Self as LayeredPointFieldDecompressor<R, $InternalPointType>>::init_first_point(self, src, &mut point, context)?;
-                let mut cursor = Cursor::new(first_point);
-                point.write_to(&mut cursor)?;
-                Ok(())
-            }
-
-            fn decompress_field_with(&mut self, current_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
-                let mut point = $InternalPointType::default();
-                <Self as LayeredPointFieldDecompressor<R, $InternalPointType>>::decompress_field_with(self, &mut point, context)?;
-                let mut cursor = Cursor::new(current_point);
-                point.write_to(&mut cursor)?;
-                Ok(())
-            }
-
-             fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()> {
-                <Self as LayeredPointFieldDecompressor<R, $InternalPointType>>::read_layers_sizes(self, src)
-            }
-
-            fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
-                <Self as LayeredPointFieldDecompressor<R, $InternalPointType>>::read_layers(self, src)
-            }
-        }
-    };
+#[inline]
+pub(crate) fn copy_encoder_content_to<W: Write>(
+    encoder: &mut ArithmeticEncoder<Cursor<Vec<u8>>>, dst: &mut W) -> std::io::Result<()> {
+    dst.write_all(encoder.out_stream().get_ref())
 }
+
+#[inline(always)]
+pub(crate) fn read_and_unpack<R: Read, P: Packable>(src: &mut R, buf: &mut [u8]) -> std::io::Result<P::Type> {
+    src.read_exact(buf)?;
+    Ok(P::unpack_from(buf))
+}
+
+macro_rules! is_nth_bit_set{
+    ($sym:expr, $n:expr) => {($sym & (1 << $n)) != 0}
+}
+
+
+
 // for LAS points with correctly populated return numbers (1 <= r <= n) and
 // number of returns of given pulse (1 <= n <= 15) the return mapping that
 // serializes the possible combinations into one number should be the following

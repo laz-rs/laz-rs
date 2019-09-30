@@ -24,6 +24,7 @@
 ===============================================================================
 */
 
+// TODO should this return SElf & have Self be sized ?
 pub trait Packable {
     type Type;
 
@@ -36,29 +37,21 @@ impl Packable for u32 {
 
     fn unpack_from(input: &[u8]) -> Self::Type {
         if input.len() < 4 {
-            panic!("u32::unpack_from expected a buffer of 4 bytes");
+            panic!("u32::unpack_from expected a slice of 4 bytes");
         }
         unsafe {
-            let b1 = *input.get_unchecked(0) as u32;
-            let b2 = *input.get_unchecked(1) as u32;
-            let b3 = *input.get_unchecked(2) as u32;
-            let b4 = *input.get_unchecked(3) as u32;
+            let b1 = *input.get_unchecked(0);
+            let b2 = *input.get_unchecked(1);
+            let b3 = *input.get_unchecked(2);
+            let b4 = *input.get_unchecked(3);
 
-            b4 << 24 | (b3 & 0xFFF) << 16 | (b2 & 0xFF) << 8 | b1 & 0xFF
+
+            u32::from_le_bytes([b1, b2, b3, b4])
         }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        if output.len() < 4 {
-            panic!("u32::pack_into expected a buffer of 4 bytes");
-        }
-
-        unsafe {
-            *output.get_unchecked_mut(3) = ((self >> 24) & 0xFFu32) as u8;
-            *output.get_unchecked_mut(2) = ((self >> 16) & 0xFFu32) as u8;
-            *output.get_unchecked_mut(1) = ((self >> 8) & 0xFFu32) as u8;
-            *output.get_unchecked_mut(0) = (self & 0xFFu32) as u8;
-        }
+       output[..4].copy_from_slice(&self.to_le_bytes());
     }
 }
 
@@ -67,24 +60,18 @@ impl Packable for u16 {
 
     fn unpack_from(input: &[u8]) -> Self::Type {
         if input.len() < 2 {
-            panic!("u16::unpack_from expected a buffer of 2 bytes");
+            panic!("u16::unpack_from expected a slice of 2 bytes");
         }
         unsafe {
-            let b1 = *input.get_unchecked(0) as u16;
-            let b2 = *input.get_unchecked(1) as u16;
+            let b1 = *input.get_unchecked(0);
+            let b2 = *input.get_unchecked(1);
 
-            (b2 & 0xFF) << 8 | (b1 & 0xFF)
+           u16::from_le_bytes([b1, b2])
         }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        if output.len() < 2 {
-            panic!("u16::pack_into expected a buffer of 2 bytes");
-        }
-        unsafe {
-            *output.get_unchecked_mut(1) = ((self >> 8) & 0xFFu16) as u8;
-            *output.get_unchecked_mut(0) = (self & 0xFFu16) as u8
-        }
+        output[..2].copy_from_slice(&self.to_le_bytes());
     }
 }
 
@@ -148,15 +135,4 @@ mod test {
         let v = i32::unpack_from(&buf);
         assert_eq!(v, in_val);
     }
-    /*
-        #[test]
-        fn extensive_packer_test() {
-            let mut buf = [0u8; std::mem::size_of::<i32>()];
-            for i in std::i32::MIN..std::i32::MAX {
-                i32::pack(i, &mut buf);
-                let v = i32::unpack(&buf);
-                assert_eq!(v, i);
-            }
-        }
-    */
 }

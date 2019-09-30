@@ -24,11 +24,15 @@
 ===============================================================================
 */
 
+//! Defines the Point Format 0 ands different version of compressors and decompressors
+
+
+use std::io::{Read, Write};
 use std::mem::size_of;
 
-use crate::packers::Packable;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Write};
+
+use crate::packers::Packable;
 
 pub trait LasPoint0 {
     // Non mutable accessors
@@ -127,6 +131,8 @@ pub struct Point0 {
 }
 
 impl Point0 {
+    pub const SIZE: usize = 20;
+
     pub fn populate_bit_fields_from(&mut self, byte: u8) {
         self.return_number = byte & 0x7;
         self.number_of_returns_of_given_pulse = (byte >> 3) & 0x7;
@@ -234,158 +240,6 @@ impl LasPoint0 for Point0 {
     }
 }
 
-pub(crate) struct Point0Wrapper<'a> {
-    slc: &'a mut [u8],
-}
-
-impl<'a> Point0Wrapper<'a> {
-    fn new(slc: &'a mut [u8]) -> Self {
-        if slc.len() < 20 {
-            panic!("Point0Wrapper expected a buffer of 20 bytes");
-        } else {
-            Self { slc }
-        }
-    }
-}
-
-impl<'a> LasPoint0 for Point0Wrapper<'a> {
-    fn x(&self) -> i32 {
-        unsafe {
-            i32::from_le_bytes([
-                *self.slc.get_unchecked(0),
-                *self.slc.get_unchecked(1),
-                *self.slc.get_unchecked(2),
-                *self.slc.get_unchecked(3),
-            ])
-        }
-    }
-
-    fn y(&self) -> i32 {
-        unsafe {
-            i32::from_le_bytes([
-                *self.slc.get_unchecked(4),
-                *self.slc.get_unchecked(5),
-                *self.slc.get_unchecked(6),
-                *self.slc.get_unchecked(7),
-            ])
-        }
-    }
-
-    fn z(&self) -> i32 {
-        unsafe {
-            i32::from_le_bytes([
-                *self.slc.get_unchecked(8),
-                *self.slc.get_unchecked(9),
-                *self.slc.get_unchecked(10),
-                *self.slc.get_unchecked(11),
-            ])
-        }
-    }
-
-    fn intensity(&self) -> u16 {
-        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(12), *self.slc.get_unchecked(13)]) }
-    }
-
-    fn bit_fields(&self) -> u8 {
-        unsafe { u8::from_le_bytes([*self.slc.get_unchecked(14)]) }
-    }
-
-    fn number_of_returns_of_given_pulse(&self) -> u8 {
-        (self.bit_fields() >> 3) & 0x7
-    }
-
-    fn scan_direction_flag(&self) -> bool {
-        ((self.bit_fields() >> 6) & 0x1) != 0
-    }
-
-    fn edge_of_flight_line(&self) -> bool {
-        ((self.bit_fields() >> 7) & 0x1) != 0
-    }
-
-    fn return_number(&self) -> u8 {
-        self.bit_fields() & 0x7
-    }
-
-    fn classification(&self) -> u8 {
-        unsafe { u8::from_le_bytes([*self.slc.get_unchecked(15)]) }
-    }
-
-    fn scan_angle_rank(&self) -> i8 {
-        unsafe { i8::from_le_bytes([*self.slc.get_unchecked(16)]) }
-    }
-
-    fn user_data(&self) -> u8 {
-        unsafe { u8::from_le_bytes([*self.slc.get_unchecked(17)]) }
-    }
-
-    fn point_source_id(&self) -> u16 {
-        unsafe { u16::from_le_bytes([*self.slc.get_unchecked(18), *self.slc.get_unchecked(19)]) }
-    }
-
-    fn set_x(&mut self, new_val: i32) {
-        unsafe {
-            self.slc
-                .get_unchecked_mut(0..4)
-                .copy_from_slice(&new_val.to_le_bytes());
-        }
-    }
-
-    fn set_y(&mut self, new_val: i32) {
-        unsafe {
-            self.slc
-                .get_unchecked_mut(4..8)
-                .copy_from_slice(&new_val.to_le_bytes());
-        }
-    }
-
-    fn set_z(&mut self, new_val: i32) {
-        unsafe {
-            self.slc
-                .get_unchecked_mut(8..12)
-                .copy_from_slice(&new_val.to_le_bytes());
-        }
-    }
-
-    fn set_intensity(&mut self, new_val: u16) {
-        unsafe {
-            self.slc
-                .get_unchecked_mut(12..14)
-                .copy_from_slice(&new_val.to_le_bytes());
-        }
-    }
-
-    fn set_bit_fields(&mut self, new_val: u8) {
-        unsafe {
-            *self.slc.get_unchecked_mut(14) = new_val;
-        }
-    }
-
-    fn set_classification(&mut self, new_val: u8) {
-        unsafe {
-            *self.slc.get_unchecked_mut(15) = new_val;
-        }
-    }
-
-    fn set_scan_angle_rank(&mut self, new_val: i8) {
-        unsafe {
-            *self.slc.get_unchecked_mut(16) = new_val as u8;
-        }
-    }
-
-    fn set_user_data(&mut self, new_val: u8) {
-        unsafe {
-            *self.slc.get_unchecked_mut(17) = new_val;
-        }
-    }
-
-    fn set_point_source_id(&mut self, new_val: u16) {
-        unsafe {
-            self.slc
-                .get_unchecked_mut(18..20)
-                .copy_from_slice(&new_val.to_le_bytes());
-        }
-    }
-}
 
 impl Packable for Point0 {
     type Type = Point0;
@@ -497,40 +351,41 @@ pub mod v1 {
     use std::io::{Read, Write};
 
     use crate::compressors::{
-        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
+        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
+        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
     };
     use crate::encoders::ArithmeticEncoder;
+    use crate::las::point0::{LasPoint0};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{
-        BufferFieldCompressor, BufferFieldDecompressor, PointFieldCompressor,
-        PointFieldDecompressor,
+        FieldCompressor, FieldDecompressor,
     };
 
     use super::Point0;
-    use crate::las::point0::{LasPoint0, Point0Wrapper};
 
     /// find median difference from 3 preceding differences
     fn median_diff(diff_array: &[i32; 3]) -> i32 {
-        if diff_array[0] < diff_array[1] {
-            if diff_array[1] < diff_array[2] {
-                diff_array[1]
-            } else if diff_array[0] < diff_array[2] {
-                diff_array[2]
+        unsafe {
+            if diff_array.get_unchecked(0) < diff_array.get_unchecked(1) {
+                if diff_array.get_unchecked(1) < diff_array.get_unchecked(2) {
+                    *diff_array.get_unchecked(1)
+                } else if diff_array.get_unchecked(0) < diff_array.get_unchecked(2) {
+                    *diff_array.get_unchecked(2)
+                } else {
+                    *diff_array.get_unchecked(0)
+                }
             } else {
-                diff_array[0]
-            }
-        } else {
-            if diff_array[0] < diff_array[2] {
-                diff_array[0]
-            } else if diff_array[1] < diff_array[2] {
-                diff_array[2]
-            } else {
-                diff_array[1]
+                if diff_array.get_unchecked(0) < diff_array.get_unchecked(2) {
+                    *diff_array.get_unchecked(0)
+                } else if diff_array.get_unchecked(1) < diff_array.get_unchecked(2) {
+                    *diff_array.get_unchecked(2)
+                } else {
+                    *diff_array.get_unchecked(1)
+                }
             }
         }
     }
@@ -600,21 +455,185 @@ pub mod v1 {
         }
     }
 
-    impl<R: Read, P: LasPoint0> PointFieldDecompressor<R, P> for LasPoint0Decompressor {
-        fn init_first_point(
-            &mut self,
-            mut src: &mut R,
-            first_point: &mut P,
-        ) -> std::io::Result<()> {
-            first_point.read_from(&mut src)?;
-            self.last_point.set_fields_from(first_point);
+
+    pub struct LasPoint0Compressor {
+        last_point: Point0,
+        last_x_diffs: [i32; 3],
+        last_y_diffs: [i32; 3],
+        last_incr: usize,
+
+        ic_dx: IntegerCompressor,
+        ic_dy: IntegerCompressor,
+        ic_dz: IntegerCompressor,
+        ic_intensity: IntegerCompressor,
+        ic_scan_angle_rank: IntegerCompressor,
+        ic_point_source_id: IntegerCompressor,
+
+        changed_values_model: ArithmeticModel,
+        // All theses vec have 256 elements
+        // all the associated dimensions have 256 elements: [0..255]
+        bit_byte_models: Vec<Option<ArithmeticModel>>,
+        classification_models: Vec<Option<ArithmeticModel>>,
+        user_data_models: Vec<Option<ArithmeticModel>>,
+    }
+
+    impl LasPoint0Compressor {
+        pub fn new() -> Self {
+            Self {
+                last_point: Default::default(),
+                last_x_diffs: [0i32; 3],
+                last_y_diffs: [0i32; 3],
+                last_incr: 0,
+                ic_dx: IntegerCompressorBuilder::new().bits(32).build_initialized(),
+                ic_dy: IntegerCompressorBuilder::new()
+                    .bits(32)
+                    .contexts(20)
+                    .build_initialized(),
+                ic_dz: IntegerCompressorBuilder::new()
+                    .bits(32)
+                    .contexts(20)
+                    .build_initialized(),
+                ic_intensity: IntegerCompressorBuilder::new().bits(16).build_initialized(),
+                ic_scan_angle_rank: IntegerCompressorBuilder::new()
+                    .bits(8)
+                    .contexts(2)
+                    .build_initialized(),
+                ic_point_source_id: IntegerCompressorBuilder::new().bits(16).build_initialized(),
+                changed_values_model: ArithmeticModelBuilder::new(64).build(),
+                bit_byte_models: (0..256).into_iter().map(|_| None).collect(),
+                classification_models: (0..256).into_iter().map(|_| None).collect(),
+                user_data_models: (0..256).into_iter().map(|_| None).collect(),
+            }
+        }
+    }
+
+
+    impl<W: Write> FieldCompressor<W> for LasPoint0Compressor {
+        fn size_of_field(&self) -> usize {
+            20
+        }
+
+        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
+            dst.write_all(buf)?;
+            self.last_point = Point0::unpack_from(buf);
             Ok(())
         }
 
-        fn decompress_field_with(
+        fn compress_with(&mut self, encoder: &mut ArithmeticEncoder<W>, buf: &[u8]) -> std::io::Result<()> {
+            let current_point = Point0::unpack_from(buf);
+            let median_x = median_diff(&self.last_x_diffs);
+            let median_y = median_diff(&self.last_y_diffs);
+
+            let x_diff = current_point.x() - self.last_point.x();
+            let y_diff = current_point.y() - self.last_point.y();
+
+            self.ic_dx
+                .compress(encoder, median_x, x_diff, DEFAULT_COMPRESS_CONTEXTS)?;
+            let k_bits = self.ic_dx.k();
+            self.ic_dy.compress(
+                encoder,
+                median_y,
+                y_diff,
+                if k_bits < 19 { k_bits } else { 19 },
+            )?;
+
+            let k_bits = (k_bits + self.ic_dy.k()) / 2;
+            self.ic_dz.compress(
+                encoder,
+                self.last_point.z(),
+                current_point.z(),
+                if k_bits < 19 { k_bits } else { 19 },
+            )?;
+
+            let changed_values: u8 = ((self.last_point.intensity() != current_point.intensity())
+                as u8)
+                << 5
+                | ((self.last_point.bit_fields() != current_point.bit_fields()) as u8) << 4
+                | ((self.last_point.classification() != current_point.classification()) as u8) << 3
+                | ((self.last_point.scan_angle_rank() != current_point.scan_angle_rank()) as u8)
+                << 2
+                | ((self.last_point.user_data() != current_point.user_data()) as u8) << 1
+                | (self.last_point.point_source_id() != current_point.point_source_id()) as u8;
+
+            encoder.encode_symbol(&mut self.changed_values_model, changed_values as u32)?;
+
+            if changed_values != 0 {
+                if (changed_values & 32) != 0 {
+                    self.ic_intensity.compress(
+                        encoder,
+                        self.last_point.intensity() as i32,
+                        current_point.intensity() as i32,
+                        DEFAULT_COMPRESS_CONTEXTS,
+                    )?;
+                }
+
+                if (changed_values & 16) != 0 {
+                    let model = &mut self.bit_byte_models[self.last_point.bit_fields() as usize]
+                        .get_or_insert(ArithmeticModelBuilder::new(256).build());
+                    encoder.encode_symbol(model, current_point.bit_fields() as u32)?;
+                }
+
+                if (changed_values & 8) != 0 {
+                    let model = &mut self.classification_models
+                        [self.last_point.classification() as usize]
+                        .get_or_insert(ArithmeticModelBuilder::new(256).build());
+                    encoder.encode_symbol(model, current_point.classification() as u32)?;
+                }
+
+                if (changed_values & 4) != 0 {
+                    self.ic_scan_angle_rank.compress(
+                        encoder,
+                        self.last_point.scan_angle_rank() as i32,
+                        current_point.scan_angle_rank() as i32,
+                        (k_bits < 3) as u32,
+                    )?;
+                }
+
+                if (changed_values & 2) != 0 {
+                    let model = self.user_data_models[self.last_point.user_data() as usize]
+                        .get_or_insert(ArithmeticModelBuilder::new(256).build());
+                    encoder.encode_symbol(model, current_point.user_data() as u32)?;
+                }
+
+                if (changed_values & 1) != 0 {
+                    self.ic_point_source_id.compress(
+                        encoder,
+                        self.last_point.point_source_id() as i32,
+                        current_point.point_source_id() as i32,
+                        DEFAULT_COMPRESS_CONTEXTS,
+                    )?;
+                }
+            }
+            self.last_x_diffs[self.last_incr] = x_diff;
+            self.last_y_diffs[self.last_incr] = y_diff;
+            self.last_incr += 1;
+            if self.last_incr > 2 {
+                self.last_incr = 0;
+            }
+            self.last_point = current_point;
+            Ok(())
+        }
+    }
+
+    impl<R: Read> FieldDecompressor<R> for LasPoint0Decompressor {
+        fn size_of_field(&self) -> usize {
+            20
+        }
+
+        fn decompress_first(
+            &mut self,
+            src: &mut R,
+            first_point: &mut [u8],
+        ) -> std::io::Result<()> {
+            src.read_exact(first_point)?;
+            self.last_point = Point0::unpack_from(first_point);
+            Ok(())
+        }
+
+        fn decompress_with(
             &mut self,
             mut decoder: &mut ArithmeticDecoder<R>,
-            current_point: &mut P,
+            buf: &mut [u8],
         ) -> std::io::Result<()> {
             // Decompress x, y, z
             let median_x = self.median_x_diff();
@@ -696,213 +715,8 @@ pub mod v1 {
             if self.last_incr > 2 {
                 self.last_incr = 0;
             }
-            current_point.set_fields_from(&self.last_point);
+            self.last_point.pack_into(buf);
             Ok(())
-        }
-    }
-
-    pub struct LasPoint0Compressor {
-        last_point: Point0,
-        last_x_diffs: [i32; 3],
-        last_y_diffs: [i32; 3],
-        last_incr: usize,
-
-        ic_dx: IntegerCompressor,
-        ic_dy: IntegerCompressor,
-        ic_dz: IntegerCompressor,
-        ic_intensity: IntegerCompressor,
-        ic_scan_angle_rank: IntegerCompressor,
-        ic_point_source_id: IntegerCompressor,
-
-        changed_values_model: ArithmeticModel,
-        // All theses vec have 256 elements
-        // all the associated dimensions have 256 elements: [0..255]
-        bit_byte_models: Vec<Option<ArithmeticModel>>,
-        classification_models: Vec<Option<ArithmeticModel>>,
-        user_data_models: Vec<Option<ArithmeticModel>>,
-    }
-
-    impl LasPoint0Compressor {
-        pub fn new() -> Self {
-            Self {
-                last_point: Default::default(),
-                last_x_diffs: [0i32; 3],
-                last_y_diffs: [0i32; 3],
-                last_incr: 0,
-                ic_dx: IntegerCompressorBuilder::new().bits(32).build_initialized(),
-                ic_dy: IntegerCompressorBuilder::new()
-                    .bits(32)
-                    .contexts(20)
-                    .build_initialized(),
-                ic_dz: IntegerCompressorBuilder::new()
-                    .bits(32)
-                    .contexts(20)
-                    .build_initialized(),
-                ic_intensity: IntegerCompressorBuilder::new().bits(16).build_initialized(),
-                ic_scan_angle_rank: IntegerCompressorBuilder::new()
-                    .bits(8)
-                    .contexts(2)
-                    .build_initialized(),
-                ic_point_source_id: IntegerCompressorBuilder::new().bits(16).build_initialized(),
-                changed_values_model: ArithmeticModelBuilder::new(64).build(),
-                bit_byte_models: (0..256).into_iter().map(|_| None).collect(),
-                classification_models: (0..256).into_iter().map(|_| None).collect(),
-                user_data_models: (0..256).into_iter().map(|_| None).collect(),
-            }
-        }
-    }
-
-    impl<W: Write, P: LasPoint0> PointFieldCompressor<W, P> for LasPoint0Compressor {
-        fn init_first_point(&mut self, mut dst: &mut W, first_point: &P) -> std::io::Result<()> {
-            first_point.write_to(&mut dst)?;
-            self.last_point.set_fields_from(first_point);
-            Ok(())
-        }
-
-        fn compress_field_with(
-            &mut self,
-            mut encoder: &mut ArithmeticEncoder<W>,
-            current_point: &P,
-        ) -> std::io::Result<()> {
-            let median_x = median_diff(&self.last_x_diffs);
-            let median_y = median_diff(&self.last_y_diffs);
-
-            let x_diff = current_point.x() - self.last_point.x();
-            let y_diff = current_point.y() - self.last_point.y();
-
-            self.ic_dx
-                .compress(&mut encoder, median_x, x_diff, DEFAULT_COMPRESS_CONTEXTS)?;
-            let k_bits = self.ic_dx.k();
-            self.ic_dy.compress(
-                &mut encoder,
-                median_y,
-                y_diff,
-                if k_bits < 19 { k_bits } else { 19 },
-            )?;
-
-            let k_bits = (k_bits + self.ic_dy.k()) / 2;
-            self.ic_dz.compress(
-                &mut encoder,
-                self.last_point.z(),
-                current_point.z(),
-                if k_bits < 19 { k_bits } else { 19 },
-            )?;
-
-            let changed_values: u8 = ((self.last_point.intensity() != current_point.intensity())
-                as u8)
-                << 5
-                | ((self.last_point.bit_fields() != current_point.bit_fields()) as u8) << 4
-                | ((self.last_point.classification() != current_point.classification()) as u8) << 3
-                | ((self.last_point.scan_angle_rank() != current_point.scan_angle_rank()) as u8)
-                    << 2
-                | ((self.last_point.user_data() != current_point.user_data()) as u8) << 1
-                | (self.last_point.point_source_id() != current_point.point_source_id()) as u8;
-
-            encoder.encode_symbol(&mut self.changed_values_model, changed_values as u32)?;
-
-            if changed_values != 0 {
-                if (changed_values & 32) != 0 {
-                    self.ic_intensity.compress(
-                        &mut encoder,
-                        self.last_point.intensity() as i32,
-                        current_point.intensity() as i32,
-                        DEFAULT_COMPRESS_CONTEXTS,
-                    )?;
-                }
-
-                if (changed_values & 16) != 0 {
-                    let model = &mut self.bit_byte_models[self.last_point.bit_fields() as usize]
-                        .get_or_insert(ArithmeticModelBuilder::new(256).build());
-                    encoder.encode_symbol(model, current_point.bit_fields() as u32)?;
-                }
-
-                if (changed_values & 8) != 0 {
-                    let model = &mut self.classification_models
-                        [self.last_point.classification() as usize]
-                        .get_or_insert(ArithmeticModelBuilder::new(256).build());
-                    encoder.encode_symbol(model, current_point.classification() as u32)?;
-                }
-
-                if (changed_values & 4) != 0 {
-                    self.ic_scan_angle_rank.compress(
-                        &mut encoder,
-                        self.last_point.scan_angle_rank() as i32,
-                        current_point.scan_angle_rank() as i32,
-                        (k_bits < 3) as u32,
-                    )?;
-                }
-
-                if (changed_values & 2) != 0 {
-                    let model = self.user_data_models[self.last_point.user_data() as usize]
-                        .get_or_insert(ArithmeticModelBuilder::new(256).build());
-                    encoder.encode_symbol(model, current_point.user_data() as u32)?;
-                }
-
-                if (changed_values & 1) != 0 {
-                    self.ic_point_source_id.compress(
-                        &mut encoder,
-                        self.last_point.point_source_id() as i32,
-                        current_point.point_source_id() as i32,
-                        DEFAULT_COMPRESS_CONTEXTS,
-                    )?;
-                }
-            }
-            self.last_x_diffs[self.last_incr] = x_diff;
-            self.last_y_diffs[self.last_incr] = y_diff;
-            self.last_incr += 1;
-            if self.last_incr > 2 {
-                self.last_incr = 0;
-            }
-            self.last_point.set_fields_from(current_point);
-            Ok(())
-        }
-    }
-
-    impl<R: Read> BufferFieldDecompressor<R> for LasPoint0Decompressor {
-        fn size_of_field(&self) -> usize {
-            20
-        }
-
-        fn decompress_first(
-            &mut self,
-            src: &mut R,
-            mut first_point: &mut [u8],
-        ) -> std::io::Result<()> {
-            let mut current = Point0Wrapper {
-                slc: &mut first_point,
-            };
-            self.init_first_point(src, &mut current)?;
-            Ok(())
-        }
-
-        fn decompress_with(
-            &mut self,
-            mut decoder: &mut ArithmeticDecoder<R>,
-            buf: &mut [u8],
-        ) -> std::io::Result<()> {
-            let mut current = Point0Wrapper { slc: buf };
-            self.decompress_field_with(&mut decoder, &mut current)?;
-            Ok(())
-        }
-    }
-
-    impl<W: Write> BufferFieldCompressor<W> for LasPoint0Compressor {
-        fn size_of_field(&self) -> usize {
-            20
-        }
-
-        fn compress_first(&mut self, mut dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            let current = Point0::unpack_from(buf);
-            self.init_first_point(&mut dst, &current)
-        }
-
-        fn compress_with(
-            &mut self,
-            mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
-        ) -> std::io::Result<()> {
-            let current = Point0::unpack_from(buf);
-            self.compress_field_with(&mut encoder, &current)
         }
     }
 }
@@ -914,16 +728,17 @@ pub mod v2 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
+    use crate::las::point0::{LasPoint0
+
+    };
     use crate::las::utils;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{
-        BufferFieldCompressor, BufferFieldDecompressor, PointFieldCompressor,
-        PointFieldDecompressor,
+        FieldCompressor, FieldDecompressor,
     };
 
     use super::Point0;
-    use crate::las::point0::{LasPoint0, Point0Wrapper};
 
     struct Point10ChangedValues {
         value: i32,
@@ -943,8 +758,8 @@ pub mod v2 {
 
             let bit_fields_changed = ((last.return_number() ^ current.return_number()) != 0)
                 | ((last.number_of_returns_of_given_pulse()
-                    ^ current.number_of_returns_of_given_pulse())
-                    != 0)
+                ^ current.number_of_returns_of_given_pulse())
+                != 0)
                 | (last.scan_direction_flag() ^ current.scan_direction_flag())
                 | (last.edge_of_flight_line() ^ current.edge_of_flight_line());
 
@@ -988,6 +803,7 @@ pub mod v2 {
         }
     }
 
+    // TODO Do just like Point6Compressor & Point6Decompressor: have a Point0Models, Point0 compressors
     // All the things we need to compress a point, group them into structs
     // so we don't have too many names flying around
     struct Common {
@@ -1082,18 +898,23 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write, P: LasPoint0> PointFieldCompressor<W, P> for LasPoint0Compressor {
-        fn init_first_point(&mut self, mut dst: &mut W, first_point: &P) -> std::io::Result<()> {
-            first_point.write_to(&mut dst)?;
-            self.last_point.set_fields_from(first_point);
-            Ok(())
+
+    impl<W: Write> FieldCompressor<W> for LasPoint0Compressor {
+        fn size_of_field(&self) -> usize {
+            20
         }
 
-        fn compress_field_with(
+        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
+            self.last_point = Point0::unpack_from(buf);
+            dst.write_all(buf)
+        }
+
+        fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            current_point: &P,
+            buf: &[u8],
         ) -> std::io::Result<()> {
+            let current_point = Point0::unpack_from(&buf);
             let r = current_point.return_number();
             let n = current_point.number_of_returns_of_given_pulse();
             // According to table  m is in range 0..16
@@ -1102,7 +923,7 @@ pub mod v2 {
             let l = utils::NUMBER_RETURN_LEVEL[n as usize][r as usize];
 
             let changed_values =
-                Point10ChangedValues::from_points(current_point, &self.last_point, *unsafe {
+                Point10ChangedValues::from_points(&current_point, &self.last_point, *unsafe {
                     self.common.last_intensity.get_unchecked(m as usize)
                 });
 
@@ -1191,10 +1012,10 @@ pub mod v2 {
             let diff = current_point.y() - self.last_point.y;
             let context = (n == 1) as u32
                 + if k_bits < 20 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    20
-                };
+                utils::u32_zero_bit(k_bits)
+            } else {
+                20
+            };
             self.ic_dy.compress(&mut encoder, median, diff, context)?;
             unsafe {
                 self.common
@@ -1207,10 +1028,10 @@ pub mod v2 {
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
             let context = (n == 1) as u32
                 + if k_bits < 18 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    18
-                };
+                utils::u32_zero_bit(k_bits)
+            } else {
+                18
+            };
             self.ic_z.compress(
                 &mut encoder,
                 *unsafe { self.common.last_height.get_unchecked(l as usize) },
@@ -1218,28 +1039,8 @@ pub mod v2 {
                 context,
             )?;
             unsafe { *self.common.last_height.get_unchecked_mut(l as usize) = current_point.z() };
-            self.last_point.set_fields_from(current_point);
+            self.last_point = current_point;
             Ok(())
-        }
-    }
-
-    impl<W: Write> BufferFieldCompressor<W> for LasPoint0Compressor {
-        fn size_of_field(&self) -> usize {
-            20
-        }
-
-        fn compress_first(&mut self, mut dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            let current_point = Point0::unpack_from(&buf);
-            self.init_first_point(&mut dst, &current_point)
-        }
-
-        fn compress_with(
-            &mut self,
-            mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
-        ) -> std::io::Result<()> {
-            let current_point = Point0::unpack_from(&buf);
-            self.compress_field_with(&mut encoder, &current_point)
         }
     }
 
@@ -1282,23 +1083,23 @@ pub mod v2 {
         }
     }
 
-    impl<R: Read, P: LasPoint0> PointFieldDecompressor<R, P> for LasPoint0Decompressor {
-        fn init_first_point(
-            &mut self,
-            mut src: &mut R,
-            first_point: &mut P,
-        ) -> std::io::Result<()> {
-            first_point.read_from(&mut src)?;
-            self.last_point.set_fields_from(first_point);
-            // But set intensity to 0
+
+    impl<R: Read> FieldDecompressor<R> for LasPoint0Decompressor {
+        fn size_of_field(&self) -> usize {
+            20
+        }
+
+        fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
+            src.read_exact(first_point)?;
+            self.last_point = Point0::unpack_from(first_point);
             self.last_point.intensity = 0;
             Ok(())
         }
 
-        fn decompress_field_with(
+        fn decompress_with(
             &mut self,
             mut decoder: &mut ArithmeticDecoder<R>,
-            current_point: &mut P,
+            buf: &mut [u8],
         ) -> std::io::Result<()> {
             let changed_value = Point10ChangedValues {
                 value: decoder.decode_symbol(&mut self.common.changed_values)? as i32,
@@ -1410,10 +1211,10 @@ pub mod v2 {
                 let k_bits = self.ic_dx.k();
                 let context = (n == 1) as u32
                     + if k_bits < 20 {
-                        utils::u32_zero_bit(k_bits)
-                    } else {
-                        20
-                    };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    20
+                };
                 let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
                 self.last_point.y += diff;
                 self.common
@@ -1425,40 +1226,18 @@ pub mod v2 {
                 let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
                 let context = (n == 1) as u32
                     + if k_bits < 18 {
-                        utils::u32_zero_bit(k_bits)
-                    } else {
-                        18
-                    };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    18
+                };
                 self.last_point.z = self.ic_z.decompress(
                     &mut decoder,
                     *self.common.last_height.get_unchecked(l as usize),
                     context,
                 )?;
                 *self.common.last_height.get_unchecked_mut(l as usize) = self.last_point.z();
-                current_point.set_fields_from(&self.last_point);
-                Ok(())
             }
-        }
-    }
-
-    impl<R: Read> BufferFieldDecompressor<R> for LasPoint0Decompressor {
-        fn size_of_field(&self) -> usize {
-            20
-        }
-
-        fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            let mut current = Point0Wrapper::new(first_point);
-            self.init_first_point(src, &mut current)?;
-            Ok(())
-        }
-
-        fn decompress_with(
-            &mut self,
-            mut decoder: &mut ArithmeticDecoder<R>,
-            buf: &mut [u8],
-        ) -> std::io::Result<()> {
-            let mut current = Point0Wrapper::new(buf);
-            self.decompress_field_with(&mut decoder, &mut current)?;
+            self.last_point.pack_into(buf);
             Ok(())
         }
     }

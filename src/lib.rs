@@ -7,6 +7,7 @@ pub(crate) mod models;
 pub mod errors;
 pub mod las;
 pub mod packers;
+pub mod checking;
 #[macro_use]
 pub mod record;
 
