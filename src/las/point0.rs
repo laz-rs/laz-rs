@@ -26,7 +26,6 @@
 
 //! Defines the Point Format 0 ands different version of compressors and decompressors
 
-
 use std::io::{Read, Write};
 use std::mem::size_of;
 
@@ -240,7 +239,6 @@ impl LasPoint0 for Point0 {
     }
 }
 
-
 impl Packable for Point0 {
     type Type = Point0;
 
@@ -351,19 +349,17 @@ pub mod v1 {
     use std::io::{Read, Write};
 
     use crate::compressors::{
-        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
+        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
+        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
     };
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::point0::{LasPoint0};
+    use crate::las::point0::LasPoint0;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::Point0;
 
@@ -455,7 +451,6 @@ pub mod v1 {
         }
     }
 
-
     pub struct LasPoint0Compressor {
         last_point: Point0,
         last_x_diffs: [i32; 3],
@@ -507,7 +502,6 @@ pub mod v1 {
         }
     }
 
-
     impl<W: Write> FieldCompressor<W> for LasPoint0Compressor {
         fn size_of_field(&self) -> usize {
             20
@@ -519,7 +513,11 @@ pub mod v1 {
             Ok(())
         }
 
-        fn compress_with(&mut self, encoder: &mut ArithmeticEncoder<W>, buf: &[u8]) -> std::io::Result<()> {
+        fn compress_with(
+            &mut self,
+            encoder: &mut ArithmeticEncoder<W>,
+            buf: &[u8],
+        ) -> std::io::Result<()> {
             let current_point = Point0::unpack_from(buf);
             let median_x = median_diff(&self.last_x_diffs);
             let median_y = median_diff(&self.last_y_diffs);
@@ -551,7 +549,7 @@ pub mod v1 {
                 | ((self.last_point.bit_fields() != current_point.bit_fields()) as u8) << 4
                 | ((self.last_point.classification() != current_point.classification()) as u8) << 3
                 | ((self.last_point.scan_angle_rank() != current_point.scan_angle_rank()) as u8)
-                << 2
+                    << 2
                 | ((self.last_point.user_data() != current_point.user_data()) as u8) << 1
                 | (self.last_point.point_source_id() != current_point.point_source_id()) as u8;
 
@@ -620,11 +618,7 @@ pub mod v1 {
             20
         }
 
-        fn decompress_first(
-            &mut self,
-            src: &mut R,
-            first_point: &mut [u8],
-        ) -> std::io::Result<()> {
+        fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
             src.read_exact(first_point)?;
             self.last_point = Point0::unpack_from(first_point);
             Ok(())
@@ -728,15 +722,11 @@ pub mod v2 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::point0::{LasPoint0
-
-    };
+    use crate::las::point0::LasPoint0;
     use crate::las::utils;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::Point0;
 
@@ -758,8 +748,8 @@ pub mod v2 {
 
             let bit_fields_changed = ((last.return_number() ^ current.return_number()) != 0)
                 | ((last.number_of_returns_of_given_pulse()
-                ^ current.number_of_returns_of_given_pulse())
-                != 0)
+                    ^ current.number_of_returns_of_given_pulse())
+                    != 0)
                 | (last.scan_direction_flag() ^ current.scan_direction_flag())
                 | (last.edge_of_flight_line() ^ current.edge_of_flight_line());
 
@@ -898,7 +888,6 @@ pub mod v2 {
         }
     }
 
-
     impl<W: Write> FieldCompressor<W> for LasPoint0Compressor {
         fn size_of_field(&self) -> usize {
             20
@@ -1012,10 +1001,10 @@ pub mod v2 {
             let diff = current_point.y() - self.last_point.y;
             let context = (n == 1) as u32
                 + if k_bits < 20 {
-                utils::u32_zero_bit(k_bits)
-            } else {
-                20
-            };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    20
+                };
             self.ic_dy.compress(&mut encoder, median, diff, context)?;
             unsafe {
                 self.common
@@ -1028,10 +1017,10 @@ pub mod v2 {
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
             let context = (n == 1) as u32
                 + if k_bits < 18 {
-                utils::u32_zero_bit(k_bits)
-            } else {
-                18
-            };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    18
+                };
             self.ic_z.compress(
                 &mut encoder,
                 *unsafe { self.common.last_height.get_unchecked(l as usize) },
@@ -1082,7 +1071,6 @@ pub mod v2 {
             }
         }
     }
-
 
     impl<R: Read> FieldDecompressor<R> for LasPoint0Decompressor {
         fn size_of_field(&self) -> usize {
@@ -1211,10 +1199,10 @@ pub mod v2 {
                 let k_bits = self.ic_dx.k();
                 let context = (n == 1) as u32
                     + if k_bits < 20 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    20
-                };
+                        utils::u32_zero_bit(k_bits)
+                    } else {
+                        20
+                    };
                 let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
                 self.last_point.y += diff;
                 self.common
@@ -1226,10 +1214,10 @@ pub mod v2 {
                 let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
                 let context = (n == 1) as u32
                     + if k_bits < 18 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    18
-                };
+                        utils::u32_zero_bit(k_bits)
+                    } else {
+                        18
+                    };
                 self.last_point.z = self.ic_z.decompress(
                     &mut decoder,
                     *self.common.last_height.get_unchecked(l as usize),

@@ -2,9 +2,9 @@
 
 use std::io::{Read, Write};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crate::packers::Packable;
 use crate::las::gps::GpsTime;
+use crate::packers::Packable;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 fn u32_zero_bit_0(n: u32) -> u32 {
     n & 0xFFFFFFFE
@@ -346,7 +346,7 @@ impl Packable for Point6 {
                 user_data: u8::unpack_from(&input[17..18]),
                 point_source_id: u16::unpack_from(&input[20..22]),
                 gps_time: f64::from(GpsTime::unpack_from(&input[22..30])),
-                gps_time_change: false
+                gps_time_change: false,
             }
         }
     }
@@ -369,7 +369,6 @@ impl Packable for Point6 {
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -398,18 +397,23 @@ pub mod v3 {
 
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-    use crate::compressors::{DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder};
+    use crate::compressors::{
+        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
+    };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
+        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
     };
     use crate::encoders::ArithmeticEncoder;
     use crate::las::gps::{GpsTime, LasGpsTime};
-    use crate::las::point6::{DecompressionSelector, LasPoint6, Point6, u32_zero_bit_0};
-    use crate::las::utils::{copy_bytes_into_decoder, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX, StreamingMedian, copy_encoder_content_to, read_and_unpack};
+    use crate::las::point6::{u32_zero_bit_0, DecompressionSelector, LasPoint6, Point6};
+    use crate::las::utils::{
+        copy_bytes_into_decoder, copy_encoder_content_to, read_and_unpack, StreamingMedian,
+        NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX,
+    };
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
-    use crate::record::{LayeredFieldDecompressor, LayeredFieldCompressor};
     use crate::packers::Packable;
+    use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
 
     fn compute_last_point_return(last_point: &Point6) -> usize {
         // Create single (3) / first (1) / last (2) / intermediate (0) context from last point return
@@ -418,9 +422,7 @@ pub mod v3 {
         } else {
             0
         };
-        lpr += if last_point.return_number()
-            >= last_point.number_of_returns_of_given_pulse()
-        {
+        lpr += if last_point.return_number() >= last_point.number_of_returns_of_given_pulse() {
             2
         } else {
             0
@@ -505,7 +507,6 @@ pub mod v3 {
             }
         }
     }
-
 
     struct Point6Decompressors {
         dx: IntegerDecompressor,
@@ -745,22 +746,31 @@ pub mod v3 {
                 multi = self
                     .decoders
                     .gps_time
-                    .decode_symbol(&mut the_context.models.gps_time_no_diff)? as i32;
+                    .decode_symbol(&mut the_context.models.gps_time_no_diff)?
+                    as i32;
                 if multi == 0 {
                     // The difference can be represented with 32 bits
                     the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] =
-                        the_context
-                            .decompressors
-                            .gps_time
-                            .decompress(&mut self.decoders.gps_time, 0, 0)?;
+                        the_context.decompressors.gps_time.decompress(
+                            &mut self.decoders.gps_time,
+                            0,
+                            0,
+                        )?;
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] +=
-                        i64::from(the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]);
-                    the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                        i64::from(
+                            the_context.gps_sequences.last_gps_diffs
+                                [the_context.gps_sequences.last],
+                        );
+                    the_context.gps_sequences.multi_extreme_counter
+                        [the_context.gps_sequences.last] = 0;
                 } else if multi == 1 {
                     // Difference is huge
                     the_context.gps_sequences.next = (the_context.gps_sequences.next + 1) & 3;
-                    let last_gps_time = the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last].value;
-                    let next_gps_time = &mut the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next];
+                    let last_gps_time = the_context.gps_sequences.last_gps_times
+                        [the_context.gps_sequences.last]
+                        .value;
+                    let next_gps_time = &mut the_context.gps_sequences.last_gps_times
+                        [the_context.gps_sequences.next];
 
                     next_gps_time.value = the_context.decompressors.gps_time.decompress(
                         &mut self.decoders.gps_time,
@@ -771,104 +781,146 @@ pub mod v3 {
                     next_gps_time.value |= self.decoders.gps_time.read_int()? as i64;
                     the_context.gps_sequences.last = the_context.gps_sequences.next;
                     the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = 0;
-                    the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                    the_context.gps_sequences.multi_extreme_counter
+                        [the_context.gps_sequences.last] = 0;
                 } else {
                     // We switch to another sequence
-                    the_context.gps_sequences.last = (the_context.gps_sequences.last + multi as usize - 1) & 3;
+                    the_context.gps_sequences.last =
+                        (the_context.gps_sequences.last + multi as usize - 1) & 3;
                     self.read_gps_time()?;
                 }
             } else {
                 multi = self
                     .decoders
                     .gps_time
-                    .decode_symbol(&mut the_context.models.gps_time_multi)? as i32;
+                    .decode_symbol(&mut the_context.models.gps_time_multi)?
+                    as i32;
                 if multi == 1 {
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] += the_context
-                        .decompressors
-                        .gps_time
-                        .decompress(
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] +=
+                        the_context.decompressors.gps_time.decompress(
                             &mut self.decoders.gps_time,
-                            the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last],
+                            the_context.gps_sequences.last_gps_diffs
+                                [the_context.gps_sequences.last],
                             1,
                         )? as i64;
-                    the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                    the_context.gps_sequences.multi_extreme_counter
+                        [the_context.gps_sequences.last] = 0;
                 } else if multi < LASZIP_GPS_TIME_MULTI_CODE_FULL {
                     let gps_time_diff: i32;
                     if multi == 0 {
-                        gps_time_diff =
-                            the_context
-                                .decompressors
-                                .gps_time
-                                .decompress(&mut self.decoders.gps_time, 0, 7)?;
-                        the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] += 1;
-                        if the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] > 3 {
-                            the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = gps_time_diff;
-                            the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                        gps_time_diff = the_context.decompressors.gps_time.decompress(
+                            &mut self.decoders.gps_time,
+                            0,
+                            7,
+                        )?;
+                        the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last] += 1;
+                        if the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last]
+                            > 3
+                        {
+                            the_context.gps_sequences.last_gps_diffs
+                                [the_context.gps_sequences.last] = gps_time_diff;
+                            the_context.gps_sequences.multi_extreme_counter
+                                [the_context.gps_sequences.last] = 0;
                         }
                     } else if multi < LASZIP_GPS_TIME_MULTI {
                         if multi < 10 {
                             gps_time_diff = the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
-                                multi.wrapping_mul(the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]),
+                                multi.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
+                                ),
                                 2,
                             )?;
                         } else {
                             gps_time_diff = the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
-                                multi.wrapping_mul(the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]),
+                                multi.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
+                                ),
                                 3,
                             )?;
                         }
                     } else if multi == LASZIP_GPS_TIME_MULTI {
                         gps_time_diff = the_context.decompressors.gps_time.decompress(
                             &mut self.decoders.gps_time,
-                            LASZIP_GPS_TIME_MULTI * the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last],
+                            LASZIP_GPS_TIME_MULTI
+                                * the_context.gps_sequences.last_gps_diffs
+                                    [the_context.gps_sequences.last],
                             4,
                         )?;
-                        the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] += 1;
-                        if the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] > 3 {
-                            the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = gps_time_diff;
-                            the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                        the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last] += 1;
+                        if the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last]
+                            > 3
+                        {
+                            the_context.gps_sequences.last_gps_diffs
+                                [the_context.gps_sequences.last] = gps_time_diff;
+                            the_context.gps_sequences.multi_extreme_counter
+                                [the_context.gps_sequences.last] = 0;
                         }
                     } else {
                         multi = LASZIP_GPS_TIME_MULTI - multi;
                         if multi > LASZIP_GPS_TIME_MULTI_MINUS {
                             gps_time_diff = the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
-                                multi.wrapping_mul(the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]),
+                                multi.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
+                                ),
                                 5,
                             )?;
                         } else {
                             gps_time_diff = the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI_MINUS
-                                    * the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last],
+                                    * the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
                                 6,
                             )?;
-                            the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] += 1;
-                            if the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] > 3 {
-                                the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = gps_time_diff;
-                                the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                            the_context.gps_sequences.multi_extreme_counter
+                                [the_context.gps_sequences.last] += 1;
+                            if the_context.gps_sequences.multi_extreme_counter
+                                [the_context.gps_sequences.last]
+                                > 3
+                            {
+                                the_context.gps_sequences.last_gps_diffs
+                                    [the_context.gps_sequences.last] = gps_time_diff;
+                                the_context.gps_sequences.multi_extreme_counter
+                                    [the_context.gps_sequences.last] = 0;
                             }
                         }
                     }
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] += i64::from(gps_time_diff);
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] +=
+                        i64::from(gps_time_diff);
                 } else if multi == LASZIP_GPS_TIME_MULTI_CODE_FULL {
                     the_context.gps_sequences.next = (the_context.gps_sequences.next + 1) & 3;
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next] =
-                        GpsTime::from(the_context.decompressors.gps_time.decompress(
-                            &mut self.decoders.gps_time,
-                            (the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last].value >> 32) as i32,
-                            8,
-                        )? as i64);
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next].value <<= 32;
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next].value |=
-                        self.decoders.gps_time.read_int()? as i64;
+                        GpsTime::from(
+                            the_context.decompressors.gps_time.decompress(
+                                &mut self.decoders.gps_time,
+                                (the_context.gps_sequences.last_gps_times
+                                    [the_context.gps_sequences.last]
+                                    .value
+                                    >> 32) as i32,
+                                8,
+                            )? as i64,
+                        );
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next]
+                        .value <<= 32;
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next]
+                        .value |= self.decoders.gps_time.read_int()? as i64;
                     the_context.gps_sequences.last = the_context.gps_sequences.next;
                     the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = 0;
-                    the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                    the_context.gps_sequences.multi_extreme_counter
+                        [the_context.gps_sequences.last] = 0;
                 } else if multi >= LASZIP_GPS_TIME_MULTI_CODE_FULL {
-                    the_context.gps_sequences.last = (the_context.gps_sequences.last + multi as usize
+                    the_context.gps_sequences.last = (the_context.gps_sequences.last
+                        + multi as usize
                         - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
                         & 3;
                     self.read_gps_time()?;
@@ -883,7 +935,12 @@ pub mod v3 {
             Point6::SIZE
         }
 
-        fn init_first_point(&mut self, src: &mut R, first_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            src: &mut R,
+            first_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for context in &mut self.contexts {
                 context.unused = true;
             }
@@ -896,7 +953,11 @@ pub mod v3 {
             Ok(())
         }
 
-        fn decompress_field_with(&mut self, current_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
+        fn decompress_field_with(
+            &mut self,
+            current_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             let changed_values = {
                 let the_context = &mut self.contexts[self.current_context];
                 let last_point = &mut the_context.last_point;
@@ -916,9 +977,10 @@ pub mod v3 {
                 let scanner_channel = (self.current_context + diff as usize + 1) % 4; // TODO: num_context const ?
 
                 if self.contexts[scanner_channel as usize].unused {
-                    self.contexts[scanner_channel as usize] = Point6DecompressionContext::from_last_point(
-                        &self.contexts[self.current_context].last_point,
-                    );
+                    self.contexts[scanner_channel as usize] =
+                        Point6DecompressionContext::from_last_point(
+                            &self.contexts[self.current_context].last_point,
+                        );
                 }
 
                 // Switch context to current channel
@@ -928,7 +990,7 @@ pub mod v3 {
 
             let point_source_changed = is_nth_bit_set!(changed_values, 5);
             let gps_time_changed = is_nth_bit_set!(changed_values, 4);
-            let scan_angle_changed =  is_nth_bit_set!(changed_values, 3);
+            let scan_angle_changed = is_nth_bit_set!(changed_values, 3);
 
             // Introduce a scope because we borrow &mut self
             // and later self.read_gps(also needs to borrow mut self
@@ -943,7 +1005,7 @@ pub mod v3 {
 
                 // If number of returns if different we decompress it
                 let n;
-                if  is_nth_bit_set!(changed_values, 2) {
+                if is_nth_bit_set!(changed_values, 2) {
                     n = self.decoders.channel_returns_xy.decode_symbol(
                         the_context.models.number_of_returns[last_n as usize]
                             .get_or_insert_with(|| ArithmeticModelBuilder::new(16).build()),
@@ -1020,7 +1082,8 @@ pub mod v3 {
 
                 // Decompress Z
                 if self.should_decompress.z {
-                    k_bits = (the_context.decompressors.dx.k() + the_context.decompressors.dy.k()) / 2;
+                    k_bits =
+                        (the_context.decompressors.dx.k() + the_context.decompressors.dy.k()) / 2;
                     let mut context = if n == 1 { 1 } else { 0 };
                     context += if k_bits < 18 {
                         u32_zero_bit_0(k_bits)
@@ -1250,9 +1313,7 @@ pub mod v3 {
                     .bits(16)
                     .contexts(2)
                     .build_initialized(),
-                source_id: IntegerCompressorBuilder::new()
-                    .bits(16)
-                    .build_initialized(),
+                source_id: IntegerCompressorBuilder::new().bits(16).build_initialized(),
                 gps_time: IntegerCompressorBuilder::new()
                     .bits(32)
                     .contexts(9)
@@ -1260,7 +1321,6 @@ pub mod v3 {
             }
         }
     }
-
 
     struct Point6CompressionContext {
         unused: bool,
@@ -1337,21 +1397,34 @@ pub mod v3 {
                 ////println!("Last diff was 0");
                 // if the last integer difference was zero
                 // calculate the difference between the two doubles as an integer
-                let curr_gps_time_diff_64 = i64::from(gps_time) - i64::from(the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last]);
+                let curr_gps_time_diff_64 = i64::from(gps_time)
+                    - i64::from(
+                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                    );
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
                 if i64::from(curr_gps_time_diff) == curr_gps_time_diff_64 {
                     // the difference can be represented with 32 bits
-                    self.encoders.gps_time.encode_symbol(&mut the_context.models.gps_time_no_diff, 0)?;
-                    the_context.compressors.gps_time.compress(&mut self.encoders.gps_time, 0, curr_gps_time_diff, 0)?;
-                    the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = curr_gps_time_diff;
-                    the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                    self.encoders
+                        .gps_time
+                        .encode_symbol(&mut the_context.models.gps_time_no_diff, 0)?;
+                    the_context.compressors.gps_time.compress(
+                        &mut self.encoders.gps_time,
+                        0,
+                        curr_gps_time_diff,
+                        0,
+                    )?;
+                    the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] =
+                        curr_gps_time_diff;
+                    the_context.gps_sequences.multi_extreme_counter
+                        [the_context.gps_sequences.last] = 0;
                 } else {
                     // The difference is huge
                     // Maybe the double belongs to another sequence
                     let mut other_sequence = None;
                     for i in 1..4 {
                         let idx = (the_context.gps_sequences.last + i) & 3;
-                        let other_gps_time_diff_64 = i64::from(gps_time) - i64::from(the_context.gps_sequences.last_gps_times[idx]);
+                        let other_gps_time_diff_64 = i64::from(gps_time)
+                            - i64::from(the_context.gps_sequences.last_gps_times[idx]);
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if i64::from(other_gps_time_diff) == other_gps_time_diff_64 {
                             other_sequence = Some(i);
@@ -1360,75 +1433,111 @@ pub mod v3 {
                     }
                     if let Some(i) = other_sequence {
                         self.encoders.gps_time.encode_symbol(
-                            &mut the_context.models.gps_time_no_diff, (i + 1) as u32)?;
+                            &mut the_context.models.gps_time_no_diff,
+                            (i + 1) as u32,
+                        )?;
                         the_context.gps_sequences.last = (the_context.gps_sequences.last + i) & 3;
                         return self.compress_gps_time(gps_time);
                     } else {
                         // Lets start a new sequence
-                        self.encoders.gps_time.encode_symbol(&mut the_context.models.gps_time_no_diff, 1)?;
+                        self.encoders
+                            .gps_time
+                            .encode_symbol(&mut the_context.models.gps_time_no_diff, 1)?;
                         the_context.compressors.gps_time.compress(
                             &mut self.encoders.gps_time,
-                            (i64::from(the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last]) >> 32) as i32,
+                            (i64::from(
+                                the_context.gps_sequences.last_gps_times
+                                    [the_context.gps_sequences.last],
+                            ) >> 32) as i32,
                             (i64::from(gps_time) >> 32) as i32,
                             8,
                         )?;
-                        self.encoders.gps_time.write_int(i64::from(gps_time) as u32)?;
+                        self.encoders
+                            .gps_time
+                            .write_int(i64::from(gps_time) as u32)?;
                         the_context.gps_sequences.next += 1;
                         the_context.gps_sequences.next &= 3;
                         the_context.gps_sequences.last = the_context.gps_sequences.next;
-                        the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = 0;
-                        the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                        the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] =
+                            0;
+                        the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last] = 0;
                     }
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] = gps_time;
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] =
+                        gps_time;
                 }
             } else {
                 ////println!("Last diff was not 0");
                 // the last integer difference was *not* zero
-                let curr_gps_time_diff_64 = i64::from(gps_time) - i64::from(the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last]);
+                let curr_gps_time_diff_64 = i64::from(gps_time)
+                    - i64::from(
+                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                    );
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
 
                 if curr_gps_time_diff_64 == i64::from(curr_gps_time_diff) {
                     ////println!("diff encodable with 32 bits");
                     // if the current gps_time difference can be represented with 32 bits
-                    let multi_f = (curr_gps_time_diff as f32) / (the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] as f32);
-                    let multi = if multi_f >= 0.0 { (multi_f + 0.5) as i32 } else { (multi_f - 0.5) as i32 };
+                    let multi_f = (curr_gps_time_diff as f32)
+                        / (the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]
+                            as f32);
+                    let multi = if multi_f >= 0.0 {
+                        (multi_f + 0.5) as i32
+                    } else {
+                        (multi_f - 0.5) as i32
+                    };
 
                     // compress the residual curr_gps_time_diff in dependence on the multiplier
                     if multi == 1 {
                         // this is the case we assume we get most often for regular spaced pulses
-                        self.encoders.gps_time.encode_symbol(&mut the_context.models.gps_time_multi, 1)?;
+                        self.encoders
+                            .gps_time
+                            .encode_symbol(&mut the_context.models.gps_time_multi, 1)?;
                         the_context.compressors.gps_time.compress(
                             &mut self.encoders.gps_time,
-                            the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last],
+                            the_context.gps_sequences.last_gps_diffs
+                                [the_context.gps_sequences.last],
                             curr_gps_time_diff,
                             1,
                         )?;
-                        the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                        the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last] = 0;
                     } else if multi > 0 {
                         if multi < LASZIP_GPS_TIME_MULTI {
                             // positive multipliers up to LASZIP_GPS_TIME_MULTI are compressed directly
                             self.encoders.gps_time.encode_symbol(
-                                &mut the_context.models.gps_time_multi, multi as u32)?;
+                                &mut the_context.models.gps_time_multi,
+                                multi as u32,
+                            )?;
                             let context = if multi < 10 { 2 } else { 3 };
                             the_context.compressors.gps_time.compress(
                                 &mut self.encoders.gps_time,
-                                multi.wrapping_mul(the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]),
+                                multi.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
+                                ),
                                 curr_gps_time_diff,
                                 context,
                             )?;
                         } else {
                             self.encoders.gps_time.encode_symbol(
-                                &mut the_context.models.gps_time_multi, LASZIP_GPS_TIME_MULTI as u32)?;
+                                &mut the_context.models.gps_time_multi,
+                                LASZIP_GPS_TIME_MULTI as u32,
+                            )?;
                             the_context.compressors.gps_time.compress(
                                 &mut self.encoders.gps_time,
-                                LASZIP_GPS_TIME_MULTI * the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last],
+                                LASZIP_GPS_TIME_MULTI
+                                    * the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
                                 curr_gps_time_diff,
                                 4,
                             )?;
-                            let counter = &mut the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last];
+                            let counter = &mut the_context.gps_sequences.multi_extreme_counter
+                                [the_context.gps_sequences.last];
                             *counter += 1;
                             if *counter > 3 {
-                                the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = curr_gps_time_diff;
+                                the_context.gps_sequences.last_gps_diffs
+                                    [the_context.gps_sequences.last] = curr_gps_time_diff;
                                 *counter = 0;
                             }
                         }
@@ -1441,41 +1550,53 @@ pub mod v3 {
                             )?;
                             the_context.compressors.gps_time.compress(
                                 &mut self.encoders.gps_time,
-                                multi.wrapping_mul(the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]),
+                                multi.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
+                                ),
                                 curr_gps_time_diff,
                                 5,
                             )?;
                         } else {
                             //TODO this codes is just copy pasta + changed values compared to above
                             self.encoders.gps_time.encode_symbol(
-                                &mut the_context.models.gps_time_multi, (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS) as u32)?;
+                                &mut the_context.models.gps_time_multi,
+                                (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS) as u32,
+                            )?;
                             the_context.compressors.gps_time.compress(
                                 &mut self.encoders.gps_time,
-                                LASZIP_GPS_TIME_MULTI_MINUS * the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last],
+                                LASZIP_GPS_TIME_MULTI_MINUS
+                                    * the_context.gps_sequences.last_gps_diffs
+                                        [the_context.gps_sequences.last],
                                 curr_gps_time_diff,
                                 6,
                             )?;
-                            let counter = &mut the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last];
+                            let counter = &mut the_context.gps_sequences.multi_extreme_counter
+                                [the_context.gps_sequences.last];
                             *counter += 1;
                             if *counter > 3 {
-                                the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = curr_gps_time_diff;
+                                the_context.gps_sequences.last_gps_diffs
+                                    [the_context.gps_sequences.last] = curr_gps_time_diff;
                                 *counter = 0;
                             }
                         }
                     } else {
                         //TODO this codes is just copy pasta + changed values compared to above
-                        self.encoders.gps_time.encode_symbol(
-                            &mut the_context.models.gps_time_multi, 0)?;
+                        self.encoders
+                            .gps_time
+                            .encode_symbol(&mut the_context.models.gps_time_multi, 0)?;
                         the_context.compressors.gps_time.compress(
                             &mut self.encoders.gps_time,
                             0,
                             curr_gps_time_diff,
                             7,
                         )?;
-                        let counter = &mut the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last];
+                        let counter = &mut the_context.gps_sequences.multi_extreme_counter
+                            [the_context.gps_sequences.last];
                         *counter += 1;
                         if *counter > 3 {
-                            the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = curr_gps_time_diff;
+                            the_context.gps_sequences.last_gps_diffs
+                                [the_context.gps_sequences.last] = curr_gps_time_diff;
                             *counter = 0;
                         }
                     }
@@ -1484,7 +1605,11 @@ pub mod v3 {
                     //TODO this fucking looks so much fucking like the code a few lines above
                     // the difference is huge
                     for i in 1..4 {
-                        let other_gps_time_diff_64 = i64::from(gps_time) - i64::from(the_context.gps_sequences.last_gps_times[(the_context.gps_sequences.last + i) & 3]);
+                        let other_gps_time_diff_64 = i64::from(gps_time)
+                            - i64::from(
+                                the_context.gps_sequences.last_gps_times
+                                    [(the_context.gps_sequences.last + i) & 3],
+                            );
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if other_gps_time_diff_64 == i64::from(other_gps_time_diff) {
                             // it belongs to this sequence
@@ -1493,25 +1618,33 @@ pub mod v3 {
                                 (LASZIP_GPS_TIME_MULTI_CODE_FULL + i as i32) as u32,
                             )?;
                             the_context.gps_sequences.last += i;
-                            the_context.gps_sequences.last &=3;
+                            the_context.gps_sequences.last &= 3;
                             return self.compress_gps_time(gps_time);
                         }
                     }
                     // no other sequence found. start new sequence.
                     self.encoders.gps_time.encode_symbol(
-                        &mut the_context.models.gps_time_multi, LASZIP_GPS_TIME_MULTI_CODE_FULL as u32)?;
+                        &mut the_context.models.gps_time_multi,
+                        LASZIP_GPS_TIME_MULTI_CODE_FULL as u32,
+                    )?;
                     the_context.compressors.gps_time.compress(
                         &mut self.encoders.gps_time,
-                        (i64::from(the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last]) >> 32) as i32,
+                        (i64::from(
+                            the_context.gps_sequences.last_gps_times
+                                [the_context.gps_sequences.last],
+                        ) >> 32) as i32,
                         (i64::from(gps_time) >> 32) as i32,
                         8,
                     )?;
-                    self.encoders.gps_time.write_int(i64::from(gps_time) as u32)?;
+                    self.encoders
+                        .gps_time
+                        .write_int(i64::from(gps_time) as u32)?;
                     the_context.gps_sequences.next += 1;
                     the_context.gps_sequences.next &= 3;
                     the_context.gps_sequences.last = the_context.gps_sequences.next;
                     the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = 0;
-                    the_context.gps_sequences.multi_extreme_counter[the_context.gps_sequences.last] = 0;
+                    the_context.gps_sequences.multi_extreme_counter
+                        [the_context.gps_sequences.last] = 0;
                 }
                 the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] = gps_time;
             }
@@ -1525,13 +1658,18 @@ pub mod v3 {
             Point6::SIZE
         }
 
-        fn init_first_point(&mut self, dst: &mut W, first_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            dst: &mut W,
+            first_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for context in &mut self.contexts {
                 context.unused = true;
             }
             dst.write_all(first_point)?;
 
-            let first_point= Point6::unpack_from(first_point);
+            let first_point = Point6::unpack_from(first_point);
             self.current_context = first_point.scanner_channel() as usize;
             *context = self.current_context;
 
@@ -1539,7 +1677,11 @@ pub mod v3 {
             Ok(())
         }
 
-        fn compress_field_with(&mut self, current_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+        fn compress_field_with(
+            &mut self,
+            current_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             let current_point = Point6::unpack_from(current_point);
             let lpr = compute_last_point_return(&self.contexts[self.current_context].last_point);
             let scanner_channel = current_point.scanner_channel();
@@ -1547,7 +1689,8 @@ pub mod v3 {
                 if scanner_channel != self.current_context as u8 {
                     if self.contexts[scanner_channel as usize].unused == false {
                         //FIXME its not 100% the same as Laszip, will it be problematic ?
-                        self.contexts[self.current_context].last_point = self.contexts[scanner_channel as usize].last_point;
+                        self.contexts[self.current_context].last_point =
+                            self.contexts[scanner_channel as usize].last_point;
                     }
                 }
             }
@@ -1564,7 +1707,8 @@ pub mod v3 {
                 let the_context = &mut self.contexts[self.current_context];
                 let last_point = &mut the_context.last_point;
                 // determine changed attributes
-                point_source_changed = last_point.point_source_id != current_point.point_source_id();
+                point_source_changed =
+                    last_point.point_source_id != current_point.point_source_id();
                 gps_time_changed = last_point.gps_time != current_point.gps_time();
                 scan_angle_changed = last_point.scan_angle_rank != current_point.scan_angle_rank();
 
@@ -1580,7 +1724,7 @@ pub mod v3 {
                     ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
                     ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
                     ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    (((n != last_n as u8) as i32) << 2);                         // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
+                    (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
 
                 // return number compared to last point of *same* scanner channel
                 // (same = 0 / plus one mod 16 = 1 / minus one mod 16 = 2 / other difference = 3)
@@ -1594,13 +1738,19 @@ pub mod v3 {
                     }
                 }
                 self.encoders.channel_returns_xy.encode_symbol(
-                    &mut the_context.models.changed_values[lpr], changed_values as u32)?;
+                    &mut the_context.models.changed_values[lpr],
+                    changed_values as u32,
+                )?;
             }
             //println!("Changed values: {:b}, lpr used: {}", changed_values, lpr);
 
             if changed_values & (1 << 6) != 0 {
                 let diff = scanner_channel - self.current_context as u8;
-                let symbol = if diff > 0 { i32::from(diff - 1) } else { i32::from(diff + 4) };
+                let symbol = if diff > 0 {
+                    i32::from(diff - 1)
+                } else {
+                    i32::from(diff + 4)
+                };
                 self.encoders.channel_returns_xy.encode_symbol(
                     &mut self.contexts[self.current_context].models.scanner_channel,
                     symbol as u32,
@@ -1619,25 +1769,28 @@ pub mod v3 {
             // if number of returns is different we compress it
             if (changed_values & (1 << 2)) != 0 {
                 let model = the_context.models.number_of_returns[last_n]
-                    .get_or_insert_with(|| {
-                        ArithmeticModelBuilder::new(16).build()
-                    });
-                self.encoders.channel_returns_xy.encode_symbol(model, u32::from(n))?;
+                    .get_or_insert_with(|| ArithmeticModelBuilder::new(16).build());
+                self.encoders
+                    .channel_returns_xy
+                    .encode_symbol(model, u32::from(n))?;
             }
 
             // if return number is different and difference is bigger than +1 / -1
             // we compress how it is different
             if (changed_values & 3) == 3 {
                 if gps_time_changed {
-                    let model = the_context.models.return_number[last_r].get_or_insert_with(
-                        || ArithmeticModelBuilder::new(16).build()
-                    );
-                    self.encoders.channel_returns_xy.encode_symbol(model, u32::from(r))?;
+                    let model = the_context.models.return_number[last_r]
+                        .get_or_insert_with(|| ArithmeticModelBuilder::new(16).build());
+                    self.encoders
+                        .channel_returns_xy
+                        .encode_symbol(model, u32::from(r))?;
                 } else {
                     let diff = i32::from(r) - last_r as i32;
                     let sym = if diff > 1 { diff - 2 } else { diff + 16 - 2 };
                     self.encoders.channel_returns_xy.encode_symbol(
-                        &mut the_context.models.return_number_gps_same, sym as u32)?;
+                        &mut the_context.models.return_number_gps_same,
+                        sym as u32,
+                    )?;
                 }
             }
 
@@ -1651,13 +1804,16 @@ pub mod v3 {
             let mut cpr = if r == 1 { 2 } else { 0 }; //first ?
             cpr += if r >= n { 1 } else { 0 }; // last ?
 
-
             let idx = (m << 1) as usize | gps_time_changed as usize;
             // Compress X
             let median = the_context.last_x_diff_median5[idx].get();
             let diff = current_point.x().wrapping_sub(the_context.last_point.x);
             the_context.compressors.dx.compress(
-                &mut self.encoders.channel_returns_xy, median, diff, (n == 1) as u32)?;
+                &mut self.encoders.channel_returns_xy,
+                median,
+                diff,
+                (n == 1) as u32,
+            )?;
             the_context.last_x_diff_median5[idx].add(diff);
 
             // Compress Y
@@ -1665,20 +1821,35 @@ pub mod v3 {
             let median = the_context.last_y_diff_median5[idx].get();
             //println!("Median {}, diff {}", median, diff);
             let diff = current_point.y().wrapping_sub(the_context.last_point.y);
-            let context = (n == 1) as u32 + if k_bits < 20 { u32_zero_bit_0(k_bits) } else { 20 };
+            let context = (n == 1) as u32
+                + if k_bits < 20 {
+                    u32_zero_bit_0(k_bits)
+                } else {
+                    20
+                };
             the_context.compressors.dy.compress(
-                &mut self.encoders.channel_returns_xy, median, diff, context,
+                &mut self.encoders.channel_returns_xy,
+                median,
+                diff,
+                context,
             )?;
             the_context.last_y_diff_median5[idx].add(diff);
 
             // Compress Z
             let k_bits = (the_context.compressors.dx.k() + the_context.compressors.dy.k()) / 2;
-            let context = (n == 1) as u32 + if k_bits < 18 { u32_zero_bit_0(k_bits) } else { 18 };
+            let context = (n == 1) as u32
+                + if k_bits < 18 {
+                    u32_zero_bit_0(k_bits)
+                } else {
+                    18
+                };
             the_context.compressors.z.compress(
-                &mut self.encoders.z, the_context.last_z[l as usize], current_point.z(), context,
+                &mut self.encoders.z,
+                the_context.last_z[l as usize],
+                current_point.z(),
+                context,
             )?;
             the_context.last_z[l as usize] = current_point.z();
-
 
             // Compress classification
             let last_classification = the_context.last_point.classification;
@@ -1690,7 +1861,9 @@ pub mod v3 {
             let ccc = ((last_classification & 0x1F) << 1) as usize + (cpr == 3) as usize;
             let model = the_context.models.classification[ccc]
                 .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
-            self.encoders.classification.encode_symbol(model, u32::from(classification))?;
+            self.encoders
+                .classification
+                .encode_symbol(model, u32::from(classification))?;
 
             // Compress flags
             let last_flags = the_context.last_point.classification_flags();
@@ -1703,18 +1876,19 @@ pub mod v3 {
                 .get_or_insert_with(|| ArithmeticModelBuilder::new(64).build());
             self.encoders.flags.encode_symbol(model, u32::from(flags))?;
 
-
             // Compress intensity
             if the_context.last_point.intensity != current_point.intensity() {
                 self.has_changed.intensity = true;
             }
             the_context.compressors.intensity.compress(
                 &mut self.encoders.intensity,
-                the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize] as i32,
+                the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize]
+                    as i32,
                 current_point.intensity() as i32,
                 cpr,
             )?;
-            the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize] = current_point.intensity();
+            the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize] =
+                current_point.intensity();
 
             // Compress scan angle
             if scan_angle_changed {
@@ -1734,8 +1908,9 @@ pub mod v3 {
 
             let model = the_context.models.user_data[the_context.last_point.user_data as usize / 4]
                 .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
-            self.encoders.user_data.encode_symbol(model, u32::from(current_point.user_data()))?;
-
+            self.encoders
+                .user_data
+                .encode_symbol(model, u32::from(current_point.user_data()))?;
 
             // Compress point source id
             if point_source_changed {
@@ -1776,8 +1951,13 @@ pub mod v3 {
             call_done_if_has_changed!(point_source);
             call_done_if_has_changed!(gps_time);
 
-              let sizes = LayerSizes {
-                channel_returns_xy: self.encoders.channel_returns_xy.out_stream().get_ref().len(),
+            let sizes = LayerSizes {
+                channel_returns_xy: self
+                    .encoders
+                    .channel_returns_xy
+                    .out_stream()
+                    .get_ref()
+                    .len(),
                 z: self.encoders.z.out_stream().get_ref().len(),
                 classification: self.encoders.classification.out_stream().get_ref().len(),
                 flags: self.encoders.flags.out_stream().get_ref().len(),
@@ -1831,7 +2011,7 @@ pub mod v3 {
                 scan_angle: 6,
                 user_data: 7,
                 point_source: 8,
-                gps_time: 9
+                gps_time: 9,
             };
 
             let mut dst = Cursor::new(Vec::<u8>::new());
@@ -1843,5 +2023,3 @@ pub mod v3 {
         }
     }
 }
-
-

@@ -1,4 +1,4 @@
-pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7};
+pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8};
 
 #[macro_use]
 mod utils;

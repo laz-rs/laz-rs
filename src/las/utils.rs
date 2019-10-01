@@ -27,10 +27,10 @@
 use std::ops::{BitAnd, BitXor};
 
 use crate::decoders::ArithmeticDecoder;
-use num_traits::Zero;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use crate::encoders::ArithmeticEncoder;
 use crate::packers::Packable;
+use num_traits::Zero;
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 #[inline]
 pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
@@ -192,7 +192,6 @@ pub(crate) fn upper_byte_changed(lhs: u16, rhs: u16) -> bool {
     upper_byte(lhs) != upper_byte(rhs)
 }
 
-
 #[inline]
 pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     is_requested: bool,
@@ -221,21 +220,26 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
 
 #[inline]
 pub(crate) fn copy_encoder_content_to<W: Write>(
-    encoder: &mut ArithmeticEncoder<Cursor<Vec<u8>>>, dst: &mut W) -> std::io::Result<()> {
+    encoder: &mut ArithmeticEncoder<Cursor<Vec<u8>>>,
+    dst: &mut W,
+) -> std::io::Result<()> {
     dst.write_all(encoder.out_stream().get_ref())
 }
 
 #[inline(always)]
-pub(crate) fn read_and_unpack<R: Read, P: Packable>(src: &mut R, buf: &mut [u8]) -> std::io::Result<P::Type> {
+pub(crate) fn read_and_unpack<R: Read, P: Packable>(
+    src: &mut R,
+    buf: &mut [u8],
+) -> std::io::Result<P::Type> {
     src.read_exact(buf)?;
     Ok(P::unpack_from(buf))
 }
 
-macro_rules! is_nth_bit_set{
-    ($sym:expr, $n:expr) => {($sym & (1 << $n)) != 0}
+macro_rules! is_nth_bit_set {
+    ($sym:expr, $n:expr) => {
+        ($sym & (1 << $n)) != 0
+    };
 }
-
-
 
 // for LAS points with correctly populated return numbers (1 <= r <= n) and
 // number of returns of given pulse (1 <= n <= 15) the return mapping that

@@ -20,7 +20,8 @@ macro_rules! loop_test_on_buffer {
 
             let mut expected_buf = [0u8; $point_size];
 
-            let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+            let mut compressor =
+                SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
             for c in $field_compressors {
                 compressor.add_boxed_compressor(c);
             }

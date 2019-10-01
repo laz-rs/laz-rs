@@ -45,13 +45,12 @@ impl Packable for u32 {
             let b3 = *input.get_unchecked(2);
             let b4 = *input.get_unchecked(3);
 
-
             u32::from_le_bytes([b1, b2, b3, b4])
         }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-       output[..4].copy_from_slice(&self.to_le_bytes());
+        output[..4].copy_from_slice(&self.to_le_bytes());
     }
 }
 
@@ -66,7 +65,7 @@ impl Packable for u16 {
             let b1 = *input.get_unchecked(0);
             let b2 = *input.get_unchecked(1);
 
-           u16::from_le_bytes([b1, b2])
+            u16::from_le_bytes([b1, b2])
         }
     }
 

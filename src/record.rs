@@ -1,7 +1,7 @@
 use std::io::{Read, Seek, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use num_traits::{AsPrimitive, PrimInt, zero, Zero};
+use num_traits::{zero, AsPrimitive, PrimInt, Zero};
 
 use crate::compressors;
 use crate::decoders;
@@ -249,10 +249,7 @@ impl<R: Read + Seek> LayeredPointRecordDecompressor<R> {
             context: 0,
         }
     }
-    pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R>>(
-        &mut self,
-        field: T,
-    ) {
+    pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R>>(&mut self, field: T) {
         self.record_size += field.size_of_field();
         self.field_decompressors.push(Box::new(field));
     }
@@ -376,7 +373,12 @@ pub trait FieldCompressor<W: Write> {
 
 pub trait LayeredFieldCompressor<W: Write> {
     fn size_of_field(&self) -> usize;
-    fn init_first_point(&mut self, dst: &mut W, first_point: &[u8], context: &mut usize) -> std::io::Result<()>;
+    fn init_first_point(
+        &mut self,
+        dst: &mut W,
+        first_point: &[u8],
+        context: &mut usize,
+    ) -> std::io::Result<()>;
 
     fn compress_field_with(
         &mut self,
@@ -387,7 +389,6 @@ pub trait LayeredFieldCompressor<W: Write> {
     fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()>;
     fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()>;
 }
-
 
 pub trait RecordCompressor<W> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError>;
@@ -524,11 +525,9 @@ impl<W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<W> {
         self.record_size = 0;
     }
 
-
     fn borrow_stream_mut(&mut self) -> &mut W {
         self.encoder.out_stream()
     }
-
 
     fn into_stream(self) -> W {
         self.encoder.into_stream()
@@ -538,7 +537,6 @@ impl<W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<W> {
         self.encoder.into_stream()
     }
 }
-
 
 pub struct LayeredPointRecordCompressor<W: Write> {
     field_compressors: Vec<Box<dyn LayeredFieldCompressor<W>>>,
@@ -566,27 +564,25 @@ impl<W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<W> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for item in laz_items {
             match item.version {
-                3 =>
-                    match item.item_type {
-                        LazItemType::Point14 => {
-                            self.add_field_compressor(las::v3::LasPoint6Compressor::default())
-                        }
-                        LazItemType::RGB14 => {
-                            self.add_field_compressor(las::v3::LasRGBCompressor::new())
-                        }
-                        LazItemType::RGBNIR14 => {
-                            self.add_field_compressor(las::v3::LasRGBCompressor::new());
-                            self.add_field_compressor(las::v3::LasNIRCompressor::new());
-                        }
-                        //TODO Extrabyte Compressor
-                        _ => {
-                            return Err(LasZipError::UnsupportedLazItemVersion(
-                                item.item_type,
-                                item.version,
-                            ));
-                        }
+                3 => match item.item_type {
+                    LazItemType::Point14 => {
+                        self.add_field_compressor(las::v3::LasPoint6Compressor::default())
                     }
-                ,
+                    LazItemType::RGB14 => {
+                        self.add_field_compressor(las::v3::LasRGBCompressor::new())
+                    }
+                    LazItemType::RGBNIR14 => {
+                        self.add_field_compressor(las::v3::LasRGBCompressor::new());
+                        self.add_field_compressor(las::v3::LasNIRCompressor::new());
+                    }
+                    //TODO Extrabyte Compressor
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            item.item_type,
+                            item.version,
+                        ));
+                    }
+                },
                 _ => {
                     return Err(LasZipError::UnsupportedLazItemVersion(
                         item.item_type,
@@ -608,7 +604,11 @@ impl<W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<W> {
             let mut field_start = 0;
             for compressor in &mut self.field_compressors {
                 let field_end = field_start + compressor.size_of_field();
-                compressor.init_first_point(&mut self.dst, &point[field_start..field_end], &mut context)?;
+                compressor.init_first_point(
+                    &mut self.dst,
+                    &point[field_start..field_end],
+                    &mut context,
+                )?;
                 field_start = field_end;
             }
         } else {
@@ -655,7 +655,6 @@ impl<W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<W> {
         self.dst
     }
 }
-
 
 /***************************************************************************************************
                     Something else
@@ -707,16 +706,16 @@ impl<IntType: Zero + Copy + PrimInt> IntegerFieldDecompressor<IntType> {
 }
 
 impl<IntType, R> FieldDecompressor<R> for IntegerFieldDecompressor<IntType>
-    where
-        i32: num_traits::cast::AsPrimitive<IntType>,
-        IntType: Zero
+where
+    i32: num_traits::cast::AsPrimitive<IntType>,
+    IntType: Zero
         + Copy
         + PrimInt
         + Packable
         + AsPrimitive<i32>
         + AsPrimitive<<IntType as Packable>::Type>,
-        <IntType as Packable>::Type: AsPrimitive<IntType>,
-        R: Read,
+    <IntType as Packable>::Type: AsPrimitive<IntType>,
+    R: Read,
 {
     fn size_of_field(&self) -> usize {
         std::mem::size_of::<IntType>()
@@ -735,8 +734,8 @@ impl<IntType, R> FieldDecompressor<R> for IntegerFieldDecompressor<IntType>
         mut decoder: &mut decoders::ArithmeticDecoder<R>,
         mut buf: &mut [u8],
     ) -> std::io::Result<()>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         self.decompressor.init();
         let v: IntType = self
@@ -770,10 +769,10 @@ impl<IntType: Zero + Copy + PrimInt> IntegerFieldCompressor<IntType> {
 }
 
 impl<IntType, W> FieldCompressor<W> for IntegerFieldCompressor<IntType>
-    where
-        IntType: Zero + Copy + PrimInt + Packable + 'static + AsPrimitive<i32>,
-        <IntType as Packable>::Type: AsPrimitive<IntType>,
-        W: Write,
+where
+    IntType: Zero + Copy + PrimInt + Packable + 'static + AsPrimitive<i32>,
+    <IntType as Packable>::Type: AsPrimitive<IntType>,
+    W: Write,
 {
     fn size_of_field(&self) -> usize {
         std::mem::size_of::<IntType>()

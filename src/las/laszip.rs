@@ -13,11 +13,14 @@ use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
 pub use crate::errors::LasZipError;
-use crate::las::Point0;
+use crate::las::nir::Nir;
 use crate::las::point6::Point6;
 use crate::las::rgb::RGB;
-use crate::record::{LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor, RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor};
-use crate::las::nir::Nir;
+use crate::las::Point0;
+use crate::record::{
+    LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor,
+    RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
+};
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
@@ -49,7 +52,6 @@ impl Version {
     }
 }
 
-
 // The different type of data / fields found in the definition of LAS points
 #[derive(Debug, Copy, Clone)]
 pub enum LazItemType {
@@ -63,6 +65,21 @@ pub enum LazItemType {
     RGBNIR14,
     //WavePacket14,
     Byte14(u16),
+}
+
+impl LazItemType {
+    fn size(&self) -> u16 {
+        match self {
+            LazItemType::Byte(size) => *size,
+            LazItemType::Point10 => Point0::SIZE as u16,
+            LazItemType::GpsTime => std::mem::size_of::<f64>() as u16,
+            LazItemType::RGB12 => RGB::SIZE as u16,
+            LazItemType::Point14 => Point6::SIZE as u16,
+            LazItemType::RGB14 => RGB::SIZE as u16,
+            LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
+            LazItemType::Byte14(size) => *size,
+        }
+    }
 }
 
 impl From<LazItemType> for u16 {
@@ -95,6 +112,15 @@ pub struct LazItem {
 }
 
 impl LazItem {
+    pub(crate) fn new(item_type: LazItemType, version: u16) -> Self {
+        let size = item_type.size();
+        Self {
+            item_type,
+            size,
+            version,
+        }
+    }
+
     fn read_from<R: Read>(src: &mut R) -> Result<Self, LasZipError> {
         let item_type = src.read_u16::<LittleEndian>()?;
         let size = src.read_u16::<LittleEndian>()?;
@@ -126,110 +152,38 @@ impl LazItem {
     }
 }
 
+macro_rules! define_trait_for_version {
+    ($trait_name:ident, $trait_fn_name:ident) => {
+        pub trait $trait_name {
+            fn $trait_fn_name(num_extra_bytes: u16) -> Vec<LazItem>;
+        }
+    };
+}
+
+define_trait_for_version!(DefaultVersion, default_version);
+define_trait_for_version!(Version1, version_1);
+define_trait_for_version!(Version2, version_2);
+define_trait_for_version!(Version3, version_3);
+
 pub struct LazItemRecordBuilder {
     items: Vec<LazItemType>,
 }
 
 impl LazItemRecordBuilder {
-    //TODO What about extrabytes
-    pub fn point0() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point10,
-                size: Point0::SIZE as u16,
-                version: 2,
-            }
-        ]
+    pub fn default_version_of<PointFormat: DefaultVersion>(num_extra_bytes: u16) -> Vec<LazItem> {
+        PointFormat::default_version(num_extra_bytes)
     }
 
-    pub fn point1() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point10,
-                size: Point0::SIZE as u16,
-                version: 2,
-            },
-            LazItem {
-                item_type: LazItemType::GpsTime,
-                size: 8,
-                version: 2,
-            }
-        ]
+    pub fn version_1_of<PointFormat: Version1>(num_extra_bytes: u16) -> Vec<LazItem> {
+        PointFormat::version_1(num_extra_bytes)
     }
 
-    pub fn point2() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point10,
-                size: Point0::SIZE as u16,
-                version: 2,
-            },
-            LazItem {
-                item_type: LazItemType::RGB12,
-                size: RGB::SIZE as u16,
-                version: 2,
-            }
-        ]
+    pub fn version_2_of<PointFormat: Version2>(num_extra_bytes: u16) -> Vec<LazItem> {
+        PointFormat::version_2(num_extra_bytes)
     }
 
-    pub fn point3() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point10,
-                size: Point0::SIZE as u16,
-                version: 2,
-            },
-            LazItem {
-                item_type: LazItemType::GpsTime,
-                size: 8,
-                version: 2,
-            },
-            LazItem {
-                item_type: LazItemType::RGB12,
-                size: RGB::SIZE as u16,
-                version: 2,
-            }
-        ]
-    }
-
-    pub fn point6() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point14,
-                size: Point6::SIZE as u16,
-                version: 3,
-            }
-        ]
-    }
-
-    pub fn point7() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point14,
-                size: Point6::SIZE as u16,
-                version: 3,
-            },
-            LazItem {
-                item_type: LazItemType::RGB14,
-                size: RGB::SIZE as u16,
-                version: 3,
-            }
-        ]
-    }
-
-    pub fn point8() -> Vec<LazItem> {
-        vec![
-            LazItem {
-                item_type: LazItemType::Point14,
-                size: Point6::SIZE as u16,
-                version: 3,
-            },
-            LazItem {
-                item_type: LazItemType::RGBNIR14,
-                size: (RGB::SIZE + Nir::SIZE ) as u16 ,
-                version: 3,
-            }
-        ]
+    pub fn version_3_of<PointFormat: Version3>(num_extra_bytes: u16) -> Vec<LazItem> {
+        PointFormat::version_3(num_extra_bytes)
     }
 
     pub fn new() -> Self {
@@ -322,7 +276,6 @@ impl Default for CompressorType {
         CompressorType::PointWiseChunked
     }
 }
-
 
 /// The data stored in the record_data of the Laszip Vlr
 #[derive(Debug, Clone)]
@@ -497,8 +450,10 @@ pub fn record_decompressor_from_laz_items<R: Read + Seek + 'static>(
     }
 }
 
-
-pub fn record_compressor_from_laz_items<W: Write + 'static>(items: &Vec<LazItem>, output: W) -> Box<dyn RecordCompressor<W>> {
+pub fn record_compressor_from_laz_items<W: Write + 'static>(
+    items: &Vec<LazItem>,
+    output: W,
+) -> Box<dyn RecordCompressor<W>> {
     let first_version = items[0].version;
     if !items.iter().all(|item| item.version == first_version) {
         // Technically we could mix version 1&2 and 3&4

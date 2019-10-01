@@ -1,5 +1,5 @@
-use std::fs::File;
 use laz::checking::check_decompression;
+use std::fs::File;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

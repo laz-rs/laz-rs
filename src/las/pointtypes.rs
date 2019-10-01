@@ -2,6 +2,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Read;
 
 pub use crate::las::gps::LasGpsTime;
+use crate::las::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
+use crate::las::nir::Nir;
 pub use crate::las::point0::{LasPoint0, Point0};
 pub use crate::las::point6::{LasPoint6, Point6};
 pub use crate::las::rgb::{LasRGB, RGB};
@@ -14,6 +16,69 @@ pub trait Point0Based {
 pub trait Point6Based {
     fn point6(&self) -> &Point6;
     fn point6_mut(&mut self) -> &mut Point6;
+}
+
+macro_rules! vec_of_laz_items {
+    (
+        vec_capacity: $capacity:expr,
+        extra_bytes_type: LazItemType::$EbType:ident($eb_num:expr), version: $eb_version:expr,
+        $(LazItemType::$Type:ident, version: $version:expr),*
+    ) => {{
+        let mut items = Vec::<LazItem>::with_capacity($capacity);
+        $(items.push(LazItem::new(LazItemType::$Type, $version));)*
+
+        if $eb_num > 0 {
+            items.push(
+                LazItem::new(LazItemType::$EbType($eb_num), $eb_version)
+            );
+        }
+
+        items
+    }};
+    (
+        vec_capacity: $capacity:expr,
+        version: $version:expr,
+        extra_bytes_type: LazItemType::$EbType:ident($eb_num:expr),
+        $(LazItemType::$Type:ident),*
+    ) => {{
+        vec_of_laz_items![
+            vec_capacity: $capacity,
+            extra_bytes_type: LazItemType::$EbType($eb_num), version: $version,
+             $(LazItemType::$Type, version: $version),*
+        ]
+    }};
+}
+
+/***************************************************************************************************
+                    Point Format 1
+***************************************************************************************************/
+
+impl Version2 for Point0 {
+    fn version_2(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 2,
+            version: 2,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10
+        )
+    }
+}
+
+impl Version1 for Point0 {
+    fn version_1(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 2,
+            version: 1,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10
+        )
+    }
+}
+
+impl DefaultVersion for Point0 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        <Self as Version2>::version_2(num_extra_bytes)
+    }
 }
 
 /***************************************************************************************************
@@ -50,6 +115,36 @@ impl LasGpsTime for Point1 {
 
     fn set_gps_time(&mut self, new_value: f64) {
         self.gps_time = new_value;
+    }
+}
+
+impl Version2 for Point1 {
+    fn version_2(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 3,
+            version: 2,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime
+        )
+    }
+}
+
+impl Version1 for Point1 {
+    fn version_1(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 3,
+            version: 1,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime
+        )
+    }
+}
+
+impl DefaultVersion for Point1 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        <Self as Version2>::version_2(num_extra_bytes)
     }
 }
 
@@ -104,6 +199,36 @@ impl LasRGB for Point2 {
 
     fn set_blue(&mut self, new_val: u16) {
         self.rgb.set_blue(new_val)
+    }
+}
+
+impl Version2 for Point2 {
+    fn version_2(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 3,
+            version: 2,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::RGB12
+        )
+    }
+}
+
+impl Version1 for Point2 {
+    fn version_1(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 3,
+            version: 1,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::RGB12
+        )
+    }
+}
+
+impl DefaultVersion for Point2 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        <Self as Version2>::version_2(num_extra_bytes)
     }
 }
 
@@ -173,6 +298,58 @@ impl LasRGB for Point3 {
     }
 }
 
+impl Version2 for Point3 {
+    fn version_2(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 4,
+            version: 2,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime,
+            LazItemType::RGB12
+        )
+    }
+}
+
+impl Version1 for Point3 {
+    fn version_1(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 4,
+            version: 1,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime,
+            LazItemType::RGB12
+        )
+    }
+}
+
+impl DefaultVersion for Point3 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        <Self as Version2>::version_2(num_extra_bytes)
+    }
+}
+
+/***************************************************************************************************
+                    Point Format 6
+***************************************************************************************************/
+impl Version3 for Point6 {
+    fn version_3(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 2,
+            version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14
+        ]
+    }
+}
+
+impl DefaultVersion for Point6 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        Self::version_3(num_extra_bytes)
+    }
+}
+
 /***************************************************************************************************
                     Point Format 7
 ***************************************************************************************************/
@@ -224,6 +401,53 @@ impl LasRGB for Point7 {
 
     fn set_blue(&mut self, new_val: u16) {
         self.rgb.set_blue(new_val)
+    }
+}
+
+impl Version3 for Point7 {
+    fn version_3(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 3,
+            version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::RGB14
+        ]
+    }
+}
+
+impl DefaultVersion for Point7 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        Self::version_3(num_extra_bytes)
+    }
+}
+
+/***************************************************************************************************
+                    Point Format 8
+***************************************************************************************************/
+
+#[derive(Default, Debug, PartialEq, Copy, Clone)]
+pub struct Point8 {
+    base: Point6,
+    rgb: RGB,
+    nir: Nir,
+}
+
+impl Version3 for Point8 {
+    fn version_3(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 3,
+            version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::RGBNIR14
+        ]
+    }
+}
+
+impl DefaultVersion for Point8 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        Self::version_3(num_extra_bytes)
     }
 }
 

@@ -145,8 +145,6 @@ loop_test_on_buffer!(
     LAS_HEADER_SIZE + (2 * VLR_HEADER_SIZE) + (5 * 192)
 );
 
-
-
 #[test]
 fn test_seek() {
     // We use a small chunk size to generate chunked data so that we

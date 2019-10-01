@@ -39,7 +39,6 @@ fn u8_clamp(n: i32) -> u8 {
     clamp(n, i32::from(std::u8::MIN), i32::from(std::u8::MAX)) as u8
 }
 
-
 pub trait LasRGB {
     fn red(&self) -> u16;
     fn green(&self) -> u16;
@@ -120,10 +119,10 @@ impl ColorDiff {
             | (flag_diff(last.blue(), current.blue(), 0x00FF) as u8) << 4
             | (flag_diff(last.blue(), current.blue(), 0xFF00) as u8) << 5
             | ((flag_diff(current.red(), current.green(), 0x00FF)
-            || flag_diff(current.red(), current.blue(), 0x00FF)
-            || flag_diff(current.red(), current.green(), 0xFF00)
-            || flag_diff(current.red(), current.blue(), 0xFF00)) as u8)
-            << 6;
+                || flag_diff(current.red(), current.blue(), 0x00FF)
+                || flag_diff(current.red(), current.green(), 0xFF00)
+                || flag_diff(current.red(), current.blue(), 0xFF00)) as u8)
+                << 6;
 
         Self { 0: v }
     }
@@ -175,7 +174,6 @@ impl Packable for RGB {
     }
 }
 
-
 pub mod v1 {
     //! Contains the implementation for the Version 1 of the RGB Compression / Decompression
     //!
@@ -191,13 +189,11 @@ pub mod v1 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::rgb::{LasRGB};
+    use crate::las::rgb::LasRGB;
     use crate::las::utils::{lower_byte, read_and_unpack, upper_byte};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::{ColorDiff, RGB};
 
@@ -226,9 +222,14 @@ pub mod v1 {
             }
         }
 
-
-        pub fn decompress_byte<R: Read>(&mut self, decoder: &mut ArithmeticDecoder<R>, context: u32, last_byte_value: u8) -> std::io::Result<i32> {
-            self.decompressor.decompress(decoder, i32::from(last_byte_value), context)
+        pub fn decompress_byte<R: Read>(
+            &mut self,
+            decoder: &mut ArithmeticDecoder<R>,
+            context: u32,
+            last_byte_value: u8,
+        ) -> std::io::Result<i32> {
+            self.decompressor
+                .decompress(decoder, i32::from(last_byte_value), context)
         }
     }
 
@@ -251,7 +252,6 @@ pub mod v1 {
         }
     }
 
-
     impl<R: Read> FieldDecompressor<R> for LasRGBDecompressor {
         fn size_of_field(&self) -> usize {
             3 * size_of::<u16>()
@@ -272,35 +272,56 @@ pub mod v1 {
 
             if color_diff.lower_red_byte_changed() {
                 let new_lower_red = self.decompress_byte(
-                    decoder, LOWER_RED_BYTE_CONTEXT, lower_byte(self.last.red))?;
+                    decoder,
+                    LOWER_RED_BYTE_CONTEXT,
+                    lower_byte(self.last.red),
+                )?;
                 self.last.red = new_lower_red as u16 | self.last.red & 0xFF00
             }
 
             if color_diff.upper_red_byte_changed() {
                 self.last.red |= (self.decompress_byte(
-                    decoder, UPPER_RED_BYTE_CONTEXT, upper_byte(self.last.red))? as u16) << 8;
+                    decoder,
+                    UPPER_RED_BYTE_CONTEXT,
+                    upper_byte(self.last.red),
+                )? as u16)
+                    << 8;
             }
 
             if color_diff.lower_green_byte_changed() {
                 let new_lower_green = self.decompress_byte(
-                    decoder, LOWER_GREEN_BYTE_CONTEXT, lower_byte(self.last.green))?;
+                    decoder,
+                    LOWER_GREEN_BYTE_CONTEXT,
+                    lower_byte(self.last.green),
+                )?;
                 self.last.green = new_lower_green as u16 | self.last.green & 0xFF00;
             }
 
             if color_diff.upper_green_byte_changed() {
                 self.last.green |= (self.decompress_byte(
-                    decoder, UPPER_GREEN_BYTE_CONTEXT, upper_byte(self.last.green))? as u16) << 8;
+                    decoder,
+                    UPPER_GREEN_BYTE_CONTEXT,
+                    upper_byte(self.last.green),
+                )? as u16)
+                    << 8;
             }
 
             if color_diff.lower_blue_byte_changed() {
                 let new_lower_blue = self.decompress_byte(
-                    decoder, LOWER_BLUE_BYTE_CONTEXT, lower_byte(self.last.blue))?;
+                    decoder,
+                    LOWER_BLUE_BYTE_CONTEXT,
+                    lower_byte(self.last.blue),
+                )?;
                 self.last.blue = new_lower_blue as u16 | self.last.blue & 0xFF00;
             }
 
             if color_diff.upper_blue_byte_changed() {
                 self.last.blue |= (self.decompress_byte(
-                    decoder, UPPER_BLUE_BYTE_CONTEXT, upper_byte(self.last.blue))? as u16) << 8;
+                    decoder,
+                    UPPER_BLUE_BYTE_CONTEXT,
+                    upper_byte(self.last.blue),
+                )? as u16)
+                    << 8;
             }
             self.last.pack_into(buf);
             Ok(())
@@ -398,15 +419,13 @@ pub mod v2 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::rgb::{LasRGB};
+    use crate::las::rgb::LasRGB;
     use crate::las::utils::{lower_byte, read_and_unpack, upper_byte};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
-    use super::{ColorDiff, RGB, u8_clamp};
+    use super::{u8_clamp, ColorDiff, RGB};
 
     struct RGBModels {
         byte_used: ArithmeticModel,
@@ -433,7 +452,7 @@ pub mod v2 {
     }
 
     pub struct LasRGBCompressor {
-        pub(crate)last: RGB,
+        pub(crate) last: RGB,
         models: RGBModels,
     }
 
@@ -445,7 +464,6 @@ pub mod v2 {
             }
         }
     }
-
 
     pub struct LasRGBDecompressor {
         pub(crate) last: RGB,
@@ -642,9 +660,13 @@ pub mod v3 {
     use crate::las::rgb::{LasRGB, RGB};
     use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to};
     use crate::packers::Packable;
-    use crate::record::{FieldCompressor, FieldDecompressor, LayeredFieldDecompressor, LayeredFieldCompressor};
+    use crate::record::{
+        FieldCompressor, FieldDecompressor, LayeredFieldCompressor, LayeredFieldDecompressor,
+    };
 
-    use super::v2::{LasRGBCompressor as LasRGBCompressorV2, LasRGBDecompressor as LasRGBDecompressorV2};
+    use super::v2::{
+        LasRGBCompressor as LasRGBCompressorV2, LasRGBDecompressor as LasRGBDecompressorV2,
+    };
 
     struct LasDecompressionContextRGB {
         decompressor: LasRGBDecompressorV2,
@@ -694,18 +716,29 @@ pub mod v3 {
             std::mem::size_of::<u16>() * 3
         }
 
-        fn init_first_point(&mut self, src: &mut R, first_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            src: &mut R,
+            first_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for rgb_context in &mut self.contexts {
                 rgb_context.unused = true;
             }
 
-            self.contexts[*context].decompressor.decompress_first(src, first_point)?;
+            self.contexts[*context]
+                .decompressor
+                .decompress_first(src, first_point)?;
             self.contexts[*context].unused = false;
             self.last_context_used = *context;
             Ok(())
         }
 
-        fn decompress_field_with(&mut self, current_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
+        fn decompress_field_with(
+            &mut self,
+            current_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             // If the context changed we may have to do an initialization
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
@@ -759,7 +792,6 @@ pub mod v3 {
         }
     }
 
-
     pub struct LasRGBCompressor {
         encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
         rgb_has_changed: bool,
@@ -787,7 +819,12 @@ pub mod v3 {
             RGB::SIZE
         }
 
-        fn init_first_point(&mut self, dst: &mut R, first_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            dst: &mut R,
+            first_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for ctx in &mut self.contexts {
                 ctx.unused = true;
             }
@@ -810,9 +847,10 @@ pub mod v3 {
             }
 
             let the_context = &mut self.contexts[*context];
-            if the_context.compressor.last.red != current_point.red() ||
-                the_context.compressor.last.blue != current_point.blue() ||
-                the_context.compressor.last.green != current_point.green() {
+            if the_context.compressor.last.red != current_point.red()
+                || the_context.compressor.last.blue != current_point.blue()
+                || the_context.compressor.last.green != current_point.green()
+            {
                 self.rgb_has_changed = true;
             }
             the_context

@@ -1,6 +1,5 @@
 //! Defines the compressors and decompressors for the Near Infrared (Nir) data
 
-
 use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -20,7 +19,7 @@ pub trait LasNIR {
     }
 }
 
-#[derive(Default, Copy, Clone, PartialOrd, PartialEq)]
+#[derive(Default, Copy, Clone, PartialOrd, PartialEq, Debug)]
 pub struct Nir(u16);
 
 impl LasNIR for Nir {
@@ -45,11 +44,14 @@ pub mod v3 {
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
     use crate::las::nir::{LasNIR, Nir};
-    use crate::las::utils::{copy_encoder_content_to, lower_byte, lower_byte_changed, read_and_unpack, upper_byte, upper_byte_changed};
     use crate::las::utils::copy_bytes_into_decoder;
+    use crate::las::utils::{
+        copy_encoder_content_to, lower_byte, lower_byte_changed, read_and_unpack, upper_byte,
+        upper_byte_changed,
+    };
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{LayeredFieldDecompressor, LayeredFieldCompressor};
+    use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
 
     struct NirContext {
         last_nir: u16,
@@ -106,7 +108,12 @@ pub mod v3 {
             std::mem::size_of::<u16>()
         }
 
-        fn init_first_point(&mut self, src: &mut R, first_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            src: &mut R,
+            first_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for ctx in &mut self.contexts {
                 ctx.unused = true;
             }
@@ -116,7 +123,11 @@ pub mod v3 {
             Ok(())
         }
 
-        fn decompress_field_with(&mut self, current_point: &mut [u8], context: &mut usize) -> std::io::Result<()> {
+        fn decompress_field_with(
+            &mut self,
+            current_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
                     let last_nir = self.contexts[self.last_context_used].last_nir;
@@ -175,7 +186,6 @@ pub mod v3 {
         }
     }
 
-
     pub struct LasNIRCompressor {
         encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
         has_nir_changed: bool,
@@ -204,7 +214,12 @@ pub mod v3 {
             std::mem::size_of::<u16>()
         }
 
-        fn init_first_point(&mut self, dst: &mut R, first_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            dst: &mut R,
+            first_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for ctx in &mut self.contexts {
                 ctx.unused = true;
             }
@@ -215,8 +230,14 @@ pub mod v3 {
             Ok(())
         }
 
-        fn compress_field_with(&mut self, current_point: &[u8], context: &mut usize) -> std::io::Result<()> {
-            let current_point = Nir{0: u16::unpack_from(current_point)};
+        fn compress_field_with(
+            &mut self,
+            current_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
+            let current_point = Nir {
+                0: u16::unpack_from(current_point),
+            };
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
                     let last_nir = self.contexts[self.last_context_used].last_nir;
@@ -229,20 +250,21 @@ pub mod v3 {
                 self.has_nir_changed = true;
             }
 
-            let sym =
-                lower_byte_changed(current_point.nir(), the_context.last_nir) as u8 |
-                    (upper_byte_changed(current_point.nir(), the_context.last_nir) as u8) << 1;
-
+            let sym = lower_byte_changed(current_point.nir(), the_context.last_nir) as u8
+                | (upper_byte_changed(current_point.nir(), the_context.last_nir) as u8) << 1;
 
             if is_nth_bit_set!(sym, 0) {
-                let corr = u16::from(lower_byte(current_point.nir())) - u16::from(lower_byte(the_context.last_nir));
+                let corr = u16::from(lower_byte(current_point.nir()))
+                    - u16::from(lower_byte(the_context.last_nir));
                 self.encoder
                     .encode_symbol(&mut the_context.nir_diff_0_model, u32::from(corr))?;
             }
 
             if is_nth_bit_set!(sym, 1) {
-                let corr = u16::from(upper_byte(current_point.nir())) - u16::from(upper_byte(the_context.last_nir));
-                self.encoder.encode_symbol(&mut the_context.nir_diff_1_model, u32::from(corr))?;
+                let corr = u16::from(upper_byte(current_point.nir()))
+                    - u16::from(upper_byte(the_context.last_nir));
+                self.encoder
+                    .encode_symbol(&mut the_context.nir_diff_1_model, u32::from(corr))?;
             }
             the_context.last_nir = current_point.0;
             Ok(())

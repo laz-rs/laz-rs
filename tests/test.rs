@@ -4,7 +4,10 @@ use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use i32;
-use laz::record::{SequentialPointRecordCompressor, SequentialPointRecordDecompressor, IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor};
+use laz::record::{
+    IntegerFieldCompressor, IntegerFieldDecompressor, RecordCompressor,
+    SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
+};
 
 unsafe fn to_slice<T>(value: &T) -> &[u8] {
     let p: *const T = value;

@@ -26,8 +26,7 @@
 */
 //! Defines the different version of compressors and decompressors for ExtraBytes contained in points
 
-
-// Just re-export v1 as v2 as they are both the same implementation
+/// Just re-export v1 as v2 as they are both the same implementation
 pub use v1 as v2;
 
 pub trait LasExtraBytes {
@@ -59,16 +58,15 @@ impl LasExtraBytes for ExtraBytes {
     }
 }
 
-
 pub mod v1 {
+    //! The Algorithm is simple:
+    //! encode the difference between byte for each extra bytes
     use std::io::{Read, Write};
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
     pub struct LasExtraByteCompressor {
         last_bytes: Vec<u8>,
@@ -90,7 +88,6 @@ pub mod v1 {
             }
         }
     }
-
 
     impl<W: Write> FieldCompressor<W> for LasExtraByteCompressor {
         fn size_of_field(&self) -> usize {
@@ -140,7 +137,6 @@ pub mod v1 {
         }
     }
 
-
     impl<R: Read> FieldDecompressor<R> for LasExtraByteDecompressor {
         fn size_of_field(&self) -> usize {
             self.count
@@ -152,7 +148,7 @@ pub mod v1 {
             Ok(())
         }
 
-        //TODO this can probaly be 'obtimized'
+        //TODO this can probably be 'obtimized'
         fn decompress_with(
             &mut self,
             decoder: &mut ArithmeticDecoder<R>,
@@ -170,6 +166,10 @@ pub mod v1 {
 }
 
 pub mod v3 {
+    //! The algorithm is similar to v1 (& v2), the changes are
+    //! that compressor / decompressor uses contexts (4)
+    //! and each byte of the extra bytes is encoded in its own layer
+    //! with its own encoder
     use std::io::{Cursor, Read, Seek};
 
     use byteorder::{LittleEndian, ReadBytesExt};
@@ -179,7 +179,6 @@ pub mod v3 {
     use crate::las::utils::copy_bytes_into_decoder;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::record::LayeredFieldDecompressor;
-
 
     struct ExtraBytesContext {
         last_bytes: ExtraBytes,
@@ -223,7 +222,6 @@ pub mod v3 {
             }
         }
     }
-
 
     impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasExtraByteDecompressor {
         fn size_of_field(&self) -> usize {

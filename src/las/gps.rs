@@ -168,7 +168,7 @@ pub mod v1 {
     use num_traits::clamp;
 
     use crate::compressors::{
-        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
+        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
@@ -177,9 +177,7 @@ pub mod v1 {
     use crate::las::utils::read_and_unpack;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::GpsTime;
 
@@ -464,12 +462,10 @@ pub mod v2 {
     use crate::las::utils::read_and_unpack;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
-    use crate::record::{
-        FieldCompressor, FieldDecompressor,
-    };
+    use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::{
-        GpsTime, i32_quantize, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
+        i32_quantize, GpsTime, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
         LASZIP_GPS_TIME_MULTI_MINUS, LASZIP_GPS_TIME_MULTI_TOTAL, LASZIP_GPS_TIME_MULTI_UNCHANGED,
     };
 
@@ -516,15 +512,14 @@ pub mod v2 {
         }
     }
 
-
     impl<W: Write> FieldCompressor<W> for GpsTimeCompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<i64>()
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-           self.common.last_gps_times[0] = GpsTime::unpack_from(buf);
-           dst.write_all(buf)
+            self.common.last_gps_times[0] = GpsTime::unpack_from(buf);
+            dst.write_all(buf)
         }
 
         fn compress_with(
@@ -543,20 +538,20 @@ pub mod v2 {
                 {
                     if this_val.value
                         == self
-                        .common
-                        .last_gps_times
-                        .get_unchecked(self.common.last)
-                        .value
+                            .common
+                            .last_gps_times
+                            .get_unchecked(self.common.last)
+                            .value
                     {
                         encoder.encode_symbol(&mut self.common.gps_time_0_diff, 0)?;
                     } else {
                         // calculate the difference between the two doubles as an integer
                         let curr_gps_time_diff_64 = this_val.value
                             - self
-                            .common
-                            .last_gps_times
-                            .get_unchecked(self.common.last)
-                            .value;
+                                .common
+                                .last_gps_times
+                                .get_unchecked(self.common.last)
+                                .value;
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         if curr_gps_time_diff_64 == curr_gps_time_diff_32 as i64 {
@@ -578,10 +573,10 @@ pub mod v2 {
                             for i in 1..4 {
                                 let other_gps_time_diff_64 = this_val.value
                                     - self
-                                    .common
-                                    .last_gps_times
-                                    .get_unchecked((self.common.last + i) & 3)
-                                    .value;
+                                        .common
+                                        .last_gps_times
+                                        .get_unchecked((self.common.last + i) & 3)
+                                        .value;
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
@@ -630,10 +625,10 @@ pub mod v2 {
                     //the last integer difference was *not* zero
                     if this_val.value
                         == self
-                        .common
-                        .last_gps_times
-                        .get_unchecked(self.common.last)
-                        .value
+                            .common
+                            .last_gps_times
+                            .get_unchecked(self.common.last)
+                            .value
                     {
                         // if the doubles have not changed use a special symbol
                         encoder.encode_symbol(
@@ -644,10 +639,10 @@ pub mod v2 {
                         // the last integer difference was *not* zero
                         let curr_gps_time_diff_64 = this_val.value
                             - self
-                            .common
-                            .last_gps_times
-                            .get_unchecked(self.common.last)
-                            .value;
+                                .common
+                                .last_gps_times
+                                .get_unchecked(self.common.last)
+                                .value;
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         // if the current gps time difference can be represented with 32 bits
@@ -655,10 +650,10 @@ pub mod v2 {
                             // compute multiplier between current and last integer difference
                             let multi_f = curr_gps_time_diff_32 as f32
                                 / *self
-                                .common
-                                .last_gps_time_diffs
-                                .get_unchecked(self.common.last)
-                                as f32;
+                                    .common
+                                    .last_gps_time_diffs
+                                    .get_unchecked(self.common.last)
+                                    as f32;
                             let multi = i32_quantize(multi_f);
 
                             // compress the residual curr_gps_time_diff in dependance on the multiplier
@@ -784,7 +779,7 @@ pub mod v2 {
                             for i in 1..4 {
                                 let other_gps_time_diff_64 = this_val.value
                                     - self.common.last_gps_times[((self.common.last + i) & 3)]
-                                    .value;
+                                        .value;
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == other_gps_time_diff_32 as i64 {
@@ -851,8 +846,6 @@ pub mod v2 {
         }
     }
 
-
-
     impl<R: Read> FieldDecompressor<R> for GpsTimeDecompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<i64>()
@@ -860,7 +853,8 @@ pub mod v2 {
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
             unsafe {
-                *self.common.last_gps_times.get_unchecked_mut(0) = read_and_unpack::<_, GpsTime>(src, first_point)?;
+                *self.common.last_gps_times.get_unchecked_mut(0) =
+                    read_and_unpack::<_, GpsTime>(src, first_point)?;
             }
             Ok(())
         }

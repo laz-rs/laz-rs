@@ -1,9 +1,7 @@
 #![allow(dead_code)]
-use crate::las::laszip::{LazVlr, LasZipDecompressor};
+use crate::las::laszip::{LasZipDecompressor, LazVlr};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{Read, Seek, SeekFrom};
-
-
 
 #[derive(Debug)]
 pub struct QuickHeader {
@@ -82,8 +80,6 @@ impl Vlr {
     }
 }
 
-
-
 pub trait LasPointReader {
     fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()>;
 }
@@ -123,10 +119,6 @@ fn point_format_id_uncompressed_to_compressed(point_format_id: u8) -> u8 {
     point_format_id | 0x80
 }
 
-
-
-
-
 impl SimpleReader {
     pub fn new<R: Read + Seek + 'static>(mut src: R) -> std::io::Result<Self> {
         let mut header = QuickHeader::read_from(&mut src)?;
@@ -143,18 +135,24 @@ impl SimpleReader {
         }
         src.seek(SeekFrom::Start(header.offset_to_points as u64))?;
         let point_reader: Box<dyn LasPointReader> =
-        if is_point_format_compressed(header.point_format_id) {
-           Box::new(LasZipDecompressor::new(src, laszip_vlr.expect("Compressed data, but no Laszip Vlr found")).unwrap())
-        } else {
-            Box::new(RawPointReader{src})
-        };
+            if is_point_format_compressed(header.point_format_id) {
+                Box::new(
+                    LasZipDecompressor::new(
+                        src,
+                        laszip_vlr.expect("Compressed data, but no Laszip Vlr found"),
+                    )
+                    .unwrap(),
+                )
+            } else {
+                Box::new(RawPointReader { src })
+            };
         header.point_format_id = point_format_id_compressed_to_uncompressd(header.point_format_id);
         let internal_buffer = vec![0u8; header.point_size as usize];
         Ok(Self {
             header,
             point_reader,
             internal_buffer,
-            current_index: 0
+            current_index: 0,
         })
     }
 
@@ -172,5 +170,3 @@ impl SimpleReader {
         }
     }
 }
-
-
