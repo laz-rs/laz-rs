@@ -15,19 +15,7 @@ fn main() {
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))
         .unwrap();
 
-    let laz_items = match las_header.point_format_id {
-        0 => LazItemRecordBuilder::default_version_of::<Point0>(0),
-        1 => LazItemRecordBuilder::default_version_of::<Point1>(0),
-        2 => LazItemRecordBuilder::default_version_of::<Point2>(0),
-        3 => LazItemRecordBuilder::default_version_of::<Point3>(0),
-        6 => LazItemRecordBuilder::default_version_of::<Point6>(0),
-        7 => LazItemRecordBuilder::default_version_of::<Point7>(0),
-        8 => LazItemRecordBuilder::default_version_of::<Point8>(0),
-        _ => panic!(
-            "Point format id: {} is not supported",
-            las_header.point_format_id
-        ),
-    };
+    let laz_items = let laz_items = LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
     let mut compressor =
         LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
 

@@ -22,6 +22,7 @@ use crate::record::{
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
 
+
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &'static str = "laszip encoded";
@@ -186,6 +187,23 @@ impl LazItemRecordBuilder {
         PointFormat::version_3(num_extra_bytes)
     }
 
+    pub fn default_for_point_format_id(point_format_id: u8, num_extra_bytes: u16) -> Vec<LazItem> {
+        use crate::las::{Point1, Point2, Point3, Point7, Point8};
+        match point_format_id {
+            0 => LazItemRecordBuilder::default_version_of::<Point0>(num_extra_bytes),
+            1 => LazItemRecordBuilder::default_version_of::<Point1>(num_extra_bytes),
+            2 => LazItemRecordBuilder::default_version_of::<Point2>(num_extra_bytes),
+            3 => LazItemRecordBuilder::default_version_of::<Point3>(num_extra_bytes),
+            6 => LazItemRecordBuilder::default_version_of::<Point6>(num_extra_bytes),
+            7 => LazItemRecordBuilder::default_version_of::<Point7>(num_extra_bytes),
+            8 => LazItemRecordBuilder::default_version_of::<Point8>(num_extra_bytes),
+            _ => panic!(
+                "Point format id: {} is not supported",
+                point_format_id
+            ),
+        }
+    }
+
     pub fn new() -> Self {
         Self { items: vec![] }
     }
@@ -199,16 +217,7 @@ impl LazItemRecordBuilder {
         self.items
             .iter()
             .map(|item_type| {
-                let size = match *item_type {
-                    LazItemType::Byte(n) => n,
-                    LazItemType::Point10 => 20,
-                    LazItemType::GpsTime => 8,
-                    LazItemType::RGB12 => 6,
-                    LazItemType::Point14 => Point6::SIZE as u16,
-                    LazItemType::RGB14 => 6,
-                    LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
-                    LazItemType::Byte14(n) => n,
-                };
+                let size= item_type.size();
                 let version = match item_type {
                     LazItemType::Byte(_) => 2,
                     LazItemType::Point10 => 2,
@@ -656,6 +665,46 @@ impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
         Ok(())
     }
 }
+
+
+fn write_chunk_table<W: Write>(mut stream: &mut W, chunk_table: &Vec<usize>) -> std::io::Result<()> {
+    // Write header
+    stream.write_u32::<LittleEndian>(0)?;
+    stream.write_u32::<LittleEndian>(chunk_table.len() as u32)?;
+
+    let mut encoder = ArithmeticEncoder::new(&mut stream);
+    let mut compressor = IntegerCompressorBuilder::new()
+        .bits(32)
+        .contexts(2)
+        .build_initialized();
+
+    let mut predictor = 0;
+    for chunk_size in chunk_table {
+        compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
+        predictor = (*chunk_size) as i32;
+    }
+    encoder.done()?;
+    Ok(())
+}
+
+
+/// Updates the 'chunk table offset' is the first 8 byte (i64) of a Laszip compressed data
+///
+/// This function expects the position of the destination to be at the start of the chunk_table
+/// (whether it is written or not).
+///
+/// This function also expects the i64 to have been already written/reserved
+/// (even if its garbage bytes / 0s)
+///
+/// The position of the destination is untouched
+fn update_chunk_table_offset<W: Write + Seek>(dst: &mut W, offset_pos: SeekFrom) -> std::io::Result<()> {
+    let start_of_chunk_table_pos = dst.seek(SeekFrom::Current(0))?;
+    dst.seek(offset_pos)?;
+    dst.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;
+    dst.seek(SeekFrom::Start(start_of_chunk_table_pos))?;
+    Ok(())
+}
+
 /// Struct that handles the compression of the points into the given destination
 pub struct LasZipCompressor<W: Write> {
     vlr: LazVlr,
@@ -670,7 +719,6 @@ pub struct LasZipCompressor<W: Write> {
 // FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
-
 impl<W: Write + Seek + 'static> LasZipCompressor<W> {
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_laz_items(items);
@@ -725,8 +773,9 @@ impl<W: Write + Seek + 'static> LasZipCompressor<W> {
     pub fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
         self.update_chunk_table()?;
-        self.update_chunk_table_offset()?;
-        self.write_chunk_table()?;
+        let stream = self.record_compressor.borrow_stream_mut();
+        update_chunk_table_offset(stream, SeekFrom::Start(self.start_pos))?;
+        write_chunk_table(stream, &self.chunk_sizes)?;
         Ok(())
     }
 
@@ -742,26 +791,6 @@ impl<W: Write + Seek + 'static> LasZipCompressor<W> {
         self.record_compressor.borrow_stream_mut()
     }
 
-    fn write_chunk_table(&mut self) -> std::io::Result<()> {
-        // Write header
-        let mut stream = self.record_compressor.borrow_stream_mut();
-        stream.write_u32::<LittleEndian>(0)?;
-        stream.write_u32::<LittleEndian>(self.chunk_sizes.len() as u32)?;
-
-        let mut encoder = ArithmeticEncoder::new(&mut stream);
-        let mut compressor = IntegerCompressorBuilder::new()
-            .bits(32)
-            .contexts(2)
-            .build_initialized();
-
-        let mut predictor = 0;
-        for chunk_size in &self.chunk_sizes {
-            compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
-            predictor = (*chunk_size) as i32;
-        }
-        encoder.done()?;
-        Ok(())
-    }
 
     fn update_chunk_table(&mut self) -> std::io::Result<()> {
         let current_pos = self
@@ -773,15 +802,55 @@ impl<W: Write + Seek + 'static> LasZipCompressor<W> {
         self.last_chunk_pos = current_pos;
         Ok(())
     }
+}
 
-    fn update_chunk_table_offset(&mut self) -> std::io::Result<()> {
-        let stream = self.record_compressor.borrow_stream_mut();
-        let start_of_chunk_table_pos = stream.seek(SeekFrom::Current(0))?;
-        stream.seek(SeekFrom::Start(self.start_pos))?;
-        stream.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;
-        stream.seek(SeekFrom::Start(start_of_chunk_table_pos))?;
-        Ok(())
+
+#[cfg(feature = "parallel")]
+pub fn par_compress_all<W: Write + Seek>(dst: &mut W, points: &[u8], items: Vec<LazItem>) -> std::io::Result<()> {
+    use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
+    use std::io::Cursor;
+
+    let start_pos = dst.seek(SeekFrom::Current(0))?;
+
+    let point_size = items.iter().map(|item| item.size).sum::<u16>() as usize;
+    assert_eq!(points.len() % point_size, 0); //TODO proper error
+    let points_per_chunk = DEFAULT_CHUNK_SIZE; //TODO make user ba able to chose it
+    let chunk_size_in_bytes = points_per_chunk * point_size;
+    let number_of_chunks = points.len() / chunk_size_in_bytes;
+
+    let mut all_slices = (0..number_of_chunks)
+        .map(|i| &points[(i * chunk_size_in_bytes)..((i + 1) * chunk_size_in_bytes)])
+        .collect::<Vec<&[u8]>>();
+
+    if points.len() % chunk_size_in_bytes != 0 {
+        all_slices.push(&points[number_of_chunks * chunk_size_in_bytes..]);
     }
+
+    let chunks = all_slices
+        .par_iter()
+        .map(|slc| {
+            let mut record_compressor = record_compressor_from_laz_items(
+                &items, Cursor::new(Vec::<u8>::new()),
+            );
+
+            for raw_point in slc.windows(point_size) {
+                record_compressor.compress_next(raw_point)?;
+            }
+            record_compressor.done()?;
+            Ok(record_compressor.box_into_stream())
+        })
+        .collect::<Vec<std::io::Result<Cursor<Vec<u8>>>>>();
+
+    // Reserve the bytes for the chunk table offset that will be updated later
+    dst.write_i64::<LittleEndian>(0)?;
+    let mut chunk_sizes = Vec::<usize>::with_capacity(chunks.len());
+    for chunk_result in chunks {
+        let chunk = chunk_result?;
+        chunk_sizes.push(chunk.get_ref().len());
+        dst.write_all(chunk.get_ref())?;
+    }
+    update_chunk_table_offset(dst, SeekFrom::Start(start_pos))?;
+    write_chunk_table(dst, &chunk_sizes)
 }
 
 #[cfg(test)]
