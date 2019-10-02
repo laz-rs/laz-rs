@@ -3,7 +3,6 @@ use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 
 use laz::las::file::QuickHeader;
 use laz::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItemRecordBuilder};
-use laz::las::{Point0, Point1, Point2, Point3, Point6, Point7, Point8};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -15,7 +14,7 @@ fn main() {
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))
         .unwrap();
 
-    let laz_items = let laz_items = LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
+    let laz_items =  LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
     let mut compressor =
         LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
 
