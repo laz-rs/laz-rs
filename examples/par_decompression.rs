@@ -1,7 +1,7 @@
-use laz::las::file::{read_vlrs_and_get_laszip_vlr, SimpleReader, point_format_id_compressed_to_uncompressd};
 
 #[cfg(feature = "parallel")]
 fn main() {
+    use laz::las::file::{read_vlrs_and_get_laszip_vlr, SimpleReader, point_format_id_compressed_to_uncompressd};
     use laz::las::laszip::{par_decompress_all};
     use laz::las::file::QuickHeader;
     use std::io::{BufReader, Seek, SeekFrom};

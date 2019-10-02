@@ -8,6 +8,7 @@ pub enum LasZipError {
     UnknownCompressorType(u16),
     UnsupportedCompressorType(CompressorType),
     IoError(std::io::Error),
+    BufferLenNotMultipleOfPointSize{buffer_len: usize, point_size: usize}
 }
 
 impl From<std::io::Error> for LasZipError {
@@ -32,6 +33,10 @@ impl fmt::Display for LasZipError {
                 write!(f, "Compressor type {:?} is not supported", compressor_type)
             }
             LasZipError::IoError(e) => write!(f, "IoError: {}", e),
+
+            LasZipError::BufferLenNotMultipleOfPointSize { buffer_len: bl, point_size: ps } => {
+                write!(f, "The len of the buffer ({}) is not a multiple of the point size {}", bl, ps)
+            }
         }
     }
 }

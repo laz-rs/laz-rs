@@ -1,8 +1,9 @@
+
 #[cfg(feature = "parallel")]
 fn main() {
-    use laz::las::laszip::{par_compress_all, LazItemRecordBuilder};
+    use laz::las::laszip::{par_compress_all, LazItemRecordBuilder, LasZipDecompressor, LazVlr};
     use laz::las::file::QuickHeader;
-    use std::io::{BufReader, Seek, SeekFrom, Cursor};
+    use std::io::{BufReader, Seek, SeekFrom, Cursor, Read};
     use std::fs::File;
     let args: Vec<String> = std::env::args().collect();
 
@@ -11,12 +12,23 @@ fn main() {
 
     las_file.seek(SeekFrom::Start(las_header.offset_to_points as u64)).unwrap();
 
-    let all_points = vec![0u8; las_header.point_size as usize * las_header.num_points as usize];
+    let mut all_points = vec![0u8; las_header.point_size as usize * las_header.num_points as usize];
+    las_file.read_exact(&mut all_points).unwrap();
     let laz_items = LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
 
 
     let mut compression_out_put = Cursor::new(Vec::<u8>::new());
-    par_compress_all(&mut compression_out_put, &all_points, laz_items).unwrap();
+    par_compress_all(&mut compression_out_put, &all_points, &laz_items).unwrap();
+
+    compression_out_put.set_position(0);
+    let mut decompressor = LasZipDecompressor::new(compression_out_put, LazVlr::from_laz_items(laz_items)).unwrap();
+
+    las_file.seek(SeekFrom::Start(las_header.offset_to_points as u64)).unwrap();
+    let mut decompressed_point = vec![0u8; las_header.point_size as usize];
+    for i in 0..las_header.num_points as usize {
+        decompressor.decompress_one(&mut decompressed_point).unwrap();
+        assert_eq!(decompressed_point, &all_points[(i * las_header.point_size as usize)..((i + 1) * las_header.point_size as usize)], "Points {} are not equal", i);
+    }
 }
 
 #[cfg(not(feature = "parallel"))]
