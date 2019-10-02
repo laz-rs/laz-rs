@@ -12,7 +12,7 @@ pub struct QuickHeader {
     pub point_format_id: u8,
     pub point_size: u16,
     pub num_points: u64,
-    header_size: u16,
+    pub header_size: u16,
 }
 
 impl QuickHeader {
@@ -107,11 +107,26 @@ pub struct SimpleReader {
     current_index: u64,
 }
 
+
+pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) -> Option<LazVlr> {
+    let mut laszip_vlr = None;
+    for _i in 0..header.num_vlrs {
+        let vlr = Vlr::read_from(src).unwrap();
+        if vlr.record_id == 22204
+            && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
+            == "laszip encoded"
+        {
+            laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
+        }
+    }
+    laszip_vlr
+}
+
 const IS_COMPRESSED_MASK: u8 = 0x80;
 fn is_point_format_compressed(point_format_id: u8) -> bool {
     point_format_id & IS_COMPRESSED_MASK == IS_COMPRESSED_MASK
 }
-fn point_format_id_compressed_to_uncompressd(point_format_id: u8) -> u8 {
+pub fn point_format_id_compressed_to_uncompressd(point_format_id: u8) -> u8 {
     point_format_id & 0x3f
 }
 
@@ -123,16 +138,7 @@ impl SimpleReader {
     pub fn new<R: Read + Seek + 'static>(mut src: R) -> std::io::Result<Self> {
         let mut header = QuickHeader::read_from(&mut src)?;
         src.seek(SeekFrom::Start(header.header_size as u64))?;
-        let mut laszip_vlr = None;
-        for _i in 0..header.num_vlrs {
-            let vlr = Vlr::read_from(&mut src)?;
-            if vlr.record_id == 22204
-                && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
-                    == "laszip encoded"
-            {
-                laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
-            }
-        }
+        let laszip_vlr = read_vlrs_and_get_laszip_vlr(&mut src, &header);
         src.seek(SeekFrom::Start(header.offset_to_points as u64))?;
         let point_reader: Box<dyn LasPointReader> =
             if is_point_format_compressed(header.point_format_id) {

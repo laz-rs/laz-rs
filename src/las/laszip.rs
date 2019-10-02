@@ -22,6 +22,7 @@ use crate::record::{
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
 
+
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &'static str = "laszip encoded";
@@ -186,6 +187,23 @@ impl LazItemRecordBuilder {
         PointFormat::version_3(num_extra_bytes)
     }
 
+    pub fn default_for_point_format_id(point_format_id: u8, num_extra_bytes: u16) -> Vec<LazItem> {
+        use crate::las::{Point1, Point2, Point3, Point7, Point8};
+        match point_format_id {
+            0 => LazItemRecordBuilder::default_version_of::<Point0>(num_extra_bytes),
+            1 => LazItemRecordBuilder::default_version_of::<Point1>(num_extra_bytes),
+            2 => LazItemRecordBuilder::default_version_of::<Point2>(num_extra_bytes),
+            3 => LazItemRecordBuilder::default_version_of::<Point3>(num_extra_bytes),
+            6 => LazItemRecordBuilder::default_version_of::<Point6>(num_extra_bytes),
+            7 => LazItemRecordBuilder::default_version_of::<Point7>(num_extra_bytes),
+            8 => LazItemRecordBuilder::default_version_of::<Point8>(num_extra_bytes),
+            _ => panic!(
+                "Point format id: {} is not supported",
+                point_format_id
+            ),
+        }
+    }
+
     pub fn new() -> Self {
         Self { items: vec![] }
     }
@@ -199,16 +217,7 @@ impl LazItemRecordBuilder {
         self.items
             .iter()
             .map(|item_type| {
-                let size = match *item_type {
-                    LazItemType::Byte(n) => n,
-                    LazItemType::Point10 => 20,
-                    LazItemType::GpsTime => 8,
-                    LazItemType::RGB12 => 6,
-                    LazItemType::Point14 => Point6::SIZE as u16,
-                    LazItemType::RGB14 => 6,
-                    LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
-                    LazItemType::Byte14(n) => n,
-                };
+                let size = item_type.size();
                 let version = match item_type {
                     LazItemType::Byte(_) => 2,
                     LazItemType::Point10 => 2,
@@ -317,6 +326,7 @@ impl LazVlr {
         }
     }
 
+    //TODO the compressor type must also be set accordingly
     pub fn from_laz_items(items: Vec<LazItem>) -> Self {
         let mut me = Self::new();
         me.items = items;
@@ -476,6 +486,41 @@ pub fn record_compressor_from_laz_items<W: Write + 'static>(
     }
 }
 
+
+fn read_chunk_table<R: Read + Seek>(mut src: &mut R, mut offset_to_chunk_table: i64) -> std::io::Result<Vec<u64>> {
+    let current_pos = src.seek(SeekFrom::Current(0))?;
+    if offset_to_chunk_table == -1 {
+        // Compressor was writing to non seekable src
+        src.seek(SeekFrom::End(-8))?;
+        offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
+    }
+    src.seek(SeekFrom::Start(offset_to_chunk_table as u64))?;
+
+    let _version = src.read_u32::<LittleEndian>()?;
+    let number_of_chunks = src.read_u32::<LittleEndian>()?;
+    let mut chunk_sizes = vec![0u64; number_of_chunks as usize];
+
+    let mut decompressor = IntegerDecompressorBuilder::new()
+        .bits(32)
+        .contexts(2)
+        .build_initialized();
+    let mut decoder = ArithmeticDecoder::new(&mut src);
+    decoder.read_init_bytes()?;
+    for i in 1..=number_of_chunks {
+        chunk_sizes[(i - 1) as usize] = decompressor.decompress(
+            &mut decoder,
+            if i > 1 {
+                chunk_sizes[(i - 2) as usize]
+            } else {
+                0
+            } as i32,
+            1,
+        )? as u64;
+    }
+    src.seek(SeekFrom::Start(current_pos))?;
+    Ok(chunk_sizes)
+}
+
 //TODO possible to make the Seek trait optional ?
 /// Struct that handles the decompression of the points inside the source
 pub struct LasZipDecompressor<R: Read + Seek + Sized + 'static> {
@@ -612,36 +657,9 @@ impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
     }
 
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
-        let mut stream = self.record_decompressor.borrow_stream_mut();
-        let current_pos = stream.seek(SeekFrom::Current(0))?;
-        if self.offset_to_chunk_table == -1 {
-            // Compressor was writing to non seekable stream
-            stream.seek(SeekFrom::End(-8))?;
-            self.offset_to_chunk_table = stream.read_i64::<LittleEndian>()?;
-        }
-        stream.seek(SeekFrom::Start(self.offset_to_chunk_table as u64))?;
-
-        let _version = stream.read_u32::<LittleEndian>()?;
-        let number_of_chunks = stream.read_u32::<LittleEndian>()?;
-        let mut chunk_sizes = vec![0u64; number_of_chunks as usize];
-
-        let mut decompressor = IntegerDecompressorBuilder::new()
-            .bits(32)
-            .contexts(2)
-            .build_initialized();
-        let mut decoder = ArithmeticDecoder::new(&mut stream);
-        decoder.read_init_bytes()?;
-        for i in 1..=number_of_chunks {
-            chunk_sizes[(i - 1) as usize] = decompressor.decompress(
-                &mut decoder,
-                if i > 1 {
-                    chunk_sizes[(i - 2) as usize]
-                } else {
-                    0
-                } as i32,
-                1,
-            )? as u64;
-        }
+        let stream = self.record_decompressor.borrow_stream_mut();
+        let chunk_sizes = read_chunk_table(stream, self.offset_to_chunk_table)?;
+        let number_of_chunks = chunk_sizes.len();
         let mut chunk_starts = vec![0u64; number_of_chunks as usize];
         chunk_starts[0] = self.data_start;
         for i in 1..number_of_chunks {
@@ -652,10 +670,49 @@ impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
             }*/
         }
         self.chunk_table = Some(chunk_starts);
-        stream.seek(SeekFrom::Start(current_pos))?;
         Ok(())
     }
 }
+
+
+fn write_chunk_table<W: Write>(mut stream: &mut W, chunk_table: &Vec<usize>) -> std::io::Result<()> {
+    // Write header
+    stream.write_u32::<LittleEndian>(0)?;
+    stream.write_u32::<LittleEndian>(chunk_table.len() as u32)?;
+
+    let mut encoder = ArithmeticEncoder::new(&mut stream);
+    let mut compressor = IntegerCompressorBuilder::new()
+        .bits(32)
+        .contexts(2)
+        .build_initialized();
+
+    let mut predictor = 0;
+    for chunk_size in chunk_table {
+        compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
+        predictor = (*chunk_size) as i32;
+    }
+    encoder.done()?;
+    Ok(())
+}
+
+
+/// Updates the 'chunk table offset' is the first 8 byte (i64) of a Laszip compressed data
+///
+/// This function expects the position of the destination to be at the start of the chunk_table
+/// (whether it is written or not).
+///
+/// This function also expects the i64 to have been already written/reserved
+/// (even if its garbage bytes / 0s)
+///
+/// The position of the destination is untouched
+fn update_chunk_table_offset<W: Write + Seek>(dst: &mut W, offset_pos: SeekFrom) -> std::io::Result<()> {
+    let start_of_chunk_table_pos = dst.seek(SeekFrom::Current(0))?;
+    dst.seek(offset_pos)?;
+    dst.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;
+    dst.seek(SeekFrom::Start(start_of_chunk_table_pos))?;
+    Ok(())
+}
+
 /// Struct that handles the compression of the points into the given destination
 pub struct LasZipCompressor<W: Write> {
     vlr: LazVlr,
@@ -670,7 +727,6 @@ pub struct LasZipCompressor<W: Write> {
 // FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
-
 impl<W: Write + Seek + 'static> LasZipCompressor<W> {
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_laz_items(items);
@@ -725,8 +781,9 @@ impl<W: Write + Seek + 'static> LasZipCompressor<W> {
     pub fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
         self.update_chunk_table()?;
-        self.update_chunk_table_offset()?;
-        self.write_chunk_table()?;
+        let stream = self.record_compressor.borrow_stream_mut();
+        update_chunk_table_offset(stream, SeekFrom::Start(self.start_pos))?;
+        write_chunk_table(stream, &self.chunk_sizes)?;
         Ok(())
     }
 
@@ -742,26 +799,6 @@ impl<W: Write + Seek + 'static> LasZipCompressor<W> {
         self.record_compressor.borrow_stream_mut()
     }
 
-    fn write_chunk_table(&mut self) -> std::io::Result<()> {
-        // Write header
-        let mut stream = self.record_compressor.borrow_stream_mut();
-        stream.write_u32::<LittleEndian>(0)?;
-        stream.write_u32::<LittleEndian>(self.chunk_sizes.len() as u32)?;
-
-        let mut encoder = ArithmeticEncoder::new(&mut stream);
-        let mut compressor = IntegerCompressorBuilder::new()
-            .bits(32)
-            .contexts(2)
-            .build_initialized();
-
-        let mut predictor = 0;
-        for chunk_size in &self.chunk_sizes {
-            compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
-            predictor = (*chunk_size) as i32;
-        }
-        encoder.done()?;
-        Ok(())
-    }
 
     fn update_chunk_table(&mut self) -> std::io::Result<()> {
         let current_pos = self
@@ -773,13 +810,116 @@ impl<W: Write + Seek + 'static> LasZipCompressor<W> {
         self.last_chunk_pos = current_pos;
         Ok(())
     }
+}
 
-    fn update_chunk_table_offset(&mut self) -> std::io::Result<()> {
-        let stream = self.record_compressor.borrow_stream_mut();
-        let start_of_chunk_table_pos = stream.seek(SeekFrom::Current(0))?;
-        stream.seek(SeekFrom::Start(self.start_pos))?;
-        stream.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;
-        stream.seek(SeekFrom::Start(start_of_chunk_table_pos))?;
+
+#[cfg(feature = "parallel")]
+pub fn par_compress_all<W: Write + Seek>(dst: &mut W, points: &[u8], items: &Vec<LazItem>) -> Result<(), LasZipError> {
+    use rayon::iter::{ParallelIterator, IntoParallelIterator};
+    use std::io::Cursor;
+
+    let start_pos = dst.seek(SeekFrom::Current(0))?;
+
+    let point_size = items.iter().map(|item| item.size).sum::<u16>() as usize;
+    if points.len() % point_size != 0 {
+        Err(LasZipError::BufferLenNotMultipleOfPointSize {
+            buffer_len: points.len(),
+            point_size,
+        })
+    } else {
+        let points_per_chunk = DEFAULT_CHUNK_SIZE; //TODO make user ba able to chose it
+        let chunk_size_in_bytes = points_per_chunk * point_size;
+
+        // The last chunk may not have the same size,
+        // the chunks() method takes care of that for us
+        let all_slices = points.chunks(chunk_size_in_bytes).collect::<Vec<_>>();
+
+        let chunks = all_slices
+            .into_par_iter()
+            .map(|slc| {
+                let mut record_compressor = record_compressor_from_laz_items(
+                    &items, Cursor::new(Vec::<u8>::new()),
+                );
+
+                for raw_point in slc.chunks_exact(point_size) {
+                    record_compressor.compress_next(raw_point)?;
+                }
+                record_compressor.done()?;
+
+                Ok(record_compressor.box_into_stream())
+            })
+            .collect::<Vec<std::io::Result<Cursor<Vec<u8>>>>>();
+
+
+        // Reserve the bytes for the chunk table offset that will be updated later
+        dst.write_i64::<LittleEndian>(0)?;
+        let mut chunk_sizes = Vec::<usize>::with_capacity(chunks.len());
+        for chunk_result in chunks {
+            let chunk = chunk_result?;
+            chunk_sizes.push(chunk.get_ref().len());
+            dst.write_all(chunk.get_ref())?;
+        }
+
+        update_chunk_table_offset(dst, SeekFrom::Start(start_pos))?;
+        write_chunk_table(dst, &chunk_sizes)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "parallel")]
+pub fn par_decompress_all<R: Read + Seek>(src: &mut R, points_out: &mut [u8], laz_vlr: &LazVlr) -> Result<(), LasZipError> {
+    use std::io::Cursor;
+    use rayon::iter::{ParallelIterator, IntoParallelIterator};
+
+    let point_size = laz_vlr.items.iter().map(|item| item.size).sum::<u16>() as usize; //TODO make it a function
+    if points_out.len() % point_size != 0 {
+        Err(LasZipError::BufferLenNotMultipleOfPointSize {
+            buffer_len: points_out.len(),
+            point_size,
+        })
+    } else {
+        let num_points_to_decompress = points_out.len() / point_size;
+
+        let mut num_chunks_to_read = num_points_to_decompress / laz_vlr.chunk_size as usize;
+        if num_points_to_decompress % laz_vlr.chunk_size as usize != 0 {
+            num_chunks_to_read += 1;
+        }
+
+        let offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
+        let chunk_sizes = read_chunk_table(src, offset_to_chunk_table)?;
+        if num_chunks_to_read > chunk_sizes.len() {
+            panic!("want to read more chunks than there are");
+        }
+
+        let chunks_data: Vec<Cursor<Vec<u8>>> = chunk_sizes[..num_chunks_to_read]
+            .iter()
+            .map(|size| {
+                let mut chunk_bytes = vec![0u8; *size as usize];
+                src.read_exact(&mut chunk_bytes)?;
+                Ok(Cursor::new(chunk_bytes))
+            })
+            .collect::<std::io::Result<Vec<Cursor<Vec<u8>>>>>()?;
+
+
+        let points_per_chunk = laz_vlr.chunk_size as usize;
+        let chunk_size_in_bytes = points_per_chunk * point_size;
+
+
+        let mut decompress_in_out = Vec::<(&mut [u8], Cursor<Vec<u8>>)>::with_capacity(chunks_data.len());
+        for (slc_out, chunk_data) in points_out.chunks_mut(chunk_size_in_bytes).into_iter().zip(chunks_data) {
+            decompress_in_out.push((slc_out, chunk_data));
+        }
+
+        decompress_in_out
+            .into_par_iter()
+            .map(|(slc_out, src)| {
+                let mut record_decompressor = record_decompressor_from_laz_items(laz_vlr.items(), src);
+                for raw_point in slc_out.chunks_exact_mut(point_size) {
+                    record_decompressor.decompress_next(raw_point)?;
+                }
+                Ok(())
+            })
+            .collect::<std::io::Result<()>>()?;
         Ok(())
     }
 }
