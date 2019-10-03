@@ -41,14 +41,7 @@ const LASZIP_GPS_TIME_MULTI_CODE_FULL: i32 =
 
 const LASZIP_GPS_TIME_MULTI_TOTAL: i32 = (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS + 6);
 
-#[inline]
-fn i32_quantize(n: f32) -> i32 {
-    if n >= 0.0f32 {
-        (n + 0.5f32) as i32
-    } else {
-        (n - 0.5f32) as i32
-    }
-}
+
 
 pub trait LasGpsTime {
     fn gps_time(&self) -> f64;
@@ -458,13 +451,13 @@ pub mod v2 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::utils::read_and_unpack;
+    use crate::las::utils::{read_and_unpack, i32_quantize};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::{
-        i32_quantize, GpsTime, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
+        GpsTime, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
         LASZIP_GPS_TIME_MULTI_MINUS, LASZIP_GPS_TIME_MULTI_TOTAL, LASZIP_GPS_TIME_MULTI_UNCHANGED,
     };
 

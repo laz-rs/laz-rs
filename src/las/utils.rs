@@ -193,6 +193,15 @@ pub(crate) fn upper_byte_changed(lhs: u16, rhs: u16) -> bool {
 }
 
 #[inline]
+pub fn i32_quantize(n: f32) -> i32 {
+    if n >= 0.0f32 {
+        (n + 0.5f32) as i32
+    } else {
+        (n - 0.5f32) as i32
+    }
+}
+
+#[inline]
 pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     is_requested: bool,
     num_bytes: usize,

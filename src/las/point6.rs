@@ -355,10 +355,7 @@ pub mod v3 {
     use crate::encoders::ArithmeticEncoder;
     use crate::las::gps::{GpsTime, LasGpsTime};
     use crate::las::point6::{u32_zero_bit_0, DecompressionSelector, LasPoint6, Point6};
-    use crate::las::utils::{
-        copy_bytes_into_decoder, copy_encoder_content_to, read_and_unpack, StreamingMedian,
-        NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX,
-    };
+    use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to, read_and_unpack, StreamingMedian, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX, i32_quantize};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
@@ -1429,11 +1426,7 @@ pub mod v3 {
                     let multi_f = (curr_gps_time_diff as f32)
                         / (the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]
                             as f32);
-                    let multi = if multi_f >= 0.0 {
-                        (multi_f + 0.5) as i32
-                    } else {
-                        (multi_f - 0.5) as i32
-                    };
+                    let multi = i32_quantize(multi_f);
 
                     // compress the residual curr_gps_time_diff in dependence on the multiplier
                     if multi == 1 {
@@ -1549,7 +1542,6 @@ pub mod v3 {
                         }
                     }
                 } else {
-                    ////println!("diff NOT encodable with 32 bits");
                     //TODO this fucking looks so much fucking like the code a few lines above
                     // the difference is huge
                     for i in 1..4 {
