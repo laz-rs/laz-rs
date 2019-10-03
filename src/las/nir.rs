@@ -1,22 +1,9 @@
 //! Defines the compressors and decompressors for the Near Infrared (Nir) data
 
-use std::io::{Read, Write};
-
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 pub trait LasNIR {
     fn nir(&self) -> u16;
     fn set_nir(&mut self, new_val: u16);
-
-    fn read_from<R: Read>(&mut self, src: &mut R) -> std::io::Result<()> {
-        self.set_nir(src.read_u16::<LittleEndian>()?);
-        Ok(())
-    }
-
-    fn write_to<W: Write>(&self, dst: &mut W) -> std::io::Result<()> {
-        dst.write_u16::<LittleEndian>(self.nir())?;
-        Ok(())
-    }
 }
 
 #[derive(Default, Copy, Clone, PartialOrd, PartialEq, Debug)]

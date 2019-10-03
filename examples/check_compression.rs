@@ -14,7 +14,8 @@ fn main() {
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))
         .unwrap();
 
-    let laz_items =  LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
+    let laz_items =
+        LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
     let mut compressor =
         LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
 

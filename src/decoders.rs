@@ -229,7 +229,7 @@ impl<T: Read> ArithmeticDecoder<T> {
     }
 
     pub fn read_bits(&mut self, mut bits: u32) -> std::io::Result<u32> {
-        assert!(bits > 0 && (bits <= 32));
+        debug_assert!(bits > 0 && (bits <= 32));
         if bits > 19 {
             let tmp = self.read_short()? as u32;
             bits -= 16;
@@ -260,7 +260,7 @@ impl<T: Read> ArithmeticDecoder<T> {
         if self.length < AC_MIN_LENGTH {
             self.renorm_dec_interval()?;
         }
-        assert!(sym < (1 << 8));
+        debug_assert!(sym < (1 << 8));
         Ok(sym as u8)
     }
 
@@ -273,7 +273,7 @@ impl<T: Read> ArithmeticDecoder<T> {
         if self.length < AC_MIN_LENGTH {
             self.renorm_dec_interval()?;
         }
-        assert!(sym < (1 << 16));
+        debug_assert!(sym < (1 << 16));
         Ok(sym as u16)
     }
 
@@ -289,7 +289,6 @@ impl<T: Read> ArithmeticDecoder<T> {
         Ok((upper_int << 32) | lower_int)
     }
 
-    //TODO readFloat, readDouble
     fn renorm_dec_interval(&mut self) -> std::io::Result<()> {
         loop {
             self.value = (self.value << 8) | self.in_stream.read_u8()? as u32;

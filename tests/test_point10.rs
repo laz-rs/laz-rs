@@ -5,7 +5,8 @@ use laz::las::point0::{v2::LasPoint0Compressor, v2::LasPoint0Decompressor, Point
 use laz::las::rgb::{v2::LasRGBCompressor, v2::LasRGBDecompressor, RGB};
 use laz::packers::Packable;
 use laz::record::{
-    RecordCompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
+    RecordCompressor, RecordDecompressor, SequentialPointRecordCompressor,
+    SequentialPointRecordDecompressor,
 };
 
 #[test]
@@ -44,7 +45,7 @@ fn test_compression_decompression_of_point_10() {
     decompressor.add_field_decompressor(LasPoint0Decompressor::new());
 
     for i in 0..n {
-        decompressor.decompress(&mut buf).unwrap();
+        decompressor.decompress_next(&mut buf).unwrap();
         let point = Point0::unpack_from(&buf);
 
         let expected_point = Point0 {
@@ -99,7 +100,7 @@ fn test_rgb() {
             blue: (i + 10000) % 65535,
         };
 
-        decompressor.decompress(&mut buf).unwrap();
+        decompressor.decompress_next(&mut buf).unwrap();
         let rgb = RGB::unpack_from(&buf);
 
         assert_eq!(rgb, expected_rgb);
@@ -133,7 +134,7 @@ fn test_gps_time() {
         let expected_gps_time = GpsTime {
             value: (i + 48741) % std::i64::MAX,
         };
-        decompressor.decompress(&mut buf).unwrap();
+        decompressor.decompress_next(&mut buf).unwrap();
         let gps_time = GpsTime::unpack_from(&buf);
         assert_eq!(expected_gps_time, gps_time);
     }

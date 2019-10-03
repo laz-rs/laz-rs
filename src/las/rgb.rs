@@ -27,9 +27,6 @@
 //! Module with the definition of a RGB struct and implementations of
 //! Compressors and Decompressors
 
-use std::io::{Read, Write};
-
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_traits::clamp;
 
 use crate::las::utils::flag_diff;
@@ -47,26 +44,6 @@ pub trait LasRGB {
     fn set_red(&mut self, new_val: u16);
     fn set_green(&mut self, new_val: u16);
     fn set_blue(&mut self, new_val: u16);
-
-    fn read_from<R: Read>(&mut self, src: &mut R) -> std::io::Result<()> {
-        self.set_red(src.read_u16::<LittleEndian>()?);
-        self.set_green(src.read_u16::<LittleEndian>()?);
-        self.set_blue(src.read_u16::<LittleEndian>()?);
-        Ok(())
-    }
-
-    fn write_to<W: Write>(&self, dst: &mut W) -> std::io::Result<()> {
-        dst.write_u16::<LittleEndian>(self.red())?;
-        dst.write_u16::<LittleEndian>(self.green())?;
-        dst.write_u16::<LittleEndian>(self.blue())?;
-        Ok(())
-    }
-
-    fn set_fields_from<P: LasRGB>(&mut self, other: &P) {
-        self.set_red(other.red());
-        self.set_green(other.green());
-        self.set_blue(other.blue());
-    }
 }
 
 /// Struct representing a RGB component of a point, in compliance with
@@ -157,9 +134,7 @@ impl ColorDiff {
 }
 
 impl Packable for RGB {
-    type Type = RGB;
-
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         Self {
             red: u16::unpack_from(&input[0..2]),
             green: u16::unpack_from(&input[2..4]),

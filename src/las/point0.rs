@@ -26,10 +26,7 @@
 
 //! Defines the Point Format 0 ands different version of compressors and decompressors
 
-use std::io::{Read, Write};
 use std::mem::size_of;
-
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::packers::Packable;
 
@@ -64,45 +61,6 @@ pub trait LasPoint0 {
     fn set_scan_angle_rank(&mut self, new_val: i8);
     fn set_user_data(&mut self, new_val: u8);
     fn set_point_source_id(&mut self, new_val: u16);
-
-    fn read_from<R: Read>(&mut self, src: &mut R) -> std::io::Result<()> {
-        self.set_x(src.read_i32::<LittleEndian>()?);
-        self.set_y(src.read_i32::<LittleEndian>()?);
-        self.set_z(src.read_i32::<LittleEndian>()?);
-        self.set_intensity(src.read_u16::<LittleEndian>()?);
-        self.set_bit_fields(src.read_u8()?);
-        self.set_classification(src.read_u8()?);
-        self.set_scan_angle_rank(src.read_i8()?);
-        self.set_user_data(src.read_u8()?);
-        self.set_point_source_id(src.read_u16::<LittleEndian>()?);
-        Ok(())
-    }
-
-    fn write_to<W: Write>(&self, dst: &mut W) -> std::io::Result<()> {
-        dst.write_i32::<LittleEndian>(self.x())?;
-        dst.write_i32::<LittleEndian>(self.y())?;
-        dst.write_i32::<LittleEndian>(self.z())?;
-        dst.write_u16::<LittleEndian>(self.intensity())?;
-        dst.write_u8(self.bit_fields())?;
-        dst.write_u8(self.classification())?;
-        dst.write_i8(self.scan_angle_rank())?;
-        dst.write_u8(self.user_data())?;
-        dst.write_u16::<LittleEndian>(self.point_source_id())?;
-        Ok(())
-    }
-
-    fn set_fields_from<P: LasPoint0>(&mut self, other: &P) {
-        self.set_x(other.x());
-        self.set_y(other.y());
-        self.set_z(other.z());
-
-        self.set_intensity(other.intensity());
-        self.set_bit_fields(other.bit_fields());
-        self.set_classification(other.classification());
-        self.set_scan_angle_rank(other.scan_angle_rank());
-        self.set_user_data(other.user_data());
-        self.set_point_source_id(other.point_source_id());
-    }
 }
 
 #[derive(Default, Copy, Clone, PartialEq, Debug)]
@@ -240,9 +198,8 @@ impl LasPoint0 for Point0 {
 }
 
 impl Packable for Point0 {
-    type Type = Point0;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         if input.len() < 20 {
             panic!("Point10::unpack_from expected buffer of 20 bytes");
         }

@@ -24,18 +24,14 @@
 ===============================================================================
 */
 
-// TODO should this return SElf & have Self be sized ?
 pub trait Packable {
-    type Type;
-
-    fn unpack_from(input: &[u8]) -> Self::Type;
+    fn unpack_from(input: &[u8]) -> Self;
     fn pack_into(&self, output: &mut [u8]);
 }
 
 impl Packable for u32 {
-    type Type = u32;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         if input.len() < 4 {
             panic!("u32::unpack_from expected a slice of 4 bytes");
         }
@@ -55,9 +51,7 @@ impl Packable for u32 {
 }
 
 impl Packable for u16 {
-    type Type = u16;
-
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         if input.len() < 2 {
             panic!("u16::unpack_from expected a slice of 2 bytes");
         }
@@ -75,9 +69,7 @@ impl Packable for u16 {
 }
 
 impl Packable for u8 {
-    type Type = u8;
-
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         input[0]
     }
 
@@ -87,9 +79,8 @@ impl Packable for u8 {
 }
 
 impl Packable for i32 {
-    type Type = i32;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         u32::unpack_from(input) as i32
     }
 
@@ -99,9 +90,8 @@ impl Packable for i32 {
 }
 
 impl Packable for i16 {
-    type Type = i16;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         u16::unpack_from(input) as i16
     }
 
@@ -111,9 +101,8 @@ impl Packable for i16 {
 }
 
 impl Packable for i8 {
-    type Type = i8;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         input[0] as i8
     }
 

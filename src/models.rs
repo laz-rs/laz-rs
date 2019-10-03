@@ -144,7 +144,7 @@ impl ArithmeticModel {
                 sum += *symbol_count;
                 let w = *symbol_distribution >> self.table_shift;
 
-                assert!((w as usize) < self.decoder_table.len());
+                debug_assert!((w as usize) < self.decoder_table.len());
                 while s < w as usize {
                     s += 1;
                     *unsafe { self.decoder_table.get_unchecked_mut(s) } = (k - 1) as u32;

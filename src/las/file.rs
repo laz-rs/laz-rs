@@ -107,14 +107,13 @@ pub struct SimpleReader {
     current_index: u64,
 }
 
-
 pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) -> Option<LazVlr> {
     let mut laszip_vlr = None;
     for _i in 0..header.num_vlrs {
         let vlr = Vlr::read_from(src).unwrap();
         if vlr.record_id == 22204
             && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
-            == "laszip encoded"
+                == "laszip encoded"
         {
             laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
         }
@@ -161,7 +160,6 @@ impl SimpleReader {
             current_index: 0,
         })
     }
-
 
     pub fn read_next(&mut self) -> Option<std::io::Result<&[u8]>> {
         if self.current_index < self.header.num_points {

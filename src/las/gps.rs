@@ -138,9 +138,8 @@ impl LasGpsTime for GpsTime {
 
 //TODO This can be optimized !
 impl Packable for GpsTime {
-    type Type = GpsTime;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         let lower = u32::unpack_from(&input[0..std::mem::size_of::<u32>()]);
         let upper =
             u32::unpack_from(&input[std::mem::size_of::<u32>()..(2 * std::mem::size_of::<u32>())]);

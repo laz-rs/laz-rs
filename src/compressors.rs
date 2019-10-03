@@ -181,7 +181,7 @@ impl IntegerCompressor {
         } else {
             if self.k != 0 {
                 // then c is either smaller than 0 or bigger than 1
-                assert!(c != 0 && c != 1);
+                debug_assert!(c != 0 && c != 1);
                 if self.k < 32 {
                     // translate the corrector c into the k-bit interval [ 0 ... 2^k - 1 ]
                     if c >= 0 {
@@ -220,7 +220,7 @@ impl IntegerCompressor {
                 }
             } else {
                 // then c is 0 or 1
-                assert!(c == 0 || c == 1);
+                debug_assert!(c == 0 || c == 1);
                 encoder.encode_bit(&mut self.m_corrector_0, c as u32)?;
             }
             Ok(())

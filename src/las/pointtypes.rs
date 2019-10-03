@@ -1,6 +1,3 @@
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::Read;
-
 pub use crate::las::gps::LasGpsTime;
 use crate::las::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
 use crate::las::nir::Nir;
@@ -90,14 +87,6 @@ pub struct Point1 {
     gps_time: f64,
 }
 
-impl Point1 {
-    pub fn read_from<R: Read>(&mut self, mut src: &mut R) -> std::io::Result<()> {
-        self.base.read_from(&mut src)?;
-        self.gps_time = src.read_f64::<LittleEndian>()?;
-        Ok(())
-    }
-}
-
 impl Point0Based for Point1 {
     fn point0(&self) -> &Point0 {
         &self.base
@@ -156,14 +145,6 @@ impl DefaultVersion for Point1 {
 pub struct Point2 {
     base: Point0,
     rgb: RGB,
-}
-
-impl Point2 {
-    pub fn read_from<R: Read>(&mut self, mut src: &mut R) -> std::io::Result<()> {
-        self.base.read_from(&mut src)?;
-        self.rgb.read_from(&mut src)?;
-        Ok(())
-    }
 }
 
 impl Point0Based for Point2 {
@@ -241,15 +222,6 @@ pub struct Point3 {
     base: Point0,
     gps_time: f64,
     rgb: RGB,
-}
-
-impl Point3 {
-    pub fn read_from<R: Read>(&mut self, mut src: &mut R) -> std::io::Result<()> {
-        self.base.read_from(&mut src)?;
-        self.gps_time = src.read_f64::<LittleEndian>()?;
-        self.rgb.read_from(&mut src)?;
-        Ok(())
-    }
 }
 
 impl Point0Based for Point3 {
@@ -358,14 +330,6 @@ impl DefaultVersion for Point6 {
 pub struct Point7 {
     base: Point6,
     rgb: RGB,
-}
-
-impl Point7 {
-    pub fn read_from<R: Read>(&mut self, src: &mut R) -> std::io::Result<()> {
-        self.base.read_from(src)?;
-        self.rgb.read_from(src)?;
-        Ok(())
-    }
 }
 
 impl Point6Based for Point7 {

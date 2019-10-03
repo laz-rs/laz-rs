@@ -15,6 +15,7 @@ macro_rules! loop_test_on_buffer {
         #[test]
         fn $test_name() {
             use laz::record::RecordCompressor;
+            use laz::record::RecordDecompressor;
             let mut las_file = File::open($source_las).unwrap();
             las_file.seek(SeekFrom::Start($point_start)).unwrap();
 
@@ -45,7 +46,7 @@ macro_rules! loop_test_on_buffer {
             for i in 0..NUM_POINTS {
                 las_file.read_exact(&mut expected_buf).unwrap();
                 decompressor
-                    .decompress(&mut buf)
+                    .decompress_next(&mut buf)
                     .expect(&format!("Failed to decompress point {}", i));
 
                 let mut s;

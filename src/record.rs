@@ -1,15 +1,11 @@
 use std::io::{Read, Seek, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use num_traits::{zero, AsPrimitive, PrimInt, Zero};
 
-use crate::compressors;
 use crate::decoders;
-use crate::decompressors;
 use crate::encoders;
 use crate::las;
 use crate::las::laszip::{LasZipError, LazItem, LazItemType};
-use crate::packers::Packable;
 
 /***************************************************************************************************
                     Decompression Related Traits
@@ -95,53 +91,6 @@ impl<R: Read> SequentialPointRecordDecompressor<R> {
         self.record_size += d.size_of_field();
         self.field_decompressors.push(d);
     }
-
-    pub fn record_size(&self) -> usize {
-        self.record_size
-    }
-
-    pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        if self.is_first_decompression {
-            let mut field_start = 0;
-            for field in &mut self.field_decompressors {
-                let field_end = field_start + field.size_of_field();
-                field.decompress_first(
-                    &mut self.decoder.in_stream(),
-                    &mut out[field_start..field_end],
-                )?;
-                field_start = field_end;
-            }
-
-            self.is_first_decompression = false;
-
-            // the decoder needs to be told that it should read the
-            // init bytes after the first record has been read
-            self.decoder.read_init_bytes()?;
-        } else {
-            let mut field_start = 0;
-            for field in &mut self.field_decompressors {
-                let field_end = field_start + field.size_of_field();
-                field.decompress_with(&mut self.decoder, &mut out[field_start..field_end])?;
-                field_start = field_end;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn borrow_mut_stream(&mut self) -> &mut R {
-        self.decoder.in_stream()
-    }
-
-    pub fn into_stream(self) -> R {
-        self.decoder.into_stream()
-    }
-
-    pub fn reset(&mut self) {
-        self.decoder.reset();
-        self.is_first_decompression = true;
-        self.field_decompressors.clear();
-        self.record_size = 0;
-    }
 }
 
 impl<R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<R> {
@@ -200,15 +149,42 @@ impl<R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<R> {
     }
 
     fn record_size(&self) -> usize {
-        self.record_size()
+        self.record_size
     }
 
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        self.decompress(out)
+        if self.is_first_decompression {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.decompress_first(
+                    &mut self.decoder.in_stream(),
+                    &mut out[field_start..field_end],
+                )?;
+                field_start = field_end;
+            }
+
+            self.is_first_decompression = false;
+
+            // the decoder needs to be told that it should read the
+            // init bytes after the first record has been read
+            self.decoder.read_init_bytes()?;
+        } else {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.decompress_with(&mut self.decoder, &mut out[field_start..field_end])?;
+                field_start = field_end;
+            }
+        }
+        Ok(())
     }
 
     fn reset(&mut self) {
-        self.reset();
+        self.decoder.reset();
+        self.is_first_decompression = true;
+        self.field_decompressors.clear();
+        self.record_size = 0;
     }
 
     fn borrow_stream_mut(&mut self) -> &mut R {
@@ -249,45 +225,10 @@ impl<R: Read + Seek> LayeredPointRecordDecompressor<R> {
             context: 0,
         }
     }
+
     pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R>>(&mut self, field: T) {
         self.record_size += field.size_of_field();
         self.field_decompressors.push(Box::new(field));
-    }
-
-    pub fn record_size(&self) -> usize {
-        self.record_size
-    }
-
-    pub fn decompress(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        if self.is_first_decompression {
-            let mut field_start = 0;
-            for field in &mut self.field_decompressors {
-                let field_end = field_start + field.size_of_field();
-                field.init_first_point(
-                    &mut self.input,
-                    &mut out[field_start..field_end],
-                    &mut self.context,
-                )?;
-                field_start = field_end;
-            }
-
-            let _count = self.input.read_u32::<LittleEndian>()?;
-            for field in &mut self.field_decompressors {
-                field.read_layers_sizes(&mut self.input)?;
-            }
-            for field in &mut self.field_decompressors {
-                field.read_layers(&mut self.input)?;
-            }
-            self.is_first_decompression = false;
-        } else {
-            let mut field_start = 0;
-            for field in &mut self.field_decompressors {
-                let field_end = field_start + field.size_of_field();
-                field.decompress_field_with(&mut out[field_start..field_end], &mut self.context)?;
-                field_start = field_end;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -335,7 +276,35 @@ impl<R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompressor<R>
     }
 
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        self.decompress(out)
+        if self.is_first_decompression {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.init_first_point(
+                    &mut self.input,
+                    &mut out[field_start..field_end],
+                    &mut self.context,
+                )?;
+                field_start = field_end;
+            }
+
+            let _count = self.input.read_u32::<LittleEndian>()?;
+            for field in &mut self.field_decompressors {
+                field.read_layers_sizes(&mut self.input)?;
+            }
+            for field in &mut self.field_decompressors {
+                field.read_layers(&mut self.input)?;
+            }
+            self.is_first_decompression = false;
+        } else {
+            let mut field_start = 0;
+            for field in &mut self.field_decompressors {
+                let field_end = field_start + field.size_of_field();
+                field.decompress_field_with(&mut out[field_start..field_end], &mut self.context)?;
+                field_start = field_end;
+            }
+        }
+        Ok(())
     }
 
     fn reset(&mut self) {
@@ -549,13 +518,14 @@ impl<W: Write> LayeredPointRecordCompressor<W> {
     pub fn new(dst: W) -> Self {
         Self {
             field_compressors: vec![],
-            point_size: 0, //TODO
+            point_size: 0,
             point_count: 0,
             dst,
         }
     }
 
     pub fn add_field_compressor<T: 'static + LayeredFieldCompressor<W>>(&mut self, field: T) {
+        self.point_size += field.size_of_field();
         self.field_compressors.push(Box::new(field));
     }
 }
@@ -640,7 +610,6 @@ impl<W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<W> {
         self.point_count = 0;
         self.point_size = 0;
         self.field_compressors.clear();
-        //TODO call reset our done on all compressors
     }
 
     fn borrow_stream_mut(&mut self) -> &mut W {
@@ -656,221 +625,7 @@ impl<W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<W> {
     }
 }
 
-/***************************************************************************************************
-                    Something else
-***************************************************************************************************/
 
-struct StandardDiffMethod<T: Zero + Copy> {
-    have_value: bool,
-    value: T,
-}
 
-impl<T: Zero + Copy> StandardDiffMethod<T> {
-    pub fn new() -> Self {
-        Self {
-            have_value: false,
-            value: zero(),
-        }
-    }
-    pub fn value(&self) -> T {
-        self.value
-    }
 
-    #[allow(dead_code)]
-    pub fn have_value(&self) -> bool {
-        self.have_value
-    }
 
-    pub fn push(&mut self, value: T) {
-        if !self.have_value {
-            self.have_value = true;
-        }
-        self.value = value;
-    }
-}
-
-pub struct IntegerFieldDecompressor<IntType: Zero + Copy + PrimInt> {
-    decompressor: decompressors::IntegerDecompressor,
-    diff_method: StandardDiffMethod<IntType>,
-}
-
-impl<IntType: Zero + Copy + PrimInt> IntegerFieldDecompressor<IntType> {
-    pub fn new() -> Self {
-        Self {
-            decompressor: decompressors::IntegerDecompressorBuilder::new()
-                .bits(std::mem::size_of::<IntType>() as u32 * 8)
-                .build(),
-            diff_method: StandardDiffMethod::<IntType>::new(),
-        }
-    }
-}
-
-impl<IntType, R> FieldDecompressor<R> for IntegerFieldDecompressor<IntType>
-where
-    i32: num_traits::cast::AsPrimitive<IntType>,
-    IntType: Zero
-        + Copy
-        + PrimInt
-        + Packable
-        + AsPrimitive<i32>
-        + AsPrimitive<<IntType as Packable>::Type>,
-    <IntType as Packable>::Type: AsPrimitive<IntType>,
-    R: Read,
-{
-    fn size_of_field(&self) -> usize {
-        std::mem::size_of::<IntType>()
-    }
-
-    fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-        self.decompressor.init();
-        src.read_exact(first_point)?;
-        let r = IntType::unpack_from(&first_point).as_();
-        self.diff_method.push(r);
-        Ok(())
-    }
-
-    fn decompress_with(
-        &mut self,
-        mut decoder: &mut decoders::ArithmeticDecoder<R>,
-        mut buf: &mut [u8],
-    ) -> std::io::Result<()>
-    where
-        Self: Sized,
-    {
-        self.decompressor.init();
-        let v: IntType = self
-            .decompressor
-            .decompress(&mut decoder, self.diff_method.value().as_(), 0)?
-            .as_(); // i32 -> IntType
-        v.pack_into(&mut buf);
-
-        self.diff_method.push(v);
-        Ok(())
-    }
-}
-
-pub struct IntegerFieldCompressor<IntType: Zero + Copy + PrimInt> {
-    compressor: compressors::IntegerCompressor,
-    diff_method: StandardDiffMethod<IntType>,
-}
-
-impl<IntType: Zero + Copy + PrimInt> IntegerFieldCompressor<IntType> {
-    pub fn new() -> Self {
-        Self {
-            compressor: compressors::IntegerCompressor::new(
-                std::mem::size_of::<IntType>() as u32 * 8,
-                1,
-                8,
-                0,
-            ),
-            diff_method: StandardDiffMethod::<IntType>::new(),
-        }
-    }
-}
-
-impl<IntType, W> FieldCompressor<W> for IntegerFieldCompressor<IntType>
-where
-    IntType: Zero + Copy + PrimInt + Packable + 'static + AsPrimitive<i32>,
-    <IntType as Packable>::Type: AsPrimitive<IntType>,
-    W: Write,
-{
-    fn size_of_field(&self) -> usize {
-        std::mem::size_of::<IntType>()
-    }
-
-    fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-        self.compressor.init();
-        let this_val: IntType = IntType::unpack_from(&buf).as_();
-        self.diff_method.push(this_val);
-        dst.write_all(&buf)
-    }
-
-    fn compress_with(
-        &mut self,
-        mut encoder: &mut encoders::ArithmeticEncoder<W>,
-        buf: &[u8],
-    ) -> std::io::Result<()> {
-        let this_val: IntType = IntType::unpack_from(&buf).as_();
-        // Strange that wi init each time but this is as in laz-perf code
-        self.compressor.init();
-
-        // Let the differ decide what values we're going to push
-        self.compressor.compress(
-            &mut encoder,
-            self.diff_method.value().as_(),
-            this_val.as_(),
-            0,
-        )?;
-        self.diff_method.push(this_val);
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::io::{Seek, SeekFrom};
-
-    use super::*;
-
-    #[test]
-    fn dyna() {
-        let stream = std::io::Cursor::new(Vec::<u8>::new());
-
-        let mut compressor = SequentialPointRecordCompressor::new(stream);
-        compressor.done().unwrap();
-
-        let stream = compressor.into_stream();
-        let data = stream.into_inner();
-
-        assert_eq!(&data, &[1u8, 0u8, 0u8, 0u8]);
-    }
-
-    #[test]
-    fn dyna2() {
-        let stream = std::io::Cursor::new(Vec::<u8>::new());
-
-        let mut compressor = SequentialPointRecordCompressor::new(stream);
-        compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
-        compressor.compress_next(&[0u8, 0u8, 0u8, 0u8]).unwrap();
-        compressor.done().unwrap();
-
-        let stream = compressor.into_stream();
-        let data = stream.into_inner();
-
-        assert_eq!(&data, &[0u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 0u8]);
-    }
-
-    #[test]
-    fn dyna3() {
-        let stream = std::io::Cursor::new(Vec::<u8>::new());
-
-        let mut compressor = SequentialPointRecordCompressor::new(stream);
-        compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
-        compressor.compress_next(&[17u8, 42u8, 35u8, 1u8]).unwrap();
-        compressor.done().unwrap();
-
-        let mut stream = compressor.into_stream();
-        stream.seek(SeekFrom::Start(0)).unwrap();
-
-        let mut read_from_stream = [0u8; 8];
-        stream.read_exact(&mut read_from_stream).unwrap();
-        assert_eq!(
-            &read_from_stream,
-            &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]
-        );
-
-        let data = stream.into_inner();
-        assert_eq!(&data, &[17u8, 42u8, 35u8, 1u8, 1u8, 0u8, 0u8, 0u8]);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_small_input_buffer() {
-        let stream = std::io::Cursor::new(Vec::<u8>::new());
-
-        let mut compressor = SequentialPointRecordCompressor::new(stream);
-        compressor.add_field_compressor(IntegerFieldCompressor::<i32>::new());
-        compressor.compress_next(&[]).unwrap();
-        compressor.done().unwrap();
-    }
-}

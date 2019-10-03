@@ -166,7 +166,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         };
         if self.end_byte != endbuffer {
             unsafe {
-                assert!(
+                debug_assert!(
                     (self.out_byte as *const u8)
                         < self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize)
                 );
@@ -266,7 +266,7 @@ impl<T: Write> ArithmeticEncoder<T> {
     /* Encode a bit without modelling  */
     // again sym is a bool
     pub fn write_bit(&mut self, sym: u32) -> std::io::Result<()> {
-        assert!(sym <= 1);
+        debug_assert!(sym <= 1);
 
         let init_base = self.base;
         // new interval base and length
@@ -285,7 +285,7 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     pub fn write_bits(&mut self, mut bits: u32, mut sym: u32) -> std::io::Result<()> {
-        assert!(bits <= 32 && sym < (1u32 << bits));
+        debug_assert!(bits <= 32 && sym < (1u32 << bits));
 
         if bits > 19 {
             self.write_short((sym & std::u16::MAX as u32) as u16)?;
@@ -387,9 +387,9 @@ impl<T: Write> ArithmeticEncoder<T> {
                 } else {
                     b = b.offset(-1);
                 }
-                assert!(self.out_buffer.as_ptr() <= b);
-                assert!(b < endbuffer);
-                assert!(self.out_byte < endbuffer);
+                debug_assert!(self.out_buffer.as_ptr() <= b);
+                debug_assert!(b < endbuffer);
+                debug_assert!(self.out_byte < endbuffer);
             }
             *b += 1;
         }
@@ -402,9 +402,9 @@ impl<T: Write> ArithmeticEncoder<T> {
                 .offset((2 * AC_BUFFER_SIZE) as isize)
         };
         loop {
-            assert!(self.out_buffer.as_ptr() <= self.out_byte);
-            assert!(self.out_byte < endbuffer);
-            assert!((self.out_byte as *const u8) < self.end_byte);
+            debug_assert!(self.out_buffer.as_ptr() <= self.out_byte);
+            debug_assert!(self.out_byte < endbuffer);
+            debug_assert!((self.out_byte as *const u8) < self.end_byte);
             unsafe {
                 *self.out_byte = (self.base >> 24) as u8;
                 self.out_byte = self.out_byte.offset(1);
@@ -436,11 +436,9 @@ impl<T: Write> ArithmeticEncoder<T> {
             self.out_stream.write_all(&slc)?;
             self.end_byte = self.out_byte.offset(AC_BUFFER_SIZE as isize);
 
-            assert!(self.end_byte > self.out_byte);
-            assert!(self.out_byte < endbuffer);
+            debug_assert!(self.end_byte > self.out_byte);
+            debug_assert!(self.out_byte < endbuffer);
         }
         Ok(())
     }
-
-    //TODO write float & double
 }

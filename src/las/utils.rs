@@ -230,7 +230,7 @@ pub(crate) fn copy_encoder_content_to<W: Write>(
 pub(crate) fn read_and_unpack<R: Read, P: Packable>(
     src: &mut R,
     buf: &mut [u8],
-) -> std::io::Result<P::Type> {
+) -> std::io::Result<P> {
     src.read_exact(buf)?;
     Ok(P::unpack_from(buf))
 }

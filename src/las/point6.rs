@@ -1,10 +1,7 @@
 //! Defines the Point Format 6 ands different version of compressors and decompressors
 
-use std::io::{Read, Write};
-
 use crate::las::gps::GpsTime;
 use crate::packers::Packable;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 fn u32_zero_bit_0(n: u32) -> u32 {
     n & 0xFFFFFFFE
@@ -108,50 +105,6 @@ pub trait LasPoint6 {
     fn set_user_data(&mut self, new_val: u8);
     fn set_point_source_id(&mut self, new_val: u16);
     fn set_gps_time(&mut self, new_val: f64);
-
-    fn read_from<R: Read>(&mut self, src: &mut R) -> std::io::Result<()> {
-        self.set_x(src.read_i32::<LittleEndian>()?);
-        self.set_y(src.read_i32::<LittleEndian>()?);
-        self.set_z(src.read_i32::<LittleEndian>()?);
-        self.set_intensity(src.read_u16::<LittleEndian>()?);
-        self.set_bit_fields(src.read_u8()?);
-        self.set_flags(src.read_u8()?);
-        self.set_classification(src.read_u8()?);
-        self.set_user_data(src.read_u8()?);
-        self.set_scan_angle_rank(src.read_u16::<LittleEndian>()?);
-        self.set_point_source_id(src.read_u16::<LittleEndian>()?);
-        self.set_gps_time(src.read_f64::<LittleEndian>()?);
-        Ok(())
-    }
-
-    fn write_to<W: Write>(&mut self, dst: &mut W) -> std::io::Result<()> {
-        dst.write_i32::<LittleEndian>(self.x())?;
-        dst.write_i32::<LittleEndian>(self.y())?;
-        dst.write_i32::<LittleEndian>(self.z())?;
-        dst.write_u16::<LittleEndian>(self.intensity())?;
-        dst.write_u8(self.bit_fields())?;
-        dst.write_u8(self.flags())?;
-        dst.write_u8(self.classification())?;
-        dst.write_u8(self.user_data())?;
-        dst.write_u16::<LittleEndian>(self.scan_angle_rank())?;
-        dst.write_u16::<LittleEndian>(self.point_source_id())?;
-        dst.write_f64::<LittleEndian>(self.gps_time())?;
-        Ok(())
-    }
-
-    fn set_fields_from<P: LasPoint6>(&mut self, other: &P) {
-        self.set_x(other.x());
-        self.set_y(other.y());
-        self.set_z(other.z());
-        self.set_intensity(other.intensity());
-        self.set_bit_fields(other.bit_fields());
-        self.set_flags(other.flags());
-        self.set_classification(other.classification());
-        self.set_user_data(other.user_data());
-        self.set_scan_angle_rank(other.scan_angle_rank());
-        self.set_point_source_id(other.point_source_id());
-        self.set_gps_time(other.gps_time());
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -328,9 +281,8 @@ impl Point6 {
 }
 
 impl Packable for Point6 {
-    type Type = Self;
 
-    fn unpack_from(input: &[u8]) -> Self::Type {
+    fn unpack_from(input: &[u8]) -> Self {
         if input.len() < Self::SIZE {
             panic!("Point6::unpack_from expected buffer of 30 bytes");
         } else {
@@ -381,10 +333,6 @@ mod test {
         p.set_number_of_returns(1);
         p.set_return_number(1);
         assert_eq!(p.bit_fields, 17);
-
-        let mut p2 = Point6::default();
-        p2.set_fields_from(&p);
-        assert_eq!(p2.bit_fields, 17);
 
         p.set_number_of_returns(2);
         assert_eq!(p.number_of_returns_of_given_pulse(), 2);
@@ -948,7 +896,7 @@ pub mod v3 {
             self.current_context = point.scanner_channel() as usize;
             *context = self.current_context;
 
-            assert!(self.contexts[*context].unused);
+            debug_assert!(self.contexts[*context].unused);
             self.contexts[*context] = Point6DecompressionContext::from_last_point(&point);
             Ok(())
         }
