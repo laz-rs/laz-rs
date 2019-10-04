@@ -94,7 +94,7 @@ impl<R: Read> LasPointReader for RawPointReader<R> {
     }
 }
 
-impl<R: Read + Seek> LasPointReader for LasZipDecompressor<R> {
+impl<'a, R: Read + Seek> LasPointReader for LasZipDecompressor<'a, R> {
     fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()> {
         self.decompress_one(buffer)
     }

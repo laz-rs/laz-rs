@@ -65,14 +65,14 @@ pub trait RecordDecompressor<R> {
 ///
 /// 1) 1 Raw Point (as per ASPRS LAS definition)
 /// 2) n compressed Points
-pub struct SequentialPointRecordDecompressor<R: Read> {
-    field_decompressors: Vec<Box<dyn FieldDecompressor<R>>>,
+pub struct SequentialPointRecordDecompressor<'a, R: Read> {
+    field_decompressors: Vec<Box<dyn FieldDecompressor<R> + 'a>>,
     decoder: decoders::ArithmeticDecoder<R>,
     is_first_decompression: bool,
     record_size: usize,
 }
 
-impl<R: Read> SequentialPointRecordDecompressor<R> {
+impl<'a, R: Read> SequentialPointRecordDecompressor<'a, R> {
     pub fn new(input: R) -> Self {
         Self {
             field_decompressors: vec![],
@@ -82,18 +82,17 @@ impl<R: Read> SequentialPointRecordDecompressor<R> {
         }
     }
 
-    pub fn add_field_decompressor<T: 'static + FieldDecompressor<R>>(&mut self, field: T) {
+    pub fn add_field_decompressor<T: FieldDecompressor<R> + 'a>(&mut self, field: T) {
         self.record_size += field.size_of_field();
         self.field_decompressors.push(Box::new(field));
     }
-
     pub fn add_boxed_decompressor(&mut self, d: Box<dyn FieldDecompressor<R>>) {
         self.record_size += d.size_of_field();
         self.field_decompressors.push(d);
     }
 }
 
-impl<R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<R> {
+impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a, R> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for record_item in laz_items {
             match record_item.version {
@@ -207,15 +206,15 @@ impl<R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<R> {
 /// 2) Number of remaining points in the chunk
 /// 3) Number of bytes for each layer of the chunk
 /// 4) Data of the layers
-pub struct LayeredPointRecordDecompressor<R: Read + Seek> {
-    field_decompressors: Vec<Box<dyn LayeredFieldDecompressor<R>>>,
+pub struct LayeredPointRecordDecompressor<'a, R: Read + Seek> {
+    field_decompressors: Vec<Box<dyn LayeredFieldDecompressor<R> + 'a>>,
     input: R,
     is_first_decompression: bool,
     record_size: usize,
     context: usize,
 }
 
-impl<R: Read + Seek> LayeredPointRecordDecompressor<R> {
+impl<'a, R: Read + Seek> LayeredPointRecordDecompressor<'a, R> {
     pub fn new(input: R) -> Self {
         Self {
             field_decompressors: vec![],
@@ -232,7 +231,7 @@ impl<R: Read + Seek> LayeredPointRecordDecompressor<R> {
     }
 }
 
-impl<R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompressor<R> {
+impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompressor<'a, R> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for record_item in laz_items {
             match record_item.version {
@@ -376,14 +375,14 @@ pub trait RecordCompressor<W> {
 /***************************************************************************************************
                     Record Compressors implementations
 ***************************************************************************************************/
-pub struct SequentialPointRecordCompressor<W: Write> {
+pub struct SequentialPointRecordCompressor<'a, W: Write> {
     is_first_compression: bool,
-    field_compressors: Vec<Box<dyn FieldCompressor<W>>>,
+    field_compressors: Vec<Box<dyn FieldCompressor<W> + 'a>>,
     encoder: encoders::ArithmeticEncoder<W>,
     record_size: usize,
 }
 
-impl<W: Write> SequentialPointRecordCompressor<W> {
+impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
     pub fn new(output: W) -> Self {
         Self {
             is_first_compression: true,
@@ -393,7 +392,7 @@ impl<W: Write> SequentialPointRecordCompressor<W> {
         }
     }
 
-    pub fn add_field_compressor<T: 'static + FieldCompressor<W>>(&mut self, field: T) {
+    pub fn add_field_compressor<T: FieldCompressor<W> + 'a>(&mut self, field: T) {
         self.record_size += field.size_of_field();
         self.field_compressors.push(Box::new(field));
     }
@@ -404,7 +403,7 @@ impl<W: Write> SequentialPointRecordCompressor<W> {
     }
 }
 
-impl<W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<W> {
+impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for record_item in laz_items {
             match record_item.version {
@@ -507,14 +506,14 @@ impl<W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<W> {
     }
 }
 
-pub struct LayeredPointRecordCompressor<W: Write> {
-    field_compressors: Vec<Box<dyn LayeredFieldCompressor<W>>>,
+pub struct LayeredPointRecordCompressor<'a, W: Write> {
+    field_compressors: Vec<Box<dyn LayeredFieldCompressor<W> + 'a>>,
     point_size: usize,
     point_count: u32,
     dst: W,
 }
 
-impl<W: Write> LayeredPointRecordCompressor<W> {
+impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
     pub fn new(dst: W) -> Self {
         Self {
             field_compressors: vec![],
@@ -524,13 +523,13 @@ impl<W: Write> LayeredPointRecordCompressor<W> {
         }
     }
 
-    pub fn add_field_compressor<T: 'static + LayeredFieldCompressor<W>>(&mut self, field: T) {
+    pub fn add_field_compressor<T: LayeredFieldCompressor<W> +'a >(&mut self, field: T) {
         self.point_size += field.size_of_field();
         self.field_compressors.push(Box::new(field));
     }
 }
 
-impl<W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<W> {
+impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
         for item in laz_items {
             match item.version {

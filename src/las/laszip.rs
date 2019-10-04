@@ -431,10 +431,10 @@ impl LazVlrBuilder {
 }
 
 //TODO fix unwraps
-pub fn record_decompressor_from_laz_items<R: Read + Seek + 'static>(
+pub fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
     items: &Vec<LazItem>,
     input: R,
-) -> Box<dyn RecordDecompressor<R>> {
+) -> Box<dyn RecordDecompressor<R> + 'a> {
     let first_version = items[0].version;
     if !items.iter().all(|item| item.version == first_version) {
         // Technically we could mix version 1&2 and 3&4
@@ -457,10 +457,10 @@ pub fn record_decompressor_from_laz_items<R: Read + Seek + 'static>(
     }
 }
 
-pub fn record_compressor_from_laz_items<W: Write + 'static>(
+pub fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     items: &Vec<LazItem>,
     output: W,
-) -> Box<dyn RecordCompressor<W>> {
+) -> Box<dyn RecordCompressor<W> + 'a> {
     let first_version = items[0].version;
     if !items.iter().all(|item| item.version == first_version) {
         // Technically we could mix version 1&2 and 3&4
@@ -522,16 +522,16 @@ fn read_chunk_table<R: Read + Seek>(
 
 //TODO possible to make the Seek trait optional ?
 /// Struct that handles the decompression of the points inside the source
-pub struct LasZipDecompressor<R: Read + Seek + Sized + 'static> {
+pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
-    record_decompressor: Box<dyn RecordDecompressor<R>>,
+    record_decompressor: Box<dyn RecordDecompressor<R> + 'a>,
     chunk_points_read: u32,
     offset_to_chunk_table: i64,
     data_start: u64,
     chunk_table: Option<Vec<u64>>,
 }
 
-impl<R: Read + Seek + Sized + 'static> LasZipDecompressor<R> {
+impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
     pub fn new_with_record_data(
         source: R,
         laszip_vlr_record_data: &[u8],
@@ -717,9 +717,9 @@ fn update_chunk_table_offset<W: Write + Seek>(
 }
 
 /// Struct that handles the compression of the points into the given destination
-pub struct LasZipCompressor<W: Write> {
+pub struct LasZipCompressor<'a, W: Write + 'a> {
     vlr: LazVlr,
-    record_compressor: Box<dyn RecordCompressor<W>>,
+    record_compressor: Box<dyn RecordCompressor<W> + 'a>,
     first_point: bool,
     chunk_point_written: u32,
     chunk_sizes: Vec<usize>,
@@ -730,7 +730,7 @@ pub struct LasZipCompressor<W: Write> {
 // FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
-impl<W: Write + Seek + 'static> LasZipCompressor<W> {
+impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_laz_items(items);
         Self::from_laz_vlr(output, vlr)
