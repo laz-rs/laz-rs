@@ -129,10 +129,12 @@ impl LasGpsTime for GpsTime {
     }
 }
 
-//TODO This can be optimized !
 impl Packable for GpsTime {
 
     fn unpack_from(input: &[u8]) -> Self {
+        if input.len() < std::mem::size_of::<i64>() {
+            panic!("GpsTime::unpack_from expected a buffer of {} bytes", std::mem::size_of::<i64>());
+        }
         let lower = u32::unpack_from(&input[0..std::mem::size_of::<u32>()]);
         let upper =
             u32::unpack_from(&input[std::mem::size_of::<u32>()..(2 * std::mem::size_of::<u32>())]);

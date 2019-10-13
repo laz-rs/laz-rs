@@ -100,9 +100,9 @@ impl<'a, R: Read + Seek> LasPointReader for LasZipDecompressor<'a, R> {
     }
 }
 
-pub struct SimpleReader {
+pub struct SimpleReader<'a> {
     pub header: QuickHeader,
-    point_reader: Box<dyn LasPointReader>,
+    point_reader: Box<dyn LasPointReader + 'a>,
     internal_buffer: Vec<u8>,
     current_index: u64,
 }
@@ -133,8 +133,8 @@ fn point_format_id_uncompressed_to_compressed(point_format_id: u8) -> u8 {
     point_format_id | 0x80
 }
 
-impl SimpleReader {
-    pub fn new<R: Read + Seek + 'static>(mut src: R) -> std::io::Result<Self> {
+impl<'a> SimpleReader<'a> {
+    pub fn new<R: Read + Seek + 'a>(mut src: R) -> std::io::Result<Self> {
         let mut header = QuickHeader::read_from(&mut src)?;
         src.seek(SeekFrom::Start(header.header_size as u64))?;
         let laszip_vlr = read_vlrs_and_get_laszip_vlr(&mut src, &header);

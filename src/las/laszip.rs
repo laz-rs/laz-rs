@@ -256,7 +256,6 @@ fn write_laz_items_to<W: Write>(laz_items: &Vec<LazItem>, mut dst: &mut W) -> st
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CompressorType {
-    // TODO might need a better name
     None = 0,
     /// No chunks, or rather only 1 chunk with all the points
     PointWise = 1,
@@ -430,57 +429,47 @@ impl LazVlrBuilder {
     }
 }
 
-//TODO fix unwraps
-pub fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
+fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
     items: &Vec<LazItem>,
     input: R,
-) -> Box<dyn RecordDecompressor<R> + 'a> {
-    let first_version = items[0].version;
-    if !items.iter().all(|item| item.version == first_version) {
-        // Technically we could mix version 1&2 and 3&4
-        // we just cannot mix non-layered decompressor and layered-decompressor
-        panic!("All laz items must have save version");
-    }
+) -> Result<Box<dyn RecordDecompressor<R> + 'a>, LasZipError>{
+    let first_item = items.get(0).expect("There should be at least one LazItem to be able to create a RecordDecompressor");
 
-    match first_version {
+    let mut decompressor = match first_item.version {
         1 | 2 => {
-            let mut decompressor = SequentialPointRecordDecompressor::new(input);
-            decompressor.set_fields_from(items).unwrap();
-            Box::new(decompressor)
+            let decompressor = SequentialPointRecordDecompressor::new(input);
+            Box::new(decompressor) as Box<dyn RecordDecompressor<R>>
         }
         3 | 4 => {
-            let mut decompressor = LayeredPointRecordDecompressor::new(input);
-            decompressor.set_fields_from(items).unwrap();
-            Box::new(decompressor)
+            let decompressor = LayeredPointRecordDecompressor::new(input);
+            Box::new(decompressor) as Box<dyn RecordDecompressor<R>>
         }
-        _ => panic!("Unknown laz item version {}", first_version),
-    }
+        _ => return Err(LasZipError::UnsupportedLazItemVersion(first_item.item_type, first_item.version))
+    };
+
+    decompressor.set_fields_from(items)?;
+    Ok(decompressor)
 }
 
 pub fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     items: &Vec<LazItem>,
     output: W,
-) -> Box<dyn RecordCompressor<W> + 'a> {
-    let first_version = items[0].version;
-    if !items.iter().all(|item| item.version == first_version) {
-        // Technically we could mix version 1&2 and 3&4
-        // we just cannot mix non-layered decompressor and layered-decompressor
-        panic!("All laz items must have save version");
-    }
+) -> Result<Box<dyn RecordCompressor<W> + 'a>, LasZipError> {
+    let first_item = items.get(0).expect("There should be at least one LazItem to be able to create a RecordCompressor");
 
-    match first_version {
+    let mut compressor = match first_item.version {
         1 | 2 => {
-            let mut compressor = SequentialPointRecordCompressor::new(output);
-            compressor.set_fields_from(items).unwrap();
-            Box::new(compressor)
+            let compressor = SequentialPointRecordCompressor::new(output);
+            Box::new(compressor) as Box<dyn RecordCompressor<W>>
         }
         3 | 4 => {
-            let mut compressor = LayeredPointRecordCompressor::new(output);
-            compressor.set_fields_from(items).unwrap();
-            Box::new(compressor)
+            let compressor = LayeredPointRecordCompressor::new(output);
+            Box::new(compressor) as Box<dyn RecordCompressor<W>>
         }
-        _ => panic!("Unknown laz item version {}", first_version),
-    }
+        _ => return Err(LasZipError::UnsupportedLazItemVersion(first_item.item_type, first_item.version))
+    };
+    compressor.set_fields_from(items)?;
+    Ok(compressor)
 }
 
 fn read_chunk_table<R: Read + Seek>(
@@ -520,7 +509,6 @@ fn read_chunk_table<R: Read + Seek>(
     Ok(chunk_sizes)
 }
 
-//TODO possible to make the Seek trait optional ?
 /// Struct that handles the decompression of the points inside the source
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
@@ -549,7 +537,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
 
         let offset_to_chunk_table = source.read_i64::<LittleEndian>()?;
         let data_start = source.seek(SeekFrom::Current(0))?;
-        let record_decompressor = record_decompressor_from_laz_items(&vlr.items, source);
+        let record_decompressor = record_decompressor_from_laz_items(&vlr.items, source)?;
 
         Ok(Self {
             vlr,
@@ -737,7 +725,7 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     }
 
     pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Result<Self, LasZipError> {
-        let record_compressor = record_compressor_from_laz_items(&vlr.items, output);
+        let record_compressor = record_compressor_from_laz_items(&vlr.items, output)?;
         Ok(Self {
             vlr,
             record_compressor,

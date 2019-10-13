@@ -1,8 +1,8 @@
 use crate::las::file::SimpleReader;
-use crate::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItem};
+use crate::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItem, LazVlr};
 use std::io::{Cursor, Read, Seek};
 
-pub fn check_decompression<R1: Read + Seek + 'static, R2: Read + Seek + 'static>(
+pub fn check_decompression< R1: Read + Seek,  R2: Read + Seek>(
     laz_src: R1,
     las_src: R2,
 ) {
@@ -23,14 +23,15 @@ pub fn check_decompression<R1: Read + Seek + 'static, R2: Read + Seek + 'static>
     }
 }
 
-// TODO we should check that the point size of the las matches the pont size of laz items
-pub fn check_that_we_can_decompress_what_we_compressed<R: Read + Seek + 'static>(
+pub fn check_that_we_can_decompress_what_we_compressed<R: Read + Seek>(
     las_src: R,
     laz_items: Vec<LazItem>,
 ) {
     let mut las_reader = SimpleReader::new(las_src).unwrap();
+    let laz_vlr = LazVlr::from_laz_items(laz_items);
+    assert_eq!(laz_vlr.items_size() as usize, las_reader.header.point_size as usize);
     let mut compressor =
-        LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
+        LasZipCompressor::from_laz_vlr(Cursor::new(Vec::<u8>::new()), laz_vlr).unwrap();
 
     while let Some(point_buf) = las_reader.read_next() {
         let point_buf = point_buf.unwrap();
