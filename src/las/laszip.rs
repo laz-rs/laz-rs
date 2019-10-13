@@ -814,6 +814,27 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     }
 }
 
+
+pub fn compress_all<W: Write + Seek>(dst: &mut W, uncompressed_points_buf: &[u8], laz_vlr: LazVlr) -> Result<(), LasZipError> {
+    let mut compressor = LasZipCompressor::from_laz_vlr(dst, laz_vlr)?;
+    let point_size = compressor.vlr().items_size() as usize;
+    if uncompressed_points_buf.len() % point_size != 0 {
+        Err(LasZipError::BufferLenNotMultipleOfPointSize{
+                buffer_len: uncompressed_points_buf.len(),
+                point_size,
+        })
+    } else {
+        for current_point_bytes in uncompressed_points_buf.chunks_exact(point_size) {
+            compressor.compress_one(current_point_bytes)?;
+        }
+        compressor.done()?;
+        Ok(())
+    }
+}
+
+
+
+
 #[cfg(feature = "parallel")]
 pub fn par_compress_all<W: Write + Seek>(
     dst: &mut W,
