@@ -930,8 +930,11 @@ pub mod v3 {
 
                 // Switch context to current channel
                 self.current_context = scanner_channel;
+                *context = self.current_context;
+
+                self.contexts[self.current_context].last_point.set_scanner_channel(scanner_channel as u8);
+                assert_eq!(self.contexts[self.current_context].last_point.scanner_channel(), scanner_channel as u8);
             }
-            *context = self.current_context;
 
             let point_source_changed = is_nth_bit_set!(changed_values, 5);
             let gps_time_changed = is_nth_bit_set!(changed_values, 4);
@@ -942,7 +945,7 @@ pub mod v3 {
             {
                 let mut the_context = &mut self.contexts[self.current_context];
                 let mut last_point = &mut the_context.last_point;
-                last_point.set_scanner_channel(self.current_context as u8);
+                //last_point.set_scanner_channel(self.current_context as u8);
 
                 // Get last return counts
                 let last_n = last_point.number_of_returns_of_given_pulse();

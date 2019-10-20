@@ -297,6 +297,7 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
             self.is_first_decompression = false;
         } else {
             let mut field_start = 0;
+            self.context = 0;
             for field in &mut self.field_decompressors {
                 let field_end = field_start + field.size_of_field();
                 field.decompress_field_with(&mut out[field_start..field_end], &mut self.context)?;
