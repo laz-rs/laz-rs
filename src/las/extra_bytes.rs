@@ -170,15 +170,16 @@ pub mod v3 {
     //! that compressor / decompressor uses contexts (4)
     //! and each byte of the extra bytes is encoded in its own layer
     //! with its own encoder
-    use std::io::{Cursor, Read, Seek};
+    use std::io::{Cursor, Read, Seek, Write};
 
-    use byteorder::{LittleEndian, ReadBytesExt};
+    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
     use crate::decoders::ArithmeticDecoder;
+    use crate::encoders::ArithmeticEncoder;
     use crate::las::extra_bytes::ExtraBytes;
-    use crate::las::utils::copy_bytes_into_decoder;
+    use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
-    use crate::record::LayeredFieldDecompressor;
+    use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
 
     struct ExtraBytesContext {
         last_bytes: ExtraBytes,
@@ -254,14 +255,9 @@ pub mod v3 {
         ) -> std::io::Result<()> {
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
-                    let last_item = self.contexts[self.last_context_used]
-                        .last_bytes
-                        .bytes
-                        .clone();
-                    self.contexts[*context]
-                        .last_bytes
-                        .bytes
-                        .copy_from_slice(&last_item);
+                    let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
+                    new_context.last_bytes.bytes.copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+                    self.contexts[*context] = new_context;
                 }
             }
 
@@ -294,6 +290,88 @@ pub mod v3 {
                     &mut self.decoders[i],
                     src,
                 )?;
+            }
+            Ok(())
+        }
+    }
+
+
+    pub struct LasExtraByteCompressor {
+        // Each extra bytes has is own layer, thus its own decoder
+        encoders: Vec<ArithmeticEncoder<Cursor<Vec<u8>>>>,
+        has_byte_changed: Vec<bool>,
+        contexts: Vec<ExtraBytesContext>,
+        num_extra_bytes: usize,
+        last_context_used: usize,
+    }
+
+    impl LasExtraByteCompressor {
+        pub fn new(count: usize) -> Self {
+            Self {
+                encoders: (0..count)
+                    .map(|_i| ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())))
+                    .collect(),
+                has_byte_changed: vec![false; count],
+                contexts: (0..4).map(|_i| ExtraBytesContext::new(count)).collect(),
+                num_extra_bytes: count,
+                last_context_used: 0,
+            }
+        }
+    }
+
+
+    impl<W: Write> LayeredFieldCompressor<W> for LasExtraByteCompressor {
+        fn size_of_field(&self) -> usize {
+            self.num_extra_bytes
+        }
+
+        fn init_first_point(&mut self, dst: &mut W, first_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+            for eb_context in &mut self.contexts {
+                eb_context.unused = true;
+            }
+
+            dst.write_all(first_point)?;
+            let the_context = &mut self.contexts[*context];
+            the_context.last_bytes.bytes.copy_from_slice(first_point);
+            self.last_context_used = *context;
+            the_context.unused = false;
+            Ok(())
+        }
+
+        fn compress_field_with(&mut self, current_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+            if self.last_context_used != *context {
+                if self.contexts[*context].unused {
+                    let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
+                    new_context.last_bytes.bytes.copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+                    self.contexts[*context] = new_context;
+                }
+            }
+            let the_context = &mut self.contexts[*context];
+
+            for i in 0..self.num_extra_bytes {
+                let diff = current_point[i] - the_context.last_bytes.bytes[i];
+                self.encoders[i].encode_symbol(
+                    &mut the_context.models[i], diff as u32)?;
+                if diff != 0 {
+                    self.has_byte_changed[i] = true;
+                    the_context.last_bytes.bytes[i] = current_point[i];
+                }
+            }
+
+            self.last_context_used = *context;
+            Ok(())
+        }
+
+        fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
+            for encoder in &mut self.encoders {
+                dst.write_u32::<LittleEndian>(encoder.out_stream().get_ref().len() as u32)?;
+            }
+            Ok(())
+        }
+
+        fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
+            for encoder in &mut self.encoders {
+                copy_encoder_content_to(encoder, dst)?;
             }
             Ok(())
         }
