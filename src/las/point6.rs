@@ -1624,15 +1624,7 @@ pub mod v3 {
             let current_point = Point6::unpack_from(current_point);
             let lpr = compute_last_point_return(&self.contexts[self.current_context].last_point);
             let scanner_channel = current_point.scanner_channel();
-            {
-                if scanner_channel != self.current_context as u8 {
-                    if self.contexts[scanner_channel as usize].unused == false {
-                        //FIXME its not 100% the same as Laszip, will it be problematic ?
-                        self.contexts[self.current_context].last_point =
-                            self.contexts[scanner_channel as usize].last_point;
-                    }
-                }
-            }
+            let scanner_channel_changed = scanner_channel != self.current_context as u8;
 
             let last_n: usize;
             let last_r: usize;
@@ -1641,54 +1633,56 @@ pub mod v3 {
             let gps_time_changed: bool;
             let point_source_changed: bool;
             let scan_angle_changed: bool;
-            let mut changed_values;
-            {
-                let the_context = &mut self.contexts[self.current_context];
-                let last_point = &mut the_context.last_point;
-                // determine changed attributes
-                point_source_changed =
-                    last_point.point_source_id != current_point.point_source_id();
-                gps_time_changed = last_point.gps_time != current_point.gps_time();
-                scan_angle_changed = last_point.scan_angle_rank != current_point.scan_angle_rank();
 
-                // get last and current return counts
-                last_n = last_point.number_of_returns_of_given_pulse() as usize;
-                last_r = last_point.return_number() as usize;
-                n = current_point.number_of_returns_of_given_pulse();
-                r = current_point.return_number();
+            let last_point = if !self.contexts[scanner_channel as usize].unused {
+                &mut self.contexts[scanner_channel as usize].last_point
+            } else {
+                &mut self.contexts[self.current_context].last_point
+            };
 
-                // create the 7 bit mask that encodes various changes (its value ranges from 0 to 127)
-                changed_values = (
-                    ((scanner_channel != self.current_context as u8) as i32) << 6) | // scanner channel compared to last point (same = 0 / different = 1)
-                    ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
+            // determine changed attributes
+            point_source_changed =
+                last_point.point_source_id != current_point.point_source_id();
+            gps_time_changed = last_point.gps_time != current_point.gps_time();
+            scan_angle_changed = last_point.scan_angle_rank != current_point.scan_angle_rank();
 
-                // return number compared to last point of *same* scanner channel
-                // (same = 0 / plus one mod 16 = 1 / minus one mod 16 = 2 / other difference = 3)
-                if r != last_r as u8 {
-                    if r == ((last_r + 1) % 16) as u8 {
-                        changed_values |= 1;
-                    } else if r == ((last_r + 15) % 16) as u8 {
-                        changed_values |= 2;
-                    } else {
-                        changed_values |= 3;
-                    }
+            // get last and current return counts
+            last_n = last_point.number_of_returns_of_given_pulse() as usize;
+            last_r = last_point.return_number() as usize;
+            n = current_point.number_of_returns_of_given_pulse();
+            r = current_point.return_number();
+
+            // create the 7 bit mask that encodes various changes (its value ranges from 0 to 127)
+            let mut changed_values =
+                ((scanner_channel_changed as i32) << 6) | // scanner channel compared to last point (same = 0 / different = 1)
+                ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
+                ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
+                ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
+                (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
+
+            // return number compared to last point of *same* scanner channel
+            // (same = 0 / plus one mod 16 = 1 / minus one mod 16 = 2 / other difference = 3)
+            if r != last_r as u8 {
+                if r == ((last_r + 1) % 16) as u8 {
+                    changed_values |= 1;
+                } else if r == ((last_r + 15) % 16) as u8 {
+                    changed_values |= 2;
+                } else {
+                    changed_values |= 3;
                 }
-                self.encoders.channel_returns_xy.encode_symbol(
-                    &mut the_context.models.changed_values[lpr],
-                    changed_values as u32,
-                )?;
             }
-            //println!("Changed values: {:b}, lpr used: {}", changed_values, lpr);
+            self.encoders.channel_returns_xy.encode_symbol(
+                &mut self.contexts[self.current_context].models.changed_values[lpr],
+                changed_values as u32,
+            )?;
 
-            if changed_values & (1 << 6) != 0 {
-                let diff = scanner_channel - self.current_context as u8;
+
+            if scanner_channel_changed {
+                let diff = scanner_channel as i32 - self.current_context as i32;
                 let symbol = if diff > 0 {
                     i32::from(diff - 1)
                 } else {
-                    i32::from(diff + 4)
+                    i32::from(diff + 4 - 1)
                 };
                 self.encoders.channel_returns_xy.encode_symbol(
                     &mut self.contexts[self.current_context].models.scanner_channel,
@@ -1702,8 +1696,8 @@ pub mod v3 {
                 self.current_context = scanner_channel as usize;
                 *context = self.current_context;
             }
-
             let the_context = &mut self.contexts[self.current_context];
+
 
             // if number of returns is different we compress it
             if (changed_values & (1 << 2)) != 0 {
