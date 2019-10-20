@@ -1123,7 +1123,6 @@ pub mod v3 {
 
         fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()> {
             self.layers_sizes = LayerSizes::read_from(src)?;
-            //println!("{:?}", self.layers_sizes);
             Ok(())
         }
 

@@ -736,7 +736,6 @@ pub mod v3 {
 
         fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()> {
             self.layer_size = src.read_u32::<LittleEndian>()?;
-            //println!("RGB Layer: {}", self.layer_size);
             Ok(())
         }
 
@@ -838,7 +837,6 @@ pub mod v3 {
 
         fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
             self.encoder.done()?;
-            //println!("rgb layer {}", self.encoder.out_stream().get_ref().len());
             dst.write_u32::<LittleEndian>(self.encoder.out_stream().get_ref().len() as u32)
         }
 
