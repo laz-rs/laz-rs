@@ -852,7 +852,7 @@ pub fn par_compress_all<W: Write + Seek>(
             .into_par_iter()
             .map(|slc| {
                 let mut record_compressor =
-                    record_compressor_from_laz_items(&laz_vlr.items, Cursor::new(Vec::<u8>::new()));
+                    record_compressor_from_laz_items(&laz_vlr.items, Cursor::new(Vec::<u8>::new()))?;
 
                 for raw_point in slc.chunks_exact(point_size) {
                     record_compressor.compress_next(raw_point)?;
@@ -861,7 +861,7 @@ pub fn par_compress_all<W: Write + Seek>(
 
                 Ok(record_compressor.box_into_stream())
             })
-            .collect::<Vec<std::io::Result<Cursor<Vec<u8>>>>>();
+            .collect::<Vec<Result<Cursor<Vec<u8>>, LasZipError>>>();
 
         // Reserve the bytes for the chunk table offset that will be updated later
         dst.write_i64::<LittleEndian>(0)?;
@@ -933,13 +933,13 @@ pub fn par_decompress_all<R: Read + Seek>(
             .into_par_iter()
             .map(|(slc_out, src)| {
                 let mut record_decompressor =
-                    record_decompressor_from_laz_items(laz_vlr.items(), src);
+                    record_decompressor_from_laz_items(laz_vlr.items(), src)?;
                 for raw_point in slc_out.chunks_exact_mut(point_size) {
                     record_decompressor.decompress_next(raw_point)?;
                 }
                 Ok(())
             })
-            .collect::<std::io::Result<()>>()?;
+            .collect::<Result<(), LasZipError>>()?;
         Ok(())
     }
 }
