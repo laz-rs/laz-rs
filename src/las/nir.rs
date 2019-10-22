@@ -31,61 +31,58 @@ pub mod v3 {
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
     use crate::las::nir::{LasNIR, Nir};
-    use crate::las::utils::copy_bytes_into_decoder;
     use crate::las::utils::{
         copy_encoder_content_to, lower_byte, lower_byte_changed, read_and_unpack, upper_byte,
         upper_byte_changed,
     };
+    use crate::las::utils::copy_bytes_into_decoder;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
 
     struct NirContext {
-        last_nir: u16,
-        nir_bytes_used_model: ArithmeticModel,
-        nir_diff_0_model: ArithmeticModel,
-        nir_diff_1_model: ArithmeticModel,
+        bytes_used_model: ArithmeticModel,
+        lower_byte_diff_model: ArithmeticModel,
+        upper_byte_diff_model: ArithmeticModel,
         unused: bool,
     }
 
-    impl NirContext {
-        fn from_last(last_val: u16) -> Self {
+    impl Default for NirContext {
+        fn default() -> Self {
             Self {
-                last_nir: last_val,
-                nir_bytes_used_model: ArithmeticModelBuilder::new(4).build(),
-                nir_diff_0_model: ArithmeticModelBuilder::new(256).build(),
-                nir_diff_1_model: ArithmeticModelBuilder::new(256).build(),
+                bytes_used_model: ArithmeticModelBuilder::new(4).build(),
+                lower_byte_diff_model: ArithmeticModelBuilder::new(256).build(),
+                upper_byte_diff_model: ArithmeticModelBuilder::new(256).build(),
                 unused: false,
             }
-        }
-
-        fn new() -> Self {
-            Self::from_last(0)
         }
     }
 
     //TODO Selective
     pub struct LasNIRDecompressor {
-        pub(crate) decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
-        pub(crate) changed_nir: bool,
+        decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
+        changed_nir: bool,
         layer_size: u32,
         last_context_used: usize,
-        contexts: Vec<NirContext>,
+        // Last & contexts are separated for the same reasons as in v3::RGB
+        contexts: [NirContext; 4],
+        last_nirs: [u16; 4],
     }
 
     impl LasNIRDecompressor {
         pub fn new() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
-                contexts: vec![
-                    NirContext::new(),
-                    NirContext::new(),
-                    NirContext::new(),
-                    NirContext::new(),
+                contexts: [
+                    NirContext::default(),
+                    NirContext::default(),
+                    NirContext::default(),
+                    NirContext::default(),
                 ],
                 changed_nir: false,
                 layer_size: 0,
                 last_context_used: 0,
+                last_nirs: [0u16; 4],
             }
         }
     }
@@ -105,7 +102,8 @@ pub mod v3 {
                 ctx.unused = true;
             }
 
-            self.contexts[*context].last_nir = read_and_unpack::<_, u16>(src, first_point)?;
+            self.last_nirs[*context] = read_and_unpack::<_, u16>(src, first_point)?;
+            self.contexts[*context].unused = false;
             self.last_context_used = *context;
             Ok(())
         }
@@ -115,45 +113,47 @@ pub mod v3 {
             current_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
+
+            let mut last_nir = &mut self.last_nirs[self.last_context_used];
             if self.last_context_used != *context {
+                self.last_context_used = *context;
                 if self.contexts[*context].unused {
-                    let last_nir = self.contexts[self.last_context_used].last_nir;
-                    self.contexts[*context] = NirContext::from_last(last_nir);
+                    self.last_nirs[*context] = *last_nir;
+                    self.contexts[*context].unused = false;
+                    last_nir = &mut self.last_nirs[*context];
                 }
             }
 
-            let the_context = &mut self.contexts[*context];
-
+            let the_context = &mut self.contexts[self.last_context_used];
             if self.changed_nir {
                 let mut new_nir: u16;
-                let sym = self
-                    .decoder
-                    .decode_symbol(&mut the_context.nir_bytes_used_model)?;
+                let sym =self.decoder
+                    .decode_symbol(
+                    &mut the_context.bytes_used_model)?;
 
                 if is_nth_bit_set!(sym, 0) {
-                    let corr = self
+                    let diff = self
                         .decoder
-                        .decode_symbol(&mut the_context.nir_diff_0_model)?
-                        as u16;
-                    new_nir = corr + (the_context.last_nir & 0x00FF);
+                        .decode_symbol(
+                            &mut the_context.lower_byte_diff_model)? as u8;
+                    new_nir = u16::from(diff.wrapping_add(lower_byte(*last_nir)));
                 } else {
-                    new_nir = the_context.last_nir & 0x00FF;
+                    new_nir = *last_nir & 0x00FF;
                 }
 
                 if is_nth_bit_set!(sym, 1) {
-                    let corr = self
+                    let diff = self
                         .decoder
-                        .decode_symbol(&mut the_context.nir_diff_1_model)?
-                        as u16;
-                    let upper_byte = corr + the_context.last_nir >> 8;
+                        .decode_symbol(
+                            &mut the_context.upper_byte_diff_model)? as u8;
+                    let upper_byte = u16::from(diff.wrapping_add(upper_byte(*last_nir)));
                     new_nir |= (upper_byte << 8) & 0xFF00;
                 } else {
-                    new_nir |= the_context.last_nir & 0xFF00;
+                    new_nir |= *last_nir & 0xFF00;
                 }
-                the_context.last_nir = new_nir;
+                *last_nir = new_nir;
             }
-
-            the_context.last_nir.pack_into(current_point);
+            last_nir.pack_into(current_point);
             Ok(())
         }
 
@@ -178,6 +178,7 @@ pub mod v3 {
         has_nir_changed: bool,
         last_context_used: usize,
         contexts: Vec<NirContext>,
+        last_nirs: [u16; 4]
     }
 
     impl LasNIRCompressor {
@@ -185,13 +186,14 @@ pub mod v3 {
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
                 contexts: vec![
-                    NirContext::new(),
-                    NirContext::new(),
-                    NirContext::new(),
-                    NirContext::new(),
+                    NirContext::default(),
+                    NirContext::default(),
+                    NirContext::default(),
+                    NirContext::default(),
                 ],
                 has_nir_changed: false,
                 last_context_used: 0,
+                last_nirs: [0u16; 4]
             }
         }
     }
@@ -212,7 +214,7 @@ pub mod v3 {
             }
 
             dst.write_all(first_point)?;
-            self.contexts[*context].last_nir = u16::unpack_from(first_point);
+            self.last_nirs[*context] = u16::unpack_from(first_point);
             self.last_context_used = *context;
             Ok(())
         }
@@ -225,35 +227,36 @@ pub mod v3 {
             let current_point = Nir {
                 0: u16::unpack_from(current_point),
             };
+
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
-                    let last_nir = self.contexts[self.last_context_used].last_nir;
-                    self.contexts[*context] = NirContext::from_last(last_nir);
+                    self.last_nirs[*context] = self.last_nirs[self.last_context_used];
+                    self.contexts[*context].unused = false;
                 }
-            }
-            let the_context = &mut self.contexts[*context];
+                self.last_context_used = *context;
+            };
+            let last_nir = &mut self.last_nirs[self.last_context_used];
+            let the_context = &mut self.contexts[self.last_context_used];
 
-            if current_point.nir() != the_context.last_nir {
+            if current_point.nir() != *last_nir {
                 self.has_nir_changed = true;
             }
 
-            let sym = lower_byte_changed(current_point.nir(), the_context.last_nir) as u8
-                | (upper_byte_changed(current_point.nir(), the_context.last_nir) as u8) << 1;
+            let sym = lower_byte_changed(current_point.nir(), *last_nir) as u8
+                | (upper_byte_changed(current_point.nir(), *last_nir) as u8) << 1;
 
             if is_nth_bit_set!(sym, 0) {
-                let corr = u16::from(lower_byte(current_point.nir()))
-                    - u16::from(lower_byte(the_context.last_nir));
+                let corr = lower_byte(current_point.nir()).wrapping_sub(lower_byte(*last_nir));
                 self.encoder
-                    .encode_symbol(&mut the_context.nir_diff_0_model, u32::from(corr))?;
+                    .encode_symbol(&mut the_context.lower_byte_diff_model, u32::from(corr))?;
             }
 
             if is_nth_bit_set!(sym, 1) {
-                let corr = u16::from(upper_byte(current_point.nir()))
-                    - u16::from(upper_byte(the_context.last_nir));
+                let corr = upper_byte(current_point.nir()).wrapping_sub(upper_byte(*last_nir));
                 self.encoder
-                    .encode_symbol(&mut the_context.nir_diff_1_model, u32::from(corr))?;
+                    .encode_symbol(&mut the_context.upper_byte_diff_model, u32::from(corr))?;
             }
-            the_context.last_nir = current_point.0;
+            *last_nir = current_point.0;
             Ok(())
         }
 
