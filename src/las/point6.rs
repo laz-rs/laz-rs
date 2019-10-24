@@ -281,7 +281,6 @@ impl Point6 {
 }
 
 impl Packable for Point6 {
-
     fn unpack_from(input: &[u8]) -> Self {
         if input.len() < Self::SIZE {
             panic!("Point6::unpack_from expected buffer of 30 bytes");
@@ -346,16 +345,16 @@ pub mod v3 {
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
     use crate::compressors::{
-        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
+        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
+        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
     };
     use crate::encoders::ArithmeticEncoder;
     use crate::las::gps::{GpsTime, LasGpsTime};
-    use crate::las::point6::{u32_zero_bit_0, DecompressionSelector, LasPoint6, Point6};
-    use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to, read_and_unpack, StreamingMedian, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX, i32_quantize};
+    use crate::las::point6::{DecompressionSelector, LasPoint6, Point6, u32_zero_bit_0};
+    use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to, i32_quantize, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX, read_and_unpack, StreamingMedian};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
@@ -794,7 +793,7 @@ pub mod v3 {
                             &mut self.decoders.gps_time,
                             LASZIP_GPS_TIME_MULTI
                                 * the_context.gps_sequences.last_gps_diffs
-                                    [the_context.gps_sequences.last],
+                                [the_context.gps_sequences.last],
                             4,
                         )?;
                         the_context.gps_sequences.multi_extreme_counter
@@ -824,7 +823,7 @@ pub mod v3 {
                                 &mut self.decoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI_MINUS
                                     * the_context.gps_sequences.last_gps_diffs
-                                        [the_context.gps_sequences.last],
+                                    [the_context.gps_sequences.last],
                                 6,
                             )?;
                             the_context.gps_sequences.multi_extreme_counter
@@ -935,6 +934,10 @@ pub mod v3 {
                 self.contexts[self.current_context].last_point.set_scanner_channel(scanner_channel as u8);
                 assert_eq!(self.contexts[self.current_context].last_point.scanner_channel(), scanner_channel as u8);
             }
+            //println!("Context we use: {}", self.current_context);
+            //for ctx in &self.contexts {
+            //println!("Last pts for ctx: {:?}", ctx.last_point);
+            //}
 
             let point_source_changed = is_nth_bit_set!(changed_values, 5);
             let gps_time_changed = is_nth_bit_set!(changed_values, 4);
@@ -1187,14 +1190,12 @@ pub mod v3 {
                 &mut self.decoders.point_source,
                 src,
             )?;
-
             self.should_decompress.gps_time = copy_bytes_into_decoder(
                 self.decompression_selector.gps_time_requested(),
                 num_bytes.gps_time,
                 &mut self.decoders.gps_time,
                 src,
             )?;
-
             Ok(())
         }
     }
@@ -1271,47 +1272,39 @@ pub mod v3 {
 
     struct Point6CompressionContext {
         unused: bool,
-
-        last_point: Point6,
+        models: Point6Models,
+        compressors: Point6Compressors,
+        gps_sequences: GpsTimeSequences,
         last_intensities: [u16; 8],
         last_x_diff_median5: [StreamingMedian<i32>; 12],
         last_y_diff_median5: [StreamingMedian<i32>; 12],
         last_z: [i32; 8],
-
-        models: Point6Models,
-        compressors: Point6Compressors,
-        gps_sequences: GpsTimeSequences,
     }
 
     impl Default for Point6CompressionContext {
         fn default() -> Self {
             Self {
                 unused: true,
-                last_point: Default::default(),
-                last_intensities: [0; 8],
-                last_x_diff_median5: [StreamingMedian::<i32>::new(); 12],
-                last_y_diff_median5: [StreamingMedian::<i32>::new(); 12],
-                last_z: [0; 8],
                 models: Point6Models::default(),
                 compressors: Point6Compressors::default(),
                 gps_sequences: GpsTimeSequences::default(),
+                last_intensities: [0u16; 8],
+                last_x_diff_median5: [StreamingMedian::<i32>::new(); 12],
+                last_y_diff_median5: [StreamingMedian::<i32>::new(); 12],
+                last_z: [0i32; 8],
             }
         }
     }
 
     impl Point6CompressionContext {
-        fn init_from_last(&mut self, last: Point6) {
-            self.last_point = last;
-            for intensity in &mut self.last_intensities {
-                *intensity = self.last_point.intensity;
-            }
-            for z in &mut self.last_z {
-                *z = self.last_point.z;
-            }
-            self.gps_sequences = GpsTimeSequences::from_point(&self.last_point);
+        fn init_from_last(&mut self, last: &Point6) {
+            self.gps_sequences = GpsTimeSequences::from_point(last);
             self.unused = false;
+            self.last_z = [last.z; 8];
+            self.last_intensities = [last.intensity; 8];
         }
     }
+
 
     pub struct LasPoint6Compressor {
         encoders: Point6Encoders,
@@ -1319,6 +1312,7 @@ pub mod v3 {
 
         current_context: usize,
         contexts: [Point6CompressionContext; 4],
+        last_values: [Point6; 4],
     }
 
     impl Default for LasPoint6Compressor {
@@ -1333,6 +1327,12 @@ pub mod v3 {
                     Point6CompressionContext::default(),
                     Point6CompressionContext::default(),
                 ],
+                last_values: [
+                    Point6::default(),
+                    Point6::default(),
+                    Point6::default(),
+                    Point6::default(),
+                ],
             }
         }
     }
@@ -1346,8 +1346,8 @@ pub mod v3 {
                 // calculate the difference between the two doubles as an integer
                 let curr_gps_time_diff_64 = i64::from(gps_time)
                     - i64::from(
-                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
-                    );
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                );
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
                 if i64::from(curr_gps_time_diff) == curr_gps_time_diff_64 {
                     // the difference can be represented with 32 bits
@@ -1418,8 +1418,8 @@ pub mod v3 {
                 // the last integer difference was *not* zero
                 let curr_gps_time_diff_64 = i64::from(gps_time)
                     - i64::from(
-                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
-                    );
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                );
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
 
                 if curr_gps_time_diff_64 == i64::from(curr_gps_time_diff) {
@@ -1427,7 +1427,7 @@ pub mod v3 {
                     // if the current gps_time difference can be represented with 32 bits
                     let multi_f = (curr_gps_time_diff as f32)
                         / (the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]
-                            as f32);
+                        as f32);
                     let multi = i32_quantize(multi_f);
 
                     // compress the residual curr_gps_time_diff in dependence on the multiplier
@@ -1471,7 +1471,7 @@ pub mod v3 {
                                 &mut self.encoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI
                                     * the_context.gps_sequences.last_gps_diffs
-                                        [the_context.gps_sequences.last],
+                                    [the_context.gps_sequences.last],
                                 curr_gps_time_diff,
                                 4,
                             )?;
@@ -1510,7 +1510,7 @@ pub mod v3 {
                                 &mut self.encoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI_MINUS
                                     * the_context.gps_sequences.last_gps_diffs
-                                        [the_context.gps_sequences.last],
+                                    [the_context.gps_sequences.last],
                                 curr_gps_time_diff,
                                 6,
                             )?;
@@ -1549,9 +1549,9 @@ pub mod v3 {
                     for i in 1..4 {
                         let other_gps_time_diff_64 = i64::from(gps_time)
                             - i64::from(
-                                the_context.gps_sequences.last_gps_times
-                                    [(the_context.gps_sequences.last + i) & 3],
-                            );
+                            the_context.gps_sequences.last_gps_times
+                                [(the_context.gps_sequences.last + i) & 3],
+                        );
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if other_gps_time_diff_64 == i64::from(other_gps_time_diff) {
                             // it belongs to this sequence
@@ -1615,7 +1615,8 @@ pub mod v3 {
             self.current_context = first_point.scanner_channel() as usize;
             *context = self.current_context;
 
-            self.contexts[self.current_context].init_from_last(first_point);
+            self.contexts[self.current_context].init_from_last(&first_point);
+            self.last_values[self.current_context] = first_point;
             Ok(())
         }
 
@@ -1624,44 +1625,37 @@ pub mod v3 {
             current_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
+            let mut last_point = &mut self.last_values[self.current_context];
             let current_point = Point6::unpack_from(current_point);
-            let lpr = compute_last_point_return(&self.contexts[self.current_context].last_point);
+
+            let lpr = compute_last_point_return(last_point);
             let scanner_channel = current_point.scanner_channel();
             let scanner_channel_changed = scanner_channel != self.current_context as u8;
 
-            let last_n: usize;
-            let last_r: usize;
-            let n: u8;
-            let r: u8;
-            let gps_time_changed: bool;
-            let point_source_changed: bool;
-            let scan_angle_changed: bool;
-
-            let last_point = if !self.contexts[scanner_channel as usize].unused {
-                &mut self.contexts[scanner_channel as usize].last_point
-            } else {
-                &mut self.contexts[self.current_context].last_point
-            };
+            //println!("New context: {}, old context: {}", scanner_channel, self.current_context);
+            if scanner_channel_changed && !self.contexts[scanner_channel as usize].unused {
+                last_point = &mut self.last_values[scanner_channel as usize];
+            }
 
             // determine changed attributes
-            point_source_changed =
-                last_point.point_source_id != current_point.point_source_id();
-            gps_time_changed = last_point.gps_time != current_point.gps_time();
-            scan_angle_changed = last_point.scan_angle_rank != current_point.scan_angle_rank();
+            let point_source_changed =
+                last_point.point_source_id != current_point.point_source_id;
+            let gps_time_changed = last_point.gps_time != current_point.gps_time;
+            let scan_angle_changed = last_point.scan_angle_rank != current_point.scan_angle_rank;
 
             // get last and current return counts
-            last_n = last_point.number_of_returns_of_given_pulse() as usize;
-            last_r = last_point.return_number() as usize;
-            n = current_point.number_of_returns_of_given_pulse();
-            r = current_point.return_number();
+            let last_n = last_point.number_of_returns_of_given_pulse() as usize;
+            let last_r = last_point.return_number() as usize;
+            let n = current_point.number_of_returns_of_given_pulse();
+            let r = current_point.return_number();
 
             // create the 7 bit mask that encodes various changes (its value ranges from 0 to 127)
             let mut changed_values =
                 ((scanner_channel_changed as i32) << 6) | // scanner channel compared to last point (same = 0 / different = 1)
-                ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
-                ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
-                ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
-                (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
+                    ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
+                    ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
+                    ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
+                    (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
 
             // return number compared to last point of *same* scanner channel
             // (same = 0 / plus one mod 16 = 1 / minus one mod 16 = 2 / other difference = 3)
@@ -1694,12 +1688,16 @@ pub mod v3 {
 
                 if self.contexts[scanner_channel as usize].unused {
                     self.contexts[scanner_channel as usize]
-                        .init_from_last(self.contexts[self.current_context].last_point);
+                        .init_from_last(last_point);
+                    self.last_values[scanner_channel as usize] = *last_point;
+                    last_point = &mut self.last_values[scanner_channel as usize];
                 }
                 self.current_context = scanner_channel as usize;
                 *context = self.current_context;
             }
+            //println!("The last point we gonna use :{:?}", last_point);
             let the_context = &mut self.contexts[self.current_context];
+            //println!("The last intensities: {:?}", the_context.last_intensities);
 
 
             // if number of returns is different we compress it
@@ -1743,7 +1741,7 @@ pub mod v3 {
             let idx = (m << 1) as usize | gps_time_changed as usize;
             // Compress X
             let median = the_context.last_x_diff_median5[idx].get();
-            let diff = current_point.x().wrapping_sub(the_context.last_point.x);
+            let diff = current_point.x().wrapping_sub(last_point.x);
             the_context.compressors.dx.compress(
                 &mut self.encoders.channel_returns_xy,
                 median,
@@ -1756,13 +1754,13 @@ pub mod v3 {
             let k_bits = the_context.compressors.dx.k();
             let median = the_context.last_y_diff_median5[idx].get();
             //println!("Median {}, diff {}", median, diff);
-            let diff = current_point.y().wrapping_sub(the_context.last_point.y);
+            let diff = current_point.y().wrapping_sub(last_point.y);
             let context = (n == 1) as u32
                 + if k_bits < 20 {
-                    u32_zero_bit_0(k_bits)
-                } else {
-                    20
-                };
+                u32_zero_bit_0(k_bits)
+            } else {
+                20
+            };
             the_context.compressors.dy.compress(
                 &mut self.encoders.channel_returns_xy,
                 median,
@@ -1775,10 +1773,10 @@ pub mod v3 {
             let k_bits = (the_context.compressors.dx.k() + the_context.compressors.dy.k()) / 2;
             let context = (n == 1) as u32
                 + if k_bits < 18 {
-                    u32_zero_bit_0(k_bits)
-                } else {
-                    18
-                };
+                u32_zero_bit_0(k_bits)
+            } else {
+                18
+            };
             the_context.compressors.z.compress(
                 &mut self.encoders.z,
                 the_context.last_z[l as usize],
@@ -1788,8 +1786,8 @@ pub mod v3 {
             the_context.last_z[l as usize] = current_point.z();
 
             // Compress classification
-            let last_classification = the_context.last_point.classification;
-            let classification = current_point.classification();
+            let last_classification = last_point.classification;
+            let classification = current_point.classification;
 
             if classification != last_classification {
                 self.has_changed.classification = true;
@@ -1802,8 +1800,15 @@ pub mod v3 {
                 .encode_symbol(model, u32::from(classification))?;
 
             // Compress flags
-            let last_flags = the_context.last_point.classification_flags();
-            let flags = current_point.classification_flags();
+            let last_flags =
+                last_point.classification_flags() |
+                    (last_point.scan_direction_flag() as u8) << 4 |
+                    (last_point.edge_of_flight_line() as u8) << 5;
+            let flags =
+                current_point.classification_flags() |
+                    (current_point.scan_direction_flag() as u8) << 4 |
+                    (current_point.edge_of_flight_line() as u8) << 5;
+            //println!("new flag: {}, last_flag: {}", flags, last_flags);
             if last_flags != flags {
                 self.has_changed.flags = true;
             }
@@ -1813,7 +1818,7 @@ pub mod v3 {
             self.encoders.flags.encode_symbol(model, u32::from(flags))?;
 
             // Compress intensity
-            if the_context.last_point.intensity != current_point.intensity() {
+            if last_point.intensity != current_point.intensity() {
                 self.has_changed.intensity = true;
             }
             the_context.compressors.intensity.compress(
@@ -1831,18 +1836,18 @@ pub mod v3 {
                 self.has_changed.scan_angle = true;
                 the_context.compressors.scan_angle.compress(
                     &mut self.encoders.scan_angle,
-                    the_context.last_point.scan_angle_rank as i32,
+                    last_point.scan_angle_rank as i32,
                     current_point.scan_angle_rank() as i32,
                     gps_time_changed as u32,
                 )?;
             }
 
             // Compress user data
-            if the_context.last_point.user_data != current_point.user_data() {
+            if last_point.user_data != current_point.user_data() {
                 self.has_changed.user_data = true;
             }
 
-            let model = the_context.models.user_data[the_context.last_point.user_data as usize / 4]
+            let model = the_context.models.user_data[last_point.user_data as usize / 4]
                 .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
             self.encoders
                 .user_data
@@ -1853,14 +1858,14 @@ pub mod v3 {
                 self.has_changed.point_source = true;
                 the_context.compressors.source_id.compress(
                     &mut self.encoders.point_source,
-                    the_context.last_point.point_source_id as i32,
+                    last_point.point_source_id as i32,
                     current_point.point_source_id() as i32,
                     DEFAULT_COMPRESS_CONTEXTS,
                 )?;
             }
 
-            the_context.last_point = current_point;
-            the_context.last_point.gps_time_change = gps_time_changed;
+            *last_point = current_point;
+            last_point.gps_time_change = gps_time_changed;
             if gps_time_changed {
                 self.has_changed.gps_time = true;
                 let gps_time = GpsTime::from(current_point.gps_time);
@@ -1876,6 +1881,16 @@ pub mod v3 {
                         self.encoders.$name.done()?;
                     }
                 };
+            }
+
+            macro_rules! return_len_if_has_changed_else_0 {
+                ($name:ident) => {
+                    if self.has_changed.$name {
+                        self.encoders.$name.out_stream().get_ref().len()
+                    } else {
+                        0
+                    }
+                }
             }
             self.encoders.channel_returns_xy.done()?;
             self.encoders.z.done()?;
@@ -1895,15 +1910,14 @@ pub mod v3 {
                     .get_ref()
                     .len(),
                 z: self.encoders.z.out_stream().get_ref().len(),
-                classification: self.encoders.classification.out_stream().get_ref().len(),
-                flags: self.encoders.flags.out_stream().get_ref().len(),
-                intensity: self.encoders.intensity.out_stream().get_ref().len(),
-                scan_angle: self.encoders.scan_angle.out_stream().get_ref().len(),
-                user_data: self.encoders.user_data.out_stream().get_ref().len(),
-                point_source: self.encoders.point_source.out_stream().get_ref().len(),
-                gps_time: self.encoders.gps_time.out_stream().get_ref().len(),
+                classification: return_len_if_has_changed_else_0!(classification),
+                flags: return_len_if_has_changed_else_0!(flags),
+                intensity: return_len_if_has_changed_else_0!(intensity),
+                scan_angle: return_len_if_has_changed_else_0!(scan_angle),
+                user_data: return_len_if_has_changed_else_0!(user_data),
+                point_source: return_len_if_has_changed_else_0!(point_source),
+                gps_time: return_len_if_has_changed_else_0!(gps_time),
             };
-            //println!("write layer size: {:?}", sizes);
             sizes.write_to(dst)?;
             Ok(())
         }
@@ -1926,15 +1940,15 @@ pub mod v3 {
             copy_encoder_content_if_has_changed!(user_data);
             copy_encoder_content_if_has_changed!(point_source);
             copy_encoder_content_if_has_changed!(gps_time);
-
             Ok(())
         }
     }
 
     #[cfg(test)]
     mod test {
-        use super::*;
         use std::io::SeekFrom;
+
+        use super::*;
 
         #[test]
         fn test_write_read_layer_sizes() {
