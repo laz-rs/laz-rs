@@ -113,7 +113,6 @@ pub mod v3 {
             current_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
-
             let mut last_nir = &mut self.last_nirs[self.last_context_used];
             if self.last_context_used != *context {
                 self.last_context_used = *context;
@@ -127,9 +126,9 @@ pub mod v3 {
             let the_context = &mut self.contexts[self.last_context_used];
             if self.changed_nir {
                 let mut new_nir: u16;
-                let sym =self.decoder
+                let sym = self.decoder
                     .decode_symbol(
-                    &mut the_context.bytes_used_model)?;
+                        &mut the_context.bytes_used_model)?;
 
                 if is_nth_bit_set!(sym, 0) {
                     let diff = self
@@ -177,15 +176,15 @@ pub mod v3 {
         encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
         has_nir_changed: bool,
         last_context_used: usize,
-        contexts: Vec<NirContext>,
-        last_nirs: [u16; 4]
+        contexts: [NirContext; 4],
+        last_nirs: [u16; 4],
     }
 
     impl LasNIRCompressor {
         pub fn new() -> Self {
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
-                contexts: vec![
+                contexts: [
                     NirContext::default(),
                     NirContext::default(),
                     NirContext::default(),
@@ -193,7 +192,7 @@ pub mod v3 {
                 ],
                 has_nir_changed: false,
                 last_context_used: 0,
-                last_nirs: [0u16; 4]
+                last_nirs: [0u16; 4],
             }
         }
     }
@@ -215,6 +214,7 @@ pub mod v3 {
 
             dst.write_all(first_point)?;
             self.last_nirs[*context] = u16::unpack_from(first_point);
+            self.contexts[*context].unused = false;
             self.last_context_used = *context;
             Ok(())
         }
@@ -224,39 +224,38 @@ pub mod v3 {
             current_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
-            let current_point = Nir {
-                0: u16::unpack_from(current_point),
-            };
-
+            let mut last_nir = &mut self.last_nirs[self.last_context_used];
             if self.last_context_used != *context {
-                if self.contexts[*context].unused {
-                    self.last_nirs[*context] = self.last_nirs[self.last_context_used];
-                    self.contexts[*context].unused = false;
-                }
                 self.last_context_used = *context;
+                if self.contexts[*context].unused {
+                    self.last_nirs[*context] = *last_nir;
+                    self.contexts[*context].unused = false;
+                    last_nir = &mut self.last_nirs[*context];
+                }
             };
-            let last_nir = &mut self.last_nirs[self.last_context_used];
             let the_context = &mut self.contexts[self.last_context_used];
 
-            if current_point.nir() != *last_nir {
+            let current_nir = u16::unpack_from(current_point);
+            if current_nir != *last_nir {
                 self.has_nir_changed = true;
             }
 
-            let sym = lower_byte_changed(current_point.nir(), *last_nir) as u8
-                | (upper_byte_changed(current_point.nir(), *last_nir) as u8) << 1;
-
+            let sym = lower_byte_changed(current_nir, *last_nir) as u8
+                | (upper_byte_changed(current_nir, *last_nir) as u8) << 1;
+            self.encoder.encode_symbol(&mut the_context.bytes_used_model, u32::from(sym))?;
             if is_nth_bit_set!(sym, 0) {
-                let corr = lower_byte(current_point.nir()).wrapping_sub(lower_byte(*last_nir));
+                let corr = i16::from(lower_byte(current_nir)) - i16::from(lower_byte(*last_nir));
+                let corr = lower_byte(current_nir).wrapping_sub(lower_byte(*last_nir));
                 self.encoder
-                    .encode_symbol(&mut the_context.lower_byte_diff_model, u32::from(corr))?;
+                    .encode_symbol(&mut the_context.lower_byte_diff_model, (corr & 0x00FF) as u32)?;
             }
 
             if is_nth_bit_set!(sym, 1) {
-                let corr = upper_byte(current_point.nir()).wrapping_sub(upper_byte(*last_nir));
+                let corr = upper_byte(current_nir).wrapping_sub(upper_byte(*last_nir));
                 self.encoder
                     .encode_symbol(&mut the_context.upper_byte_diff_model, u32::from(corr))?;
             }
-            *last_nir = current_point.0;
+            *last_nir = current_nir;
             Ok(())
         }
 

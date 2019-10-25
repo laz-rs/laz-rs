@@ -426,6 +426,63 @@ pub mod v2 {
         }
     }
 
+
+    pub(crate) fn compress_rgb_using<W: Write>(
+        encoder: &mut ArithmeticEncoder<W>,
+        models: &mut RGBModels,
+        current_rgb: &RGB,
+        last_rgb: &RGB) -> std::io::Result<()> {
+        let mut diff_l = 0i32;
+        let mut diff_h = 0i32;
+        let mut corr;
+
+        let color_diff = ColorDiff::from_points(current_rgb, last_rgb);
+        encoder.encode_symbol(&mut models.byte_used, color_diff.0 as u32)?;
+
+        //TODO replace these as u8 as u32
+        if color_diff.lower_red_byte_changed() {
+            diff_l = lower_byte(current_rgb.red) as i32 - lower_byte(last_rgb.red) as i32;
+            encoder.encode_symbol(&mut models.lower_red_byte, diff_l as u8 as u32)?;
+        }
+
+        if color_diff.upper_red_byte_changed() {
+            diff_h = upper_byte(current_rgb.red()) as i32 - upper_byte(last_rgb.red) as i32;
+            encoder.encode_symbol(&mut models.upper_red_byte, diff_h as u8 as u32)?;
+        }
+        if (color_diff.0 & (1 << 6)) != 0 {
+            if color_diff.lower_green_byte_changed() {
+                corr = lower_byte(current_rgb.green) as i32
+                    - u8_clamp(diff_l + lower_byte(last_rgb.green) as i32) as i32;
+                encoder.encode_symbol(&mut models.lower_green_byte, corr as u8 as u32)?;
+            }
+
+            if color_diff.lower_blue_byte_changed() {
+                diff_l = (diff_l + lower_byte(current_rgb.green()) as i32
+                    - lower_byte(last_rgb.green) as i32)
+                    / 2;
+                corr = lower_byte(current_rgb.blue()) as i32
+                    - u8_clamp(diff_l + lower_byte(last_rgb.blue) as i32) as i32;
+                encoder.encode_symbol(&mut models.lower_blue_byte, corr as u8 as u32)?;
+            }
+
+            if color_diff.upper_green_byte_changed() {
+                corr = upper_byte(current_rgb.green) as i32
+                    - u8_clamp(diff_h + upper_byte(last_rgb.green) as i32) as i32;
+                encoder.encode_symbol(&mut models.upper_green_byte, corr as u8 as u32)?;
+            }
+
+            if color_diff.upper_blue_byte_changed() {
+                diff_h = (diff_h + upper_byte(current_rgb.green) as i32
+                    - upper_byte(last_rgb.green) as i32)
+                    / 2;
+                corr = upper_byte(current_rgb.blue) as i32
+                    - u8_clamp(diff_h + upper_byte(last_rgb.blue) as i32) as i32;
+                encoder.encode_symbol(&mut models.upper_blue_byte, corr as u8 as u32)?;
+            }
+        }
+        Ok(())
+    }
+
     pub struct LasRGBCompressor {
         pub(crate) last: RGB,
         models: RGBModels,
@@ -457,53 +514,7 @@ pub mod v2 {
             buf: &[u8],
         ) -> std::io::Result<()> {
             let current_point = super::RGB::unpack_from(&buf);
-            let mut diff_l = 0i32;
-            let mut diff_h = 0i32;
-            let mut corr;
-
-            let color_diff = ColorDiff::from_points(&current_point, &self.last);
-            encoder.encode_symbol(&mut self.models.byte_used, color_diff.0 as u32)?;
-
-            if color_diff.lower_red_byte_changed() {
-                diff_l = lower_byte(current_point.red()) as i32 - lower_byte(self.last.red) as i32;
-                encoder.encode_symbol(&mut self.models.lower_red_byte, diff_l as u8 as u32)?;
-            }
-
-            if color_diff.upper_red_byte_changed() {
-                diff_h = upper_byte(current_point.red()) as i32 - upper_byte(self.last.red) as i32;
-                encoder.encode_symbol(&mut self.models.upper_red_byte, diff_h as u8 as u32)?;
-            }
-            if (color_diff.0 & (1 << 6)) != 0 {
-                if color_diff.lower_green_byte_changed() {
-                    corr = lower_byte(current_point.green()) as i32
-                        - u8_clamp(diff_l + lower_byte(self.last.green) as i32) as i32;
-                    encoder.encode_symbol(&mut self.models.lower_green_byte, corr as u8 as u32)?;
-                }
-
-                if color_diff.lower_blue_byte_changed() {
-                    diff_l = (diff_l + lower_byte(current_point.green()) as i32
-                        - lower_byte(self.last.green) as i32)
-                        / 2;
-                    corr = lower_byte(current_point.blue()) as i32
-                        - u8_clamp(diff_l + lower_byte(self.last.blue) as i32) as i32;
-                    encoder.encode_symbol(&mut self.models.lower_blue_byte, corr as u8 as u32)?;
-                }
-
-                if color_diff.upper_green_byte_changed() {
-                    corr = upper_byte(current_point.green()) as i32
-                        - u8_clamp(diff_h + upper_byte(self.last.green) as i32) as i32;
-                    encoder.encode_symbol(&mut self.models.upper_green_byte, corr as u8 as u32)?;
-                }
-
-                if color_diff.upper_blue_byte_changed() {
-                    diff_h = (diff_h + upper_byte(current_point.green()) as i32
-                        - upper_byte(self.last.green) as i32)
-                        / 2;
-                    corr = upper_byte(current_point.blue()) as i32
-                        - u8_clamp(diff_h + upper_byte(self.last.blue) as i32) as i32;
-                    encoder.encode_symbol(&mut self.models.upper_blue_byte, corr as u8 as u32)?;
-                }
-            }
+            compress_rgb_using(encoder, &mut self.models, &current_point, &self.last)?;
             self.last = current_point;
             Ok(())
         }
@@ -647,9 +658,6 @@ pub mod v3 {
     };
 
     use super::v2;
-    use super::v2::{
-        LasRGBCompressor as LasRGBCompressorV2,
-    };
 
     struct LasDecompressionContextRGB {
         models: v2::RGBModels,
@@ -768,39 +776,21 @@ pub mod v3 {
         }
     }
 
-    struct LasCompressionContextRGB {
-        compressor: LasRGBCompressorV2,
-        unused: bool,
-    }
-
-    impl LasCompressionContextRGB {
-        fn from_rgb(rgb: &RGB) -> Self {
-            let mut me = Self {
-                compressor: LasRGBCompressorV2::new(),
-                unused: false,
-            };
-            me.compressor.last = *rgb;
-            me
-        }
-    }
-
     pub struct LasRGBCompressor {
         encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
         rgb_has_changed: bool,
-        contexts: Vec<LasCompressionContextRGB>,
+        contexts: [Option<v2::RGBModels>; 4],
+        last_rgbs: [Option<RGB>; 4],
         last_context_used: usize,
     }
 
     impl LasRGBCompressor {
         pub fn new() -> Self {
-            let rgb = RGB::default();
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
                 rgb_has_changed: false,
-                contexts: (0..4)
-                    .into_iter()
-                    .map(|_i| LasCompressionContextRGB::from_rgb(&rgb))
-                    .collect(),
+                contexts: [None, None, None, None],
+                last_rgbs: [None; 4],
                 last_context_used: 0,
             }
         }
@@ -817,39 +807,36 @@ pub mod v3 {
             first_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
-            for ctx in &mut self.contexts {
-                ctx.unused = true;
-            }
-
-            let the_context = &mut self.contexts[*context];
-            the_context.compressor.compress_first(dst, first_point)?;
-            the_context.unused = false;
+            dst.write_all(first_point)?;
+            self.contexts[*context] = Some(v2::RGBModels::default());
+            self.last_rgbs[*context] = Some(RGB::unpack_from(first_point));
             self.last_context_used = *context;
             Ok(())
         }
 
         fn compress_field_with(&mut self, buf: &[u8], context: &mut usize) -> std::io::Result<()> {
             let current_point = RGB::unpack_from(buf);
+            let mut last_rgb = self.last_rgbs[self.last_context_used]
+                .as_mut()
+                .expect("last value is not initialized");
+
             if self.last_context_used != *context {
-                if self.contexts[*context].unused {
-                    self.contexts[*context] = LasCompressionContextRGB::from_rgb(
-                        &self.contexts[self.last_context_used].compressor.last,
-                    )
+                if self.contexts[*context].is_none() {
+                    self.contexts[*context] = Some(v2::RGBModels::default());
+                    self.last_rgbs[*context] = Some(*last_rgb);
+                    last_rgb = self.last_rgbs[*context].as_mut().unwrap();
                 }
+                self.last_context_used = *context;
             }
 
-            let the_context = &mut self.contexts[*context];
-            if the_context.compressor.last.red != current_point.red()
-                || the_context.compressor.last.blue != current_point.blue()
-                || the_context.compressor.last.green != current_point.green()
-            {
+            if *last_rgb != current_point {
                 self.rgb_has_changed = true;
             }
-            the_context
-                .compressor
-                .compress_with(&mut self.encoder, buf)?;
-
-            self.last_context_used = *context;
+            let models = self.contexts[self.last_context_used]
+                .as_mut()
+                .expect("context is not initialized");
+            v2::compress_rgb_using(&mut self.encoder, models, &current_point, last_rgb)?;
+            *last_rgb = current_point;
             Ok(())
         }
 
