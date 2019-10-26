@@ -660,11 +660,13 @@ pub mod v3 {
         contexts: [Point6DecompressionContext; 4],
     }
 
-    impl LasPoint6Decompressor {
-        pub fn new() -> Self {
+    impl Default for LasPoint6Decompressor {
+        fn default() -> Self {
             Self::selective(DecompressionSelector::decompress_all())
         }
+    }
 
+    impl LasPoint6Decompressor {
         pub fn selective(selector: DecompressionSelector) -> Self {
             let p = Point6::default();
             Self {
@@ -1875,6 +1877,7 @@ pub mod v3 {
         }
 
         fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
+            use crate::las::utils::inner_buffer_len_of;
             macro_rules! call_done_if_has_changed {
                 ($name:ident) => {
                     if self.has_changed.$name {
@@ -1886,7 +1889,7 @@ pub mod v3 {
             macro_rules! return_len_if_has_changed_else_0 {
                 ($name:ident) => {
                     if self.has_changed.$name {
-                        self.encoders.$name.out_stream().get_ref().len()
+                        inner_buffer_len_of(&self.encoders.$name)
                     } else {
                         0
                     }
@@ -1909,7 +1912,7 @@ pub mod v3 {
                     .out_stream()
                     .get_ref()
                     .len(),
-                z: self.encoders.z.out_stream().get_ref().len(),
+                z: inner_buffer_len_of(&self.encoders.z),
                 classification: return_len_if_has_changed_else_0!(classification),
                 flags: return_len_if_has_changed_else_0!(flags),
                 intensity: return_len_if_has_changed_else_0!(intensity),

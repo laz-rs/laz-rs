@@ -97,17 +97,19 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
-                    LazItemType::Byte(_) => self.add_field_decompressor(
-                        las::v1::LasExtraByteDecompressor::new(record_item.size as usize),
-                    ),
                     LazItemType::Point10 => {
-                        self.add_field_decompressor(las::v1::LasPoint0Decompressor::new())
+                        self.add_field_decompressor(las::v1::LasPoint0Decompressor::default())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_decompressor(las::v1::LasGpsTimeDecompressor::new())
+                        self.add_field_decompressor(las::v1::LasGpsTimeDecompressor::default())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_decompressor(las::v1::LasRGBDecompressor::new())
+                        self.add_field_decompressor(las::v1::LasRGBDecompressor::default())
+                    }
+                    LazItemType::Byte(_) => {
+                        self.add_field_decompressor(
+                            las::v1::LasExtraByteDecompressor::new(record_item.size as usize),
+                        )
                     }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
@@ -117,17 +119,19 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
                     }
                 },
                 2 => match record_item.item_type {
-                    LazItemType::Byte(_) => self.add_field_decompressor(
-                        las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
-                    ),
                     LazItemType::Point10 => {
-                        self.add_field_decompressor(las::v2::LasPoint0Decompressor::new())
+                        self.add_field_decompressor(las::v2::LasPoint0Decompressor::default())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_decompressor(las::v2::GpsTimeDecompressor::new())
+                        self.add_field_decompressor(las::v2::GpsTimeDecompressor::default())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_decompressor(las::v2::LasRGBDecompressor::new())
+                        self.add_field_decompressor(las::v2::LasRGBDecompressor::default())
+                    }
+                    LazItemType::Byte(_) => {
+                        self.add_field_decompressor(
+                            las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
+                        )
                     }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
@@ -237,14 +241,14 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
             match record_item.version {
                 3 => match record_item.item_type {
                     LazItemType::Point14 => {
-                        self.add_field_decompressor(las::v3::LasPoint6Decompressor::new())
+                        self.add_field_decompressor(las::v3::LasPoint6Decompressor::default())
                     }
                     LazItemType::RGB14 => {
-                        self.add_field_decompressor(las::v3::LasRGBDecompressor::new())
+                        self.add_field_decompressor(las::v3::LasRGBDecompressor::default())
                     }
                     LazItemType::RGBNIR14 => {
-                        self.add_field_decompressor(las::v3::LasRGBDecompressor::new());
-                        self.add_field_decompressor(las::v3::LasNIRDecompressor::new());
+                        self.add_field_decompressor(las::v3::LasRGBDecompressor::default());
+                        self.add_field_decompressor(las::v3::LasNIRDecompressor::default());
                     }
                     LazItemType::Byte14(count) => self.add_field_decompressor(
                         las::v3::LasExtraByteDecompressor::new(count as usize),
@@ -410,13 +414,13 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
             match record_item.version {
                 1 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::v1::LasPoint0Compressor::new())
+                        self.add_field_compressor(las::v1::LasPoint0Compressor::default())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_compressor(las::v1::LasGpsTimeCompressor::new())
+                        self.add_field_compressor(las::v1::LasGpsTimeCompressor::default())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_compressor(las::v1::LasRGBCompressor::new())
+                        self.add_field_compressor(las::v1::LasRGBCompressor::default())
                     }
                     LazItemType::Byte(_) => self.add_field_compressor(
                         las::v1::LasExtraByteCompressor::new(record_item.size as usize),
@@ -430,13 +434,13 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
                 },
                 2 => match record_item.item_type {
                     LazItemType::Point10 => {
-                        self.add_field_compressor(las::v2::LasPoint0Compressor::new())
+                        self.add_field_compressor(las::v2::LasPoint0Compressor::default())
                     }
                     LazItemType::GpsTime => {
-                        self.add_field_compressor(las::v2::GpsTimeCompressor::new())
+                        self.add_field_compressor(las::v2::GpsTimeCompressor::default())
                     }
                     LazItemType::RGB12 => {
-                        self.add_field_compressor(las::v2::LasRGBCompressor::new())
+                        self.add_field_compressor(las::v2::LasRGBCompressor::default())
                     }
                     LazItemType::Byte(_) => self.add_field_compressor(
                         las::v2::LasExtraByteCompressor::new(record_item.size as usize),
@@ -539,11 +543,11 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
                         self.add_field_compressor(las::v3::LasPoint6Compressor::default())
                     }
                     LazItemType::RGB14 => {
-                        self.add_field_compressor(las::v3::LasRGBCompressor::new())
+                        self.add_field_compressor(las::v3::LasRGBCompressor::default())
                     }
                     LazItemType::RGBNIR14 => {
-                        self.add_field_compressor(las::v3::LasRGBCompressor::new());
-                        self.add_field_compressor(las::v3::LasNIRCompressor::new());
+                        self.add_field_compressor(las::v3::LasRGBCompressor::default());
+                        self.add_field_compressor(las::v3::LasNIRCompressor::default());
                     }
                     //TODO Extrabyte Compressor
                     _ => {

@@ -30,7 +30,6 @@ pub mod v3 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::nir::{LasNIR, Nir};
     use crate::las::utils::{
         copy_encoder_content_to, lower_byte, lower_byte_changed, read_and_unpack, upper_byte,
         upper_byte_changed,
@@ -69,8 +68,8 @@ pub mod v3 {
         last_nirs: [u16; 4],
     }
 
-    impl LasNIRDecompressor {
-        pub fn new() -> Self {
+    impl Default for LasNIRDecompressor {
+        fn default() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
                 contexts: [
@@ -180,8 +179,8 @@ pub mod v3 {
         last_nirs: [u16; 4],
     }
 
-    impl LasNIRCompressor {
-        pub fn new() -> Self {
+    impl Default for LasNIRCompressor {
+        fn default() -> Self {
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
                 contexts: [
@@ -244,10 +243,9 @@ pub mod v3 {
                 | (upper_byte_changed(current_nir, *last_nir) as u8) << 1;
             self.encoder.encode_symbol(&mut the_context.bytes_used_model, u32::from(sym))?;
             if is_nth_bit_set!(sym, 0) {
-                let corr = i16::from(lower_byte(current_nir)) - i16::from(lower_byte(*last_nir));
                 let corr = lower_byte(current_nir).wrapping_sub(lower_byte(*last_nir));
                 self.encoder
-                    .encode_symbol(&mut the_context.lower_byte_diff_model, (corr & 0x00FF) as u32)?;
+                    .encode_symbol(&mut the_context.lower_byte_diff_model, u32::from(corr))?;
             }
 
             if is_nth_bit_set!(sym, 1) {
@@ -260,12 +258,18 @@ pub mod v3 {
         }
 
         fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
-            self.encoder.done()?;
-            dst.write_u32::<LittleEndian>(self.encoder.out_stream().get_ref().len() as u32)
+            if self.has_nir_changed {
+                self.encoder.done()?;
+                dst.write_u32::<LittleEndian>(self.encoder.out_stream().get_ref().len() as u32)?;
+            }
+            Ok(())
         }
 
         fn write_layers(&mut self, dst: &mut R) -> std::io::Result<()> {
-            copy_encoder_content_to(&mut self.encoder, dst)
+            if self.has_nir_changed {
+                copy_encoder_content_to(&mut self.encoder, dst)?;
+            }
+            Ok(())
         }
     }
 }

@@ -364,8 +364,8 @@ pub mod v1 {
         user_data_models: Vec<Option<ArithmeticModel>>,
     }
 
-    impl LasPoint0Decompressor {
-        pub fn new() -> Self {
+    impl Default for LasPoint0Decompressor {
+        fn default() -> Self {
             Self {
                 last_point: Default::default(),
                 last_x_diffs: [0i32; 3],
@@ -398,7 +398,9 @@ pub mod v1 {
                 user_data_models: (0..256).into_iter().map(|_| None).collect(),
             }
         }
+    }
 
+    impl LasPoint0Decompressor {
         fn median_x_diff(&self) -> i32 {
             median_diff(&self.last_x_diffs)
         }
@@ -429,8 +431,8 @@ pub mod v1 {
         user_data_models: Vec<Option<ArithmeticModel>>,
     }
 
-    impl LasPoint0Compressor {
-        pub fn new() -> Self {
+    impl Default for LasPoint0Compressor {
+        fn default() -> Self {
             Self {
                 last_point: Default::default(),
                 last_x_diffs: [0i32; 3],
@@ -819,8 +821,8 @@ pub mod v2 {
         common: Common,
     }
 
-    impl LasPoint0Compressor {
-        pub fn new() -> Self {
+    impl Default for LasPoint0Compressor {
+        fn default() -> Self {
             Self {
                 last_point: Default::default(),
                 ic_intensity: IntegerCompressorBuilder::new()
@@ -1001,8 +1003,8 @@ pub mod v2 {
         common: Common,
     }
 
-    impl LasPoint0Decompressor {
-        pub fn new() -> Self {
+    impl Default for LasPoint0Decompressor {
+        fn default() -> Self {
             Self {
                 last_point: Default::default(),
                 ic_intensity: IntegerDecompressorBuilder::new()

@@ -32,15 +32,6 @@ use crate::packers::Packable;
 use num_traits::Zero;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
-#[inline]
-pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
-where
-    T: BitXor + BitAnd,
-    <T as BitXor>::Output: BitAnd,
-    <<T as BitXor>::Output as BitAnd>::Output: PartialEq<u16>,
-{
-    ((value ^ other) & flag) != 0u16
-}
 
 #[derive(Copy, Clone)]
 pub struct StreamingMedian<T: Zero + Copy + PartialOrd> {
@@ -113,59 +104,15 @@ impl<T: Zero + Copy + PartialOrd> StreamingMedian<T> {
     }
 }
 
-// for LAS files with the return (r) and the number (n) of
-// returns field correctly populated the mapping should really
-// be only the following.
-//  { 15, 15, 15, 15, 15, 15, 15, 15 },
-//  { 15,  0, 15, 15, 15, 15, 15, 15 },
-//  { 15,  1,  2, 15, 15, 15, 15, 15 },
-//  { 15,  3,  4,  5, 15, 15, 15, 15 },
-//  { 15,  6,  7,  8,  9, 15, 15, 15 },
-//  { 15, 10, 11, 12, 13, 14, 15, 15 },
-//  { 15, 15, 15, 15, 15, 15, 15, 15 },
-//  { 15, 15, 15, 15, 15, 15, 15, 15 }
-// however, some files start the numbering of r and n with 0,
-// only have return counts r, or only have number of return
-// counts n, or mix up the position of r and n. we therefore
-// "complete" the table to also map those "undesired" r & n
-// combinations to different contexts
-pub const NUMBER_RETURN_MAP: [[u8; 8]; 8] = [
-    [15, 14, 13, 12, 11, 10, 9, 8],
-    [14, 0, 1, 3, 6, 10, 10, 9],
-    [13, 1, 2, 4, 7, 11, 11, 10],
-    [12, 3, 4, 5, 8, 12, 12, 11],
-    [11, 6, 7, 8, 9, 13, 13, 12],
-    [10, 10, 11, 12, 13, 14, 14, 13],
-    [9, 10, 11, 12, 13, 14, 15, 14],
-    [8, 9, 10, 11, 12, 13, 14, 15],
-];
-
-// for LAS files with the return (r) and the number (n) of
-// returns field correctly populated the mapping should really
-// be only the following.
-//  {  0,  7,  7,  7,  7,  7,  7,  7 },
-//  {  7,  0,  7,  7,  7,  7,  7,  7 },
-//  {  7,  1,  0,  7,  7,  7,  7,  7 },
-//  {  7,  2,  1,  0,  7,  7,  7,  7 },
-//  {  7,  3,  2,  1,  0,  7,  7,  7 },
-//  {  7,  4,  3,  2,  1,  0,  7,  7 },
-//  {  7,  5,  4,  3,  2,  1,  0,  7 },
-//  {  7,  6,  5,  4,  3,  2,  1,  0 }
-// however, some files start the numbering of r and n with 0,
-// only have return counts r, or only have number of return
-// counts n, or mix up the position of r and n. we therefore
-// "complete" the table to also map those "undesired" r & n
-// combinations to different contexts
-pub const NUMBER_RETURN_LEVEL: [[u8; 8]; 8] = [
-    [0, 1, 2, 3, 4, 5, 6, 7],
-    [1, 0, 1, 2, 3, 4, 5, 6],
-    [2, 1, 0, 1, 2, 3, 4, 5],
-    [3, 2, 1, 0, 1, 2, 3, 4],
-    [4, 3, 2, 1, 0, 1, 2, 3],
-    [5, 4, 3, 2, 1, 0, 1, 2],
-    [6, 5, 4, 3, 2, 1, 0, 1],
-    [7, 6, 5, 4, 3, 2, 1, 0],
-];
+#[inline]
+pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
+where
+    T: BitXor + BitAnd,
+    <T as BitXor>::Output: BitAnd,
+    <<T as BitXor>::Output as BitAnd>::Output: PartialEq<u16>,
+{
+    ((value ^ other) & flag) != 0u16
+}
 
 #[inline]
 pub(crate) fn u32_zero_bit(n: u32) -> u32 {
@@ -227,6 +174,10 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     }
 }
 
+pub(crate) fn inner_buffer_len_of(encoder: &ArithmeticEncoder<Cursor<Vec<u8>>>) -> usize {
+    encoder.get_ref().get_ref().len()
+}
+
 #[inline]
 pub(crate) fn copy_encoder_content_to<W: Write>(
     encoder: &mut ArithmeticEncoder<Cursor<Vec<u8>>>,
@@ -250,6 +201,60 @@ macro_rules! is_nth_bit_set {
     };
 }
 
+
+// for LAS files with the return (r) and the number (n) of
+// returns field correctly populated the mapping should really
+// be only the following.
+//  { 15, 15, 15, 15, 15, 15, 15, 15 },
+//  { 15,  0, 15, 15, 15, 15, 15, 15 },
+//  { 15,  1,  2, 15, 15, 15, 15, 15 },
+//  { 15,  3,  4,  5, 15, 15, 15, 15 },
+//  { 15,  6,  7,  8,  9, 15, 15, 15 },
+//  { 15, 10, 11, 12, 13, 14, 15, 15 },
+//  { 15, 15, 15, 15, 15, 15, 15, 15 },
+//  { 15, 15, 15, 15, 15, 15, 15, 15 }
+// however, some files start the numbering of r and n with 0,
+// only have return counts r, or only have number of return
+// counts n, or mix up the position of r and n. we therefore
+// "complete" the table to also map those "undesired" r & n
+// combinations to different contexts
+pub const NUMBER_RETURN_MAP: [[u8; 8]; 8] = [
+    [15, 14, 13, 12, 11, 10, 9, 8],
+    [14, 0, 1, 3, 6, 10, 10, 9],
+    [13, 1, 2, 4, 7, 11, 11, 10],
+    [12, 3, 4, 5, 8, 12, 12, 11],
+    [11, 6, 7, 8, 9, 13, 13, 12],
+    [10, 10, 11, 12, 13, 14, 14, 13],
+    [9, 10, 11, 12, 13, 14, 15, 14],
+    [8, 9, 10, 11, 12, 13, 14, 15],
+];
+
+// for LAS files with the return (r) and the number (n) of
+// returns field correctly populated the mapping should really
+// be only the following.
+//  {  0,  7,  7,  7,  7,  7,  7,  7 },
+//  {  7,  0,  7,  7,  7,  7,  7,  7 },
+//  {  7,  1,  0,  7,  7,  7,  7,  7 },
+//  {  7,  2,  1,  0,  7,  7,  7,  7 },
+//  {  7,  3,  2,  1,  0,  7,  7,  7 },
+//  {  7,  4,  3,  2,  1,  0,  7,  7 },
+//  {  7,  5,  4,  3,  2,  1,  0,  7 },
+//  {  7,  6,  5,  4,  3,  2,  1,  0 }
+// however, some files start the numbering of r and n with 0,
+// only have return counts r, or only have number of return
+// counts n, or mix up the position of r and n. we therefore
+// "complete" the table to also map those "undesired" r & n
+// combinations to different contexts
+pub const NUMBER_RETURN_LEVEL: [[u8; 8]; 8] = [
+    [0, 1, 2, 3, 4, 5, 6, 7],
+    [1, 0, 1, 2, 3, 4, 5, 6],
+    [2, 1, 0, 1, 2, 3, 4, 5],
+    [3, 2, 1, 0, 1, 2, 3, 4],
+    [4, 3, 2, 1, 0, 1, 2, 3],
+    [5, 4, 3, 2, 1, 0, 1, 2],
+    [6, 5, 4, 3, 2, 1, 0, 1],
+    [7, 6, 5, 4, 3, 2, 1, 0],
+];
 // for LAS points with correctly populated return numbers (1 <= r <= n) and
 // number of returns of given pulse (1 <= n <= 15) the return mapping that
 // serializes the possible combinations into one number should be the following

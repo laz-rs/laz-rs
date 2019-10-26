@@ -185,9 +185,10 @@ pub mod v1 {
         multi_extreme_counter: i32,
         last_gps_time_diff: i32,
     }
+    
 
-    impl LasGpsTimeDecompressor {
-        pub fn new() -> Self {
+    impl Default for  LasGpsTimeDecompressor {
+        fn default() -> Self {
             Self {
                 last_gps: 0,
                 gps_time_multi_model: ArithmeticModelBuilder::new(LASZIP_GPS_TIME_MULTI_MAX)
@@ -212,8 +213,8 @@ pub mod v1 {
         last_gps_time_diff: i32,
     }
 
-    impl LasGpsTimeCompressor {
-        pub fn new() -> Self {
+    impl Default for LasGpsTimeCompressor {
+        fn default() -> Self {
             Self {
                 last_gps: 0,
                 gps_time_multi_model: ArithmeticModelBuilder::new(LASZIP_GPS_TIME_MULTI_MAX)
@@ -494,8 +495,8 @@ pub mod v2 {
         common: Common,
     }
 
-    impl GpsTimeCompressor {
-        pub fn new() -> Self {
+    impl Default for GpsTimeCompressor {
+        fn default() -> Self {
             Self {
                 ic_gps_time: IntegerCompressorBuilder::new()
                     .bits(32)
@@ -828,8 +829,8 @@ pub mod v2 {
         ic_gps_time: IntegerDecompressor,
     }
 
-    impl GpsTimeDecompressor {
-        pub fn new() -> Self {
+    impl Default for GpsTimeDecompressor {
+        fn default() -> Self {
             Self {
                 common: Common::new(),
                 ic_gps_time: IntegerDecompressorBuilder::new()

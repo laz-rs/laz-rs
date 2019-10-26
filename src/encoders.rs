@@ -355,6 +355,10 @@ impl<T: Write> ArithmeticEncoder<T> {
         self.write_int((sym >> 32) as u32)
     }
 
+    pub fn get_ref(&self) -> &T {
+        &self.out_stream
+    }
+
     pub fn out_stream(&mut self) -> &mut T {
         &mut self.out_stream
     }

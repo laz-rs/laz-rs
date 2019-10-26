@@ -185,8 +185,8 @@ pub mod v1 {
         decompressor: IntegerDecompressor,
     }
 
-    impl LasRGBDecompressor {
-        pub fn new() -> Self {
+    impl Default for LasRGBDecompressor {
+        fn default() -> Self {
             Self {
                 last: Default::default(),
                 byte_used_model: ArithmeticModelBuilder::new(64).build(),
@@ -196,7 +196,9 @@ pub mod v1 {
                     .build_initialized(),
             }
         }
+    }
 
+    impl LasRGBDecompressor {
         pub fn decompress_byte<R: Read>(
             &mut self,
             decoder: &mut ArithmeticDecoder<R>,
@@ -214,8 +216,8 @@ pub mod v1 {
         compressor: IntegerCompressor,
     }
 
-    impl LasRGBCompressor {
-        pub fn new() -> Self {
+    impl Default for LasRGBCompressor {
+        fn default() -> Self {
             Self {
                 last: Default::default(),
                 byte_used_model: ArithmeticModelBuilder::new(64).build(),
@@ -484,12 +486,12 @@ pub mod v2 {
     }
 
     pub struct LasRGBCompressor {
-        pub(crate) last: RGB,
+        last: RGB,
         models: RGBModels,
     }
 
-    impl LasRGBCompressor {
-        pub fn new() -> Self {
+    impl Default for LasRGBCompressor {
+        fn default() -> Self {
             Self {
                 last: RGB::default(),
                 models: RGBModels::default(),
@@ -521,12 +523,12 @@ pub mod v2 {
     }
 
     pub struct LasRGBDecompressor {
-        pub(crate) last: RGB,
+        last: RGB,
         models: RGBModels,
     }
 
-    impl LasRGBDecompressor {
-        pub fn new() -> Self {
+    impl Default for LasRGBDecompressor {
+        fn default() -> Self {
             Self {
                 last: RGB::default(),
                 models: RGBModels::default(),
@@ -650,11 +652,12 @@ pub mod v3 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::rgb::{LasRGB, RGB};
-    use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to, read_and_unpack};
+    use crate::las::rgb::RGB;
+    use crate::las::utils::{
+        copy_bytes_into_decoder, copy_encoder_content_to, read_and_unpack, inner_buffer_len_of};
     use crate::packers::Packable;
     use crate::record::{
-        FieldCompressor, LayeredFieldCompressor, LayeredFieldDecompressor,
+        LayeredFieldCompressor, LayeredFieldDecompressor,
     };
 
     use super::v2;
@@ -674,37 +677,39 @@ pub mod v3 {
     }
 
     pub struct LasRGBDecompressor {
-        pub(crate) decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
-        pub(crate) changed_rgb: bool,
-        pub(crate) requested_rgb: bool,
+        decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
+        changed_rgb: bool,
+        requested_rgb: bool,
         layer_size: u32,
-        // Both these Vecs have 4 elements
         // The last_rgbs are not part of the decompression context
         // as when decompressing, if the current context index has changed since
         // the last call, the index used for the last_rgb may not be the same as the
         // rgb context, not sure if its truly intentional, or if its a 'bug' in laszip
-        contexts: Vec<LasDecompressionContextRGB>,
-        last_rgbs: Vec<RGB>,
+        contexts: [LasDecompressionContextRGB; 4],
+        last_rgbs: [RGB; 4],
 
         last_context_used: usize,
     }
 
-    impl LasRGBDecompressor {
-        pub fn new() -> Self {
+    impl Default for LasRGBDecompressor {
+        fn default() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
                 changed_rgb: false,
                 requested_rgb: true,
                 layer_size: 0,
-                contexts: (0..4)
-                    .into_iter()
-                    .map(|_i| LasDecompressionContextRGB::default())
-                    .collect(),
-                last_rgbs: vec![RGB::default(); 4],
+                contexts: [
+                    LasDecompressionContextRGB::default(),
+                    LasDecompressionContextRGB::default(),
+                    LasDecompressionContextRGB::default(),
+                    LasDecompressionContextRGB::default()
+                ],
+                last_rgbs: [RGB::default(); 4],
                 last_context_used: 0,
             }
         }
     }
+
 
     impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasRGBDecompressor {
         fn size_of_field(&self) -> usize {
@@ -784,8 +789,8 @@ pub mod v3 {
         last_context_used: usize,
     }
 
-    impl LasRGBCompressor {
-        pub fn new() -> Self {
+    impl Default for LasRGBCompressor {
+        fn default() -> Self {
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
                 rgb_has_changed: false,
@@ -818,7 +823,7 @@ pub mod v3 {
             let current_point = RGB::unpack_from(buf);
             let mut last_rgb = self.last_rgbs[self.last_context_used]
                 .as_mut()
-                .expect("last value is not initialized");
+                .expect("internal error: last value is not initialized");
 
             if self.last_context_used != *context {
                 if self.contexts[*context].is_none() {
@@ -834,19 +839,25 @@ pub mod v3 {
             }
             let models = self.contexts[self.last_context_used]
                 .as_mut()
-                .expect("context is not initialized");
+                .expect("internal error: context is not initialized");
             v2::compress_rgb_using(&mut self.encoder, models, &current_point, last_rgb)?;
             *last_rgb = current_point;
             Ok(())
         }
 
         fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
-            self.encoder.done()?;
-            dst.write_u32::<LittleEndian>(self.encoder.out_stream().get_ref().len() as u32)
+            if self.rgb_has_changed {
+                self.encoder.done()?;
+                dst.write_u32::<LittleEndian>(inner_buffer_len_of(&self.encoder) as u32)?;
+            }
+            Ok(())
         }
 
         fn write_layers(&mut self, dst: &mut R) -> std::io::Result<()> {
-            copy_encoder_content_to(&mut self.encoder, dst)
+            if self.rgb_has_changed {
+                copy_encoder_content_to(&mut self.encoder, dst)?;
+            }
+            Ok(())
         }
     }
 }
