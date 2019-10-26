@@ -936,10 +936,6 @@ pub mod v3 {
                 self.contexts[self.current_context].last_point.set_scanner_channel(scanner_channel as u8);
                 assert_eq!(self.contexts[self.current_context].last_point.scanner_channel(), scanner_channel as u8);
             }
-            //println!("Context we use: {}", self.current_context);
-            //for ctx in &self.contexts {
-            //println!("Last pts for ctx: {:?}", ctx.last_point);
-            //}
 
             let point_source_changed = is_nth_bit_set!(changed_values, 5);
             let gps_time_changed = is_nth_bit_set!(changed_values, 4);
@@ -1343,7 +1339,6 @@ pub mod v3 {
         fn compress_gps_time(&mut self, gps_time: GpsTime) -> std::io::Result<()> {
             let the_context = &mut self.contexts[self.current_context];
             if the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] == 0 {
-                ////println!("Last diff was 0");
                 // if the last integer difference was zero
                 // calculate the difference between the two doubles as an integer
                 let curr_gps_time_diff_64 = i64::from(gps_time)
@@ -1416,7 +1411,6 @@ pub mod v3 {
                         gps_time;
                 }
             } else {
-                ////println!("Last diff was not 0");
                 // the last integer difference was *not* zero
                 let curr_gps_time_diff_64 = i64::from(gps_time)
                     - i64::from(
@@ -1425,7 +1419,6 @@ pub mod v3 {
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
 
                 if curr_gps_time_diff_64 == i64::from(curr_gps_time_diff) {
-                    ////println!("diff encodable with 32 bits");
                     // if the current gps_time difference can be represented with 32 bits
                     let multi_f = (curr_gps_time_diff as f32)
                         / (the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]
@@ -1634,7 +1627,6 @@ pub mod v3 {
             let scanner_channel = current_point.scanner_channel();
             let scanner_channel_changed = scanner_channel != self.current_context as u8;
 
-            //println!("New context: {}, old context: {}", scanner_channel, self.current_context);
             if scanner_channel_changed && !self.contexts[scanner_channel as usize].unused {
                 last_point = &mut self.last_values[scanner_channel as usize];
             }
@@ -1697,9 +1689,7 @@ pub mod v3 {
                 self.current_context = scanner_channel as usize;
                 *context = self.current_context;
             }
-            //println!("The last point we gonna use :{:?}", last_point);
             let the_context = &mut self.contexts[self.current_context];
-            //println!("The last intensities: {:?}", the_context.last_intensities);
 
 
             // if number of returns is different we compress it
@@ -1755,7 +1745,6 @@ pub mod v3 {
             // Compress Y
             let k_bits = the_context.compressors.dx.k();
             let median = the_context.last_y_diff_median5[idx].get();
-            //println!("Median {}, diff {}", median, diff);
             let diff = current_point.y().wrapping_sub(last_point.y);
             let context = (n == 1) as u32
                 + if k_bits < 20 {
@@ -1810,7 +1799,6 @@ pub mod v3 {
                 current_point.classification_flags() |
                     (current_point.scan_direction_flag() as u8) << 4 |
                     (current_point.edge_of_flight_line() as u8) << 5;
-            //println!("new flag: {}, last_flag: {}", flags, last_flags);
             if last_flags != flags {
                 self.has_changed.flags = true;
             }
@@ -1926,7 +1914,6 @@ pub mod v3 {
         }
 
         fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
-            //println!("Has changed: {:?}", self.has_changed);
             macro_rules! copy_encoder_content_if_has_changed {
                 ($name:ident) => {
                     if self.has_changed.$name {
