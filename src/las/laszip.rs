@@ -24,9 +24,9 @@ use crate::record::{
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
-pub const LASZIP_USER_ID: &'static str = "laszip encoded";
+pub const LASZIP_USER_ID: &str = "laszip encoded";
 pub const LASZIP_RECORD_ID: u16 = 22204;
-pub const LASZIP_DESCRIPTION: &'static str = "http://laszip.org";
+pub const LASZIP_DESCRIPTION: &str = "http://laszip.org";
 
 #[derive(Debug, Copy, Clone)]
 struct Version {
@@ -98,7 +98,6 @@ impl From<LazItemType> for u16 {
         }
     }
 }
-
 
 /// Struct stored as part of the laszip's vlr record_data
 ///
@@ -307,11 +306,13 @@ pub struct LazVlr {
 
 impl LazVlr {
     pub fn from_laz_items(items: Vec<LazItem>) -> Self {
-        let first_item = items.first().expect("Vec<LazItem> should at least have one element");
+        let first_item = items
+            .first()
+            .expect("Vec<LazItem> should at least have one element");
         let compressor = match first_item.version {
-            1 | 2  => CompressorType::PointWiseChunked,
+            1 | 2 => CompressorType::PointWiseChunked,
             3 | 4 => CompressorType::LayeredChunked,
-            _ => panic!("Unknown laz_item version")
+            _ => panic!("Unknown laz_item version"),
         };
         Self {
             compressor,
@@ -432,8 +433,10 @@ impl LazVlrBuilder {
 fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
     items: &Vec<LazItem>,
     input: R,
-) -> Result<Box<dyn RecordDecompressor<R> + 'a>, LasZipError>{
-    let first_item = items.get(0).expect("There should be at least one LazItem to be able to create a RecordDecompressor");
+) -> Result<Box<dyn RecordDecompressor<R> + 'a>, LasZipError> {
+    let first_item = items
+        .get(0)
+        .expect("There should be at least one LazItem to be able to create a RecordDecompressor");
 
     let mut decompressor = match first_item.version {
         1 | 2 => {
@@ -444,7 +447,12 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
             let decompressor = LayeredPointRecordDecompressor::new(input);
             Box::new(decompressor) as Box<dyn RecordDecompressor<R>>
         }
-        _ => return Err(LasZipError::UnsupportedLazItemVersion(first_item.item_type, first_item.version))
+        _ => {
+            return Err(LasZipError::UnsupportedLazItemVersion(
+                first_item.item_type,
+                first_item.version,
+            ))
+        }
     };
 
     decompressor.set_fields_from(items)?;
@@ -455,7 +463,9 @@ pub fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     items: &Vec<LazItem>,
     output: W,
 ) -> Result<Box<dyn RecordCompressor<W> + 'a>, LasZipError> {
-    let first_item = items.get(0).expect("There should be at least one LazItem to be able to create a RecordCompressor");
+    let first_item = items
+        .get(0)
+        .expect("There should be at least one LazItem to be able to create a RecordCompressor");
 
     let mut compressor = match first_item.version {
         1 | 2 => {
@@ -466,7 +476,12 @@ pub fn record_compressor_from_laz_items<'a, W: Write + 'a>(
             let compressor = LayeredPointRecordCompressor::new(output);
             Box::new(compressor) as Box<dyn RecordCompressor<W>>
         }
-        _ => return Err(LasZipError::UnsupportedLazItemVersion(first_item.item_type, first_item.version))
+        _ => {
+            return Err(LasZipError::UnsupportedLazItemVersion(
+                first_item.item_type,
+                first_item.version,
+            ))
+        }
     };
     compressor.set_fields_from(items)?;
     Ok(compressor)
@@ -802,14 +817,17 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     }
 }
 
-
-pub fn compress_all<W: Write + Seek>(dst: &mut W, uncompressed_points_buf: &[u8], laz_vlr: LazVlr) -> Result<(), LasZipError> {
+pub fn compress_all<W: Write + Seek>(
+    dst: &mut W,
+    uncompressed_points_buf: &[u8],
+    laz_vlr: LazVlr,
+) -> Result<(), LasZipError> {
     let mut compressor = LasZipCompressor::from_laz_vlr(dst, laz_vlr)?;
     let point_size = compressor.vlr().items_size() as usize;
     if uncompressed_points_buf.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize{
-                buffer_len: uncompressed_points_buf.len(),
-                point_size,
+        Err(LasZipError::BufferLenNotMultipleOfPointSize {
+            buffer_len: uncompressed_points_buf.len(),
+            point_size,
         })
     } else {
         for current_point_bytes in uncompressed_points_buf.chunks_exact(point_size) {
@@ -819,9 +837,6 @@ pub fn compress_all<W: Write + Seek>(dst: &mut W, uncompressed_points_buf: &[u8]
         Ok(())
     }
 }
-
-
-
 
 #[cfg(feature = "parallel")]
 pub fn par_compress_all<W: Write + Seek>(
@@ -851,8 +866,10 @@ pub fn par_compress_all<W: Write + Seek>(
         let chunks = all_slices
             .into_par_iter()
             .map(|slc| {
-                let mut record_compressor =
-                    record_compressor_from_laz_items(&laz_vlr.items, Cursor::new(Vec::<u8>::new()))?;
+                let mut record_compressor = record_compressor_from_laz_items(
+                    &laz_vlr.items,
+                    Cursor::new(Vec::<u8>::new()),
+                )?;
 
                 for raw_point in slc.chunks_exact(point_size) {
                     record_compressor.compress_next(raw_point)?;

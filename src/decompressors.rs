@@ -72,7 +72,7 @@ impl IntegerDecompressor {
             corr_range = range;
 
             while range != 0 {
-                range = range >> 1;
+                range >>= 1;
                 corr_bits += 1;
             }
             if corr_range == 1u32 << (corr_bits - 1) {

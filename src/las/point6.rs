@@ -4,50 +4,50 @@ use crate::las::gps::GpsTime;
 use crate::packers::Packable;
 
 fn u32_zero_bit_0(n: u32) -> u32 {
-    n & 0xFFFFFFFE
+    n & 0xFFFF_FFFE
 }
 
 pub struct DecompressionSelector(u32);
 
 impl DecompressionSelector {
     pub fn decompress_all() -> Self {
-        Self { 0: 0xFFFFFFFF }
+        Self { 0: 0xFFFF_FFFF }
     }
 
     pub fn channel_returns_xy_requested(&self) -> bool {
-        self.is_set(0x00000000)
+        self.is_set(0x0000_0000)
     }
 
     pub fn z_requested(&self) -> bool {
-        self.is_set(0x00000001)
+        self.is_set(0x0000_0001)
     }
 
     pub fn classification_requested(&self) -> bool {
-        self.is_set(0x00000002)
+        self.is_set(0x0000_0002)
     }
 
     pub fn flags_requested(&self) -> bool {
-        self.is_set(0x00000004)
+        self.is_set(0x0000_0004)
     }
 
     pub fn intensity_requested(&self) -> bool {
-        self.is_set(0x00000008)
+        self.is_set(0x0000_0008)
     }
 
     pub fn scan_angle_requested(&self) -> bool {
-        self.is_set(0x00000010)
+        self.is_set(0x0000_0010)
     }
 
     pub fn user_data_requested(&self) -> bool {
-        self.is_set(0x00000020)
+        self.is_set(0x0000_0020)
     }
 
     pub fn point_source_requested(&self) -> bool {
-        self.is_set(0x00000040)
+        self.is_set(0x0000_0040)
     }
 
     pub fn gps_time_requested(&self) -> bool {
-        self.is_set(0x00000080)
+        self.is_set(0x0000_0080)
     }
 
     fn is_set(&self, mask: u32) -> bool {
@@ -150,11 +150,11 @@ impl LasPoint6 for Point6 {
     }
 
     fn return_number(&self) -> u8 {
-        self.bit_fields & 0b00001111
+        self.bit_fields & 0b0000_1111
     }
 
     fn number_of_returns_of_given_pulse(&self) -> u8 {
-        (self.bit_fields & 0b11110000) >> 4
+        (self.bit_fields & 0b1111_0000) >> 4
     }
 
     fn flags(&self) -> u8 {
@@ -162,19 +162,19 @@ impl LasPoint6 for Point6 {
     }
 
     fn classification_flags(&self) -> u8 {
-        self.flags & 0b00001111
+        self.flags & 0b0000_1111
     }
 
     fn scanner_channel(&self) -> u8 {
-        (self.flags & 0b00110000) >> 4
+        (self.flags & 0b0011_0000) >> 4
     }
 
     fn scan_direction_flag(&self) -> bool {
-        self.flags & 0b01000000 != 0
+        self.flags & 0b0100_0000 != 0
     }
 
     fn edge_of_flight_line(&self) -> bool {
-        self.flags & 0b10000000 != 0
+        self.flags & 0b1000_0000 != 0
     }
 
     fn classification(&self) -> u8 {
@@ -222,18 +222,18 @@ impl LasPoint6 for Point6 {
     }
 
     fn set_number_of_returns(&mut self, new_val: u8) {
-        self.bit_fields ^= self.bit_fields & 0b11110000;
-        self.bit_fields |= (new_val << 4) & 0b11110000;
+        self.bit_fields ^= self.bit_fields & 0b1111_0000;
+        self.bit_fields |= (new_val << 4) & 0b1111_0000;
     }
 
     fn set_return_number(&mut self, new_val: u8) {
-        self.bit_fields ^= self.bit_fields & 0b00001111;
-        self.bit_fields |= new_val & 0b00001111;
+        self.bit_fields ^= self.bit_fields & 0b0000_1111;
+        self.bit_fields |= new_val & 0b0000_1111;
     }
 
     fn set_scanner_channel(&mut self, new_val: u8) {
-        self.flags ^= self.flags & 0b00110000;
-        self.flags |= (new_val << 4) & 0b00110000;
+        self.flags ^= self.flags & 0b0011_0000;
+        self.flags |= (new_val << 4) & 0b0011_0000;
     }
 
     fn set_classification(&mut self, new_val: u8) {
@@ -345,16 +345,19 @@ pub mod v3 {
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
     use crate::compressors::{
-        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
+        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
+        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
     };
     use crate::encoders::ArithmeticEncoder;
     use crate::las::gps::{GpsTime, LasGpsTime};
-    use crate::las::point6::{DecompressionSelector, LasPoint6, Point6, u32_zero_bit_0};
-    use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to, i32_quantize, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX, read_and_unpack, StreamingMedian};
+    use crate::las::point6::{u32_zero_bit_0, DecompressionSelector, LasPoint6, Point6};
+    use crate::las::utils::{
+        copy_bytes_into_decoder, copy_encoder_content_to, i32_quantize, read_and_unpack,
+        StreamingMedian, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX,
+    };
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
@@ -399,16 +402,15 @@ pub mod v3 {
         fn default() -> Self {
             Self {
                 changed_values: (0..8)
-                    .into_iter()
                     .map(|_| ArithmeticModelBuilder::new(128).build())
                     .collect(),
                 scanner_channel: ArithmeticModelBuilder::new(3).build(),
-                number_of_returns: (0..16).into_iter().map(|_| None).collect(),
-                return_number: (0..16).into_iter().map(|_| None).collect(),
+                number_of_returns: (0..16).map(|_| None).collect(),
+                return_number: (0..16).map(|_| None).collect(),
                 return_number_gps_same: ArithmeticModelBuilder::new(13).build(),
-                classification: (0..64).into_iter().map(|_| None).collect(),
-                classification_flags: (0..64).into_iter().map(|_| None).collect(),
-                user_data: (0..64).into_iter().map(|_| None).collect(),
+                classification: (0..64).map(|_| None).collect(),
+                classification_flags: (0..64).map(|_| None).collect(),
+                user_data: (0..64).map(|_| None).collect(),
                 gps_time_multi: ArithmeticModelBuilder::new(LASZIP_GPS_TIME_MULTI_TOTAL as u32)
                     .build(),
                 gps_time_no_diff: ArithmeticModelBuilder::new(5).build(),
@@ -718,13 +720,13 @@ pub mod v3 {
                     let next_gps_time = &mut the_context.gps_sequences.last_gps_times
                         [the_context.gps_sequences.next];
 
-                    next_gps_time.value = the_context.decompressors.gps_time.decompress(
+                    next_gps_time.value = i64::from(the_context.decompressors.gps_time.decompress(
                         &mut self.decoders.gps_time,
                         (last_gps_time >> 32) as i32,
                         8,
-                    )? as i64;
+                    )?);
                     next_gps_time.value <<= 32;
-                    next_gps_time.value |= self.decoders.gps_time.read_int()? as i64;
+                    next_gps_time.value |= i64::from(self.decoders.gps_time.read_int()?);
                     the_context.gps_sequences.last = the_context.gps_sequences.next;
                     the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] = 0;
                     the_context.gps_sequences.multi_extreme_counter
@@ -743,12 +745,12 @@ pub mod v3 {
                     as i32;
                 if multi == 1 {
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last] +=
-                        the_context.decompressors.gps_time.decompress(
+                        i64::from(the_context.decompressors.gps_time.decompress(
                             &mut self.decoders.gps_time,
                             the_context.gps_sequences.last_gps_diffs
                                 [the_context.gps_sequences.last],
                             1,
-                        )? as i64;
+                        )?);
                     the_context.gps_sequences.multi_extreme_counter
                         [the_context.gps_sequences.last] = 0;
                 } else if multi < LASZIP_GPS_TIME_MULTI_CODE_FULL {
@@ -795,7 +797,7 @@ pub mod v3 {
                             &mut self.decoders.gps_time,
                             LASZIP_GPS_TIME_MULTI
                                 * the_context.gps_sequences.last_gps_diffs
-                                [the_context.gps_sequences.last],
+                                    [the_context.gps_sequences.last],
                             4,
                         )?;
                         the_context.gps_sequences.multi_extreme_counter
@@ -825,7 +827,7 @@ pub mod v3 {
                                 &mut self.decoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI_MINUS
                                     * the_context.gps_sequences.last_gps_diffs
-                                    [the_context.gps_sequences.last],
+                                        [the_context.gps_sequences.last],
                                 6,
                             )?;
                             the_context.gps_sequences.multi_extreme_counter
@@ -847,14 +849,14 @@ pub mod v3 {
                     the_context.gps_sequences.next = (the_context.gps_sequences.next + 1) & 3;
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next] =
                         GpsTime::from(
-                            the_context.decompressors.gps_time.decompress(
+                            i64::from(the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
                                 (the_context.gps_sequences.last_gps_times
                                     [the_context.gps_sequences.last]
                                     .value
                                     >> 32) as i32,
                                 8,
-                            )? as i64,
+                            )?),
                         );
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next]
                         .value <<= 32;
@@ -933,8 +935,15 @@ pub mod v3 {
                 self.current_context = scanner_channel;
                 *context = self.current_context;
 
-                self.contexts[self.current_context].last_point.set_scanner_channel(scanner_channel as u8);
-                assert_eq!(self.contexts[self.current_context].last_point.scanner_channel(), scanner_channel as u8);
+                self.contexts[self.current_context]
+                    .last_point
+                    .set_scanner_channel(scanner_channel as u8);
+                assert_eq!(
+                    self.contexts[self.current_context]
+                        .last_point
+                        .scanner_channel(),
+                    scanner_channel as u8
+                );
             }
 
             let point_source_changed = is_nth_bit_set!(changed_values, 5);
@@ -960,18 +969,18 @@ pub mod v3 {
                             .get_or_insert_with(|| ArithmeticModelBuilder::new(16).build()),
                     )?;
                 } else {
-                    n = last_n as u32;
+                    n = u32::from(last_n);
                 }
                 last_point.set_number_of_returns(n as u8);
 
                 // how is the return number different
                 let r: u32;
                 if changed_values & 3 == 0 {
-                    r = last_r as u32;
+                    r = u32::from(last_r);
                 } else if changed_values & 3 == 1 {
-                    r = ((last_r + 1) % 16) as u32;
+                    r = u32::from((last_r + 1) % 16);
                 } else if changed_values & 3 == 2 {
-                    r = ((last_r + 15) % 16) as u32;
+                    r = u32::from((last_r + 15) % 16);
                 } else {
                     // The return number is bigger than +1 / -1 so we decompress how it is different
                     if gps_time_changed {
@@ -984,7 +993,7 @@ pub mod v3 {
                             .decoders
                             .channel_returns_xy
                             .decode_symbol(&mut the_context.models.return_number_gps_same)?;
-                        r = (last_r as u32 + (sym + 2)) % 16;
+                        r = (u32::from(last_r) + (sym + 2)) % 16;
                     }
                 }
                 last_point.set_return_number(r as u8);
@@ -1001,7 +1010,7 @@ pub mod v3 {
                 let mut diff: i32;
 
                 // Decompress X
-                let idx = usize::from((m << 1) | (gps_time_changed as usize));
+                let idx = (m << 1) | (gps_time_changed as usize);
                 median = the_context.last_x_diff_median5[idx].get();
                 diff = the_context.decompressors.dx.decompress(
                     &mut self.decoders.channel_returns_xy,
@@ -1012,7 +1021,7 @@ pub mod v3 {
                 the_context.last_x_diff_median5[idx].add(diff);
 
                 // Decompress Y
-                let idx = usize::from((m << 1) | (gps_time_changed as usize));
+                let idx = (m << 1) | (gps_time_changed as usize);
                 median = the_context.last_y_diff_median5[idx].get();
                 k_bits = the_context.decompressors.dx.k();
                 let mut context = if n == 1 { 1 } else { 0 };
@@ -1072,15 +1081,15 @@ pub mod v3 {
                     // FIXME
                     last_point.flags = ((flags >> 5 & 1) << 7
                         | (flags >> 4 & 1) << 6
-                        | ((last_point.scanner_channel() << 4) & 0b00110000) as u32
-                        | (flags & 0b00001111)) as u8;
+                        | ((last_point.scanner_channel() << 4) & 0b0011_0000) as u32
+                        | (flags & 0b0000_1111)) as u8;
                 }
 
                 if self.should_decompress.intensity {
                     let idx = (cpr << 1 | (gps_time_changed as u32)) as usize;
                     last_point.intensity = the_context.decompressors.intensity.decompress(
                         &mut self.decoders.intensity,
-                        the_context.last_intensities[idx] as i32,
+                        i32::from(the_context.last_intensities[idx]),
                         cpr,
                     )? as u16;
                     the_context.last_intensities[idx] = last_point.intensity;
@@ -1089,7 +1098,7 @@ pub mod v3 {
                 if self.should_decompress.scan_angle && scan_angle_changed {
                     last_point.scan_angle_rank = the_context.decompressors.scan_angle.decompress(
                         &mut self.decoders.scan_angle,
-                        last_point.scan_angle_rank as i32,
+                        i32::from(last_point.scan_angle_rank),
                         gps_time_changed as u32,
                     )? as u16;
                 }
@@ -1105,7 +1114,7 @@ pub mod v3 {
                 if self.should_decompress.point_source && point_source_changed {
                     last_point.point_source_id = the_context.decompressors.source_id.decompress(
                         &mut self.decoders.point_source,
-                        last_point.point_source_id as i32,
+                        i32::from(last_point.point_source_id),
                         DEFAULT_DECOMPRESS_CONTEXTS,
                     )? as u16;
                 }
@@ -1303,7 +1312,6 @@ pub mod v3 {
         }
     }
 
-
     pub struct LasPoint6Compressor {
         encoders: Point6Encoders,
         has_changed: Point6FieldFlags,
@@ -1343,8 +1351,8 @@ pub mod v3 {
                 // calculate the difference between the two doubles as an integer
                 let curr_gps_time_diff_64 = i64::from(gps_time)
                     - i64::from(
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
-                );
+                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                    );
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
                 if i64::from(curr_gps_time_diff) == curr_gps_time_diff_64 {
                     // the difference can be represented with 32 bits
@@ -1414,15 +1422,15 @@ pub mod v3 {
                 // the last integer difference was *not* zero
                 let curr_gps_time_diff_64 = i64::from(gps_time)
                     - i64::from(
-                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
-                );
+                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                    );
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
 
                 if curr_gps_time_diff_64 == i64::from(curr_gps_time_diff) {
                     // if the current gps_time difference can be represented with 32 bits
                     let multi_f = (curr_gps_time_diff as f32)
                         / (the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last]
-                        as f32);
+                            as f32);
                     let multi = i32_quantize(multi_f);
 
                     // compress the residual curr_gps_time_diff in dependence on the multiplier
@@ -1466,7 +1474,7 @@ pub mod v3 {
                                 &mut self.encoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI
                                     * the_context.gps_sequences.last_gps_diffs
-                                    [the_context.gps_sequences.last],
+                                        [the_context.gps_sequences.last],
                                 curr_gps_time_diff,
                                 4,
                             )?;
@@ -1505,7 +1513,7 @@ pub mod v3 {
                                 &mut self.encoders.gps_time,
                                 LASZIP_GPS_TIME_MULTI_MINUS
                                     * the_context.gps_sequences.last_gps_diffs
-                                    [the_context.gps_sequences.last],
+                                        [the_context.gps_sequences.last],
                                 curr_gps_time_diff,
                                 6,
                             )?;
@@ -1544,9 +1552,9 @@ pub mod v3 {
                     for i in 1..4 {
                         let other_gps_time_diff_64 = i64::from(gps_time)
                             - i64::from(
-                            the_context.gps_sequences.last_gps_times
-                                [(the_context.gps_sequences.last + i) & 3],
-                        );
+                                the_context.gps_sequences.last_gps_times
+                                    [(the_context.gps_sequences.last + i) & 3],
+                            );
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if other_gps_time_diff_64 == i64::from(other_gps_time_diff) {
                             // it belongs to this sequence
@@ -1632,8 +1640,7 @@ pub mod v3 {
             }
 
             // determine changed attributes
-            let point_source_changed =
-                last_point.point_source_id != current_point.point_source_id;
+            let point_source_changed = last_point.point_source_id != current_point.point_source_id;
             let gps_time_changed = last_point.gps_time != current_point.gps_time;
             let scan_angle_changed = last_point.scan_angle_rank != current_point.scan_angle_rank;
 
@@ -1644,8 +1651,7 @@ pub mod v3 {
             let r = current_point.return_number();
 
             // create the 7 bit mask that encodes various changes (its value ranges from 0 to 127)
-            let mut changed_values =
-                ((scanner_channel_changed as i32) << 6) | // scanner channel compared to last point (same = 0 / different = 1)
+            let mut changed_values = ((scanner_channel_changed as i32) << 6) | // scanner channel compared to last point (same = 0 / different = 1)
                     ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
                     ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
                     ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
@@ -1667,13 +1673,12 @@ pub mod v3 {
                 changed_values as u32,
             )?;
 
-
             if scanner_channel_changed {
-                let diff = scanner_channel as i32 - self.current_context as i32;
+                let diff = i32::from(scanner_channel) - self.current_context as i32;
                 let symbol = if diff > 0 {
-                    i32::from(diff - 1)
+                    diff - 1
                 } else {
-                    i32::from(diff + 4 - 1)
+                    diff + 4 - 1
                 };
                 self.encoders.channel_returns_xy.encode_symbol(
                     &mut self.contexts[self.current_context].models.scanner_channel,
@@ -1681,8 +1686,7 @@ pub mod v3 {
                 )?;
 
                 if self.contexts[scanner_channel as usize].unused {
-                    self.contexts[scanner_channel as usize]
-                        .init_from_last(last_point);
+                    self.contexts[scanner_channel as usize].init_from_last(last_point);
                     self.last_values[scanner_channel as usize] = *last_point;
                     last_point = &mut self.last_values[scanner_channel as usize];
                 }
@@ -1690,7 +1694,6 @@ pub mod v3 {
                 *context = self.current_context;
             }
             let the_context = &mut self.contexts[self.current_context];
-
 
             // if number of returns is different we compress it
             if (changed_values & (1 << 2)) != 0 {
@@ -1748,10 +1751,10 @@ pub mod v3 {
             let diff = current_point.y().wrapping_sub(last_point.y);
             let context = (n == 1) as u32
                 + if k_bits < 20 {
-                u32_zero_bit_0(k_bits)
-            } else {
-                20
-            };
+                    u32_zero_bit_0(k_bits)
+                } else {
+                    20
+                };
             the_context.compressors.dy.compress(
                 &mut self.encoders.channel_returns_xy,
                 median,
@@ -1764,10 +1767,10 @@ pub mod v3 {
             let k_bits = (the_context.compressors.dx.k() + the_context.compressors.dy.k()) / 2;
             let context = (n == 1) as u32
                 + if k_bits < 18 {
-                u32_zero_bit_0(k_bits)
-            } else {
-                18
-            };
+                    u32_zero_bit_0(k_bits)
+                } else {
+                    18
+                };
             the_context.compressors.z.compress(
                 &mut self.encoders.z,
                 the_context.last_z[l as usize],
@@ -1791,14 +1794,12 @@ pub mod v3 {
                 .encode_symbol(model, u32::from(classification))?;
 
             // Compress flags
-            let last_flags =
-                last_point.classification_flags() |
-                    (last_point.scan_direction_flag() as u8) << 4 |
-                    (last_point.edge_of_flight_line() as u8) << 5;
-            let flags =
-                current_point.classification_flags() |
-                    (current_point.scan_direction_flag() as u8) << 4 |
-                    (current_point.edge_of_flight_line() as u8) << 5;
+            let last_flags = last_point.classification_flags()
+                | (last_point.scan_direction_flag() as u8) << 4
+                | (last_point.edge_of_flight_line() as u8) << 5;
+            let flags = current_point.classification_flags()
+                | (current_point.scan_direction_flag() as u8) << 4
+                | (current_point.edge_of_flight_line() as u8) << 5;
             if last_flags != flags {
                 self.has_changed.flags = true;
             }
@@ -1813,9 +1814,8 @@ pub mod v3 {
             }
             the_context.compressors.intensity.compress(
                 &mut self.encoders.intensity,
-                the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize]
-                    as i32,
-                current_point.intensity() as i32,
+                i32::from(the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize]),
+                i32::from(current_point.intensity),
                 cpr,
             )?;
             the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize] =
@@ -1826,14 +1826,14 @@ pub mod v3 {
                 self.has_changed.scan_angle = true;
                 the_context.compressors.scan_angle.compress(
                     &mut self.encoders.scan_angle,
-                    last_point.scan_angle_rank as i32,
-                    current_point.scan_angle_rank() as i32,
+                    i32::from(last_point.scan_angle_rank),
+                    i32::from(current_point.scan_angle_rank),
                     gps_time_changed as u32,
                 )?;
             }
 
             // Compress user data
-            if last_point.user_data != current_point.user_data() {
+            if last_point.user_data != current_point.user_data {
                 self.has_changed.user_data = true;
             }
 
@@ -1841,15 +1841,15 @@ pub mod v3 {
                 .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
             self.encoders
                 .user_data
-                .encode_symbol(model, u32::from(current_point.user_data()))?;
+                .encode_symbol(model, u32::from(current_point.user_data))?;
 
             // Compress point source id
             if point_source_changed {
                 self.has_changed.point_source = true;
                 the_context.compressors.source_id.compress(
                     &mut self.encoders.point_source,
-                    last_point.point_source_id as i32,
-                    current_point.point_source_id() as i32,
+                    i32::from(last_point.point_source_id),
+                    i32::from(current_point.point_source_id),
                     DEFAULT_COMPRESS_CONTEXTS,
                 )?;
             }
@@ -1881,7 +1881,7 @@ pub mod v3 {
                     } else {
                         0
                     }
-                }
+                };
             }
             self.encoders.channel_returns_xy.done()?;
             self.encoders.z.done()?;

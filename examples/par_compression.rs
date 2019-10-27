@@ -1,4 +1,3 @@
-
 #[cfg(feature = "parallel")]
 fn main() {
     use laz::las::file::QuickHeader;
@@ -24,8 +23,7 @@ fn main() {
     par_compress_all(&mut compression_out_put, &all_points, &laz_vlr).unwrap();
 
     compression_out_put.set_position(0);
-    let mut decompressor =
-        LasZipDecompressor::new(compression_out_put, laz_vlr).unwrap();
+    let mut decompressor = LasZipDecompressor::new(compression_out_put, laz_vlr).unwrap();
 
     las_file
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))

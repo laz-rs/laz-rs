@@ -106,11 +106,9 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
                     LazItemType::RGB12 => {
                         self.add_field_decompressor(las::v1::LasRGBDecompressor::default())
                     }
-                    LazItemType::Byte(_) => {
-                        self.add_field_decompressor(
-                            las::v1::LasExtraByteDecompressor::new(record_item.size as usize),
-                        )
-                    }
+                    LazItemType::Byte(_) => self.add_field_decompressor(
+                        las::v1::LasExtraByteDecompressor::new(record_item.size as usize),
+                    ),
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,
@@ -128,11 +126,9 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
                     LazItemType::RGB12 => {
                         self.add_field_decompressor(las::v2::LasRGBDecompressor::default())
                     }
-                    LazItemType::Byte(_) => {
-                        self.add_field_decompressor(
-                            las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
-                        )
-                    }
+                    LazItemType::Byte(_) => self.add_field_decompressor(
+                        las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
+                    ),
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,
@@ -528,7 +524,7 @@ impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
         }
     }
 
-    pub fn add_field_compressor<T: LayeredFieldCompressor<W> +'a >(&mut self, field: T) {
+    pub fn add_field_compressor<T: LayeredFieldCompressor<W> + 'a>(&mut self, field: T) {
         self.point_size += field.size_of_field();
         self.field_compressors.push(Box::new(field));
     }
@@ -628,8 +624,3 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
         self.dst
     }
 }
-
-
-
-
-

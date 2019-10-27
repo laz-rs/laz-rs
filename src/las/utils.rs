@@ -32,7 +32,6 @@ use crate::packers::Packable;
 use num_traits::Zero;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
-
 #[derive(Copy, Clone)]
 pub struct StreamingMedian<T: Zero + Copy + PartialOrd> {
     values: [T; 5],
@@ -104,6 +103,7 @@ impl<T: Zero + Copy + PartialOrd> StreamingMedian<T> {
     }
 }
 
+
 #[inline]
 pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
 where
@@ -117,6 +117,12 @@ where
 #[inline]
 pub(crate) fn u32_zero_bit(n: u32) -> u32 {
     n & 0xFF_FF_FF_FEu32
+}
+
+#[inline]
+pub(crate) fn u8_clamp(n: i32) -> u8 {
+    use num_traits::clamp;
+    clamp(n, i32::from(std::u8::MIN), i32::from(std::u8::MAX)) as u8
 }
 
 #[inline(always)]
@@ -200,7 +206,6 @@ macro_rules! is_nth_bit_set {
         ($sym & (1 << $n)) != 0
     };
 }
-
 
 // for LAS files with the return (r) and the number (n) of
 // returns field correctly populated the mapping should really

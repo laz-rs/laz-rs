@@ -113,7 +113,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let mut out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
         let out_byte = out_buffer.as_mut_ptr();
 
-        let end_byte = unsafe { out_buffer.as_ptr().offset((2 * AC_BUFFER_SIZE) as isize) };
+        let end_byte = unsafe { out_buffer.as_ptr().add(2 * AC_BUFFER_SIZE) };
         Self {
             out_buffer,
             out_byte,
@@ -132,7 +132,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         self.end_byte = unsafe {
             self.out_buffer
                 .as_ptr()
-                .offset((2 * AC_BUFFER_SIZE) as isize)
+                .add(2 * AC_BUFFER_SIZE)
         };
     }
 
@@ -162,16 +162,16 @@ impl<T: Write> ArithmeticEncoder<T> {
         let endbuffer = unsafe {
             self.out_buffer
                 .as_mut_ptr()
-                .offset((2 * AC_BUFFER_SIZE) as isize)
+                .add(2 * AC_BUFFER_SIZE)
         };
         if self.end_byte != endbuffer {
             unsafe {
                 debug_assert!(
                     (self.out_byte as *const u8)
-                        < self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize)
+                        < self.out_buffer.as_ptr().add(AC_BUFFER_SIZE)
                 );
                 let slc: &[u8] = std::slice::from_raw_parts(
-                    self.out_buffer.as_ptr().offset(AC_BUFFER_SIZE as isize),
+                    self.out_buffer.as_ptr().add(AC_BUFFER_SIZE),
                     AC_BUFFER_SIZE,
                 );
                 self.out_stream.write_all(&slc)?;
@@ -288,9 +288,9 @@ impl<T: Write> ArithmeticEncoder<T> {
         debug_assert!(bits <= 32 && sym < (1u32 << bits));
 
         if bits > 19 {
-            self.write_short((sym & std::u16::MAX as u32) as u16)?;
-            sym = sym >> 16;
-            bits = bits - 16;
+            self.write_short((sym & u32::from(std::u16::MAX)) as u16)?;
+            sym >>= 16;
+            bits -= 16;
         }
 
         let init_base = self.base;
@@ -313,7 +313,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let init_base = self.base;
         self.length >>= 8;
 
-        self.base = self.base.wrapping_add(sym as u32 * self.length);
+        self.base = self.base.wrapping_add(u32::from(sym) * self.length);
         // overflow = carry
         if init_base > self.base {
             self.propagate_carry();
@@ -329,7 +329,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let init_base = self.base;
         self.length >>= 16;
 
-        self.base = self.base.wrapping_add(sym as u32 * self.length);
+        self.base = self.base.wrapping_add(u32::from(sym) * self.length);
         // overflow = carry
         if init_base > self.base {
             self.propagate_carry();
@@ -343,14 +343,14 @@ impl<T: Write> ArithmeticEncoder<T> {
 
     pub fn write_int(&mut self, sym: u32) -> std::io::Result<()> {
         // lower 16 bits
-        self.write_short((sym & 0xFFFFu32) as u16)?;
+        self.write_short((sym & 0x0000_FFFFu32) as u16)?;
         // upper 16 bits
         self.write_short((sym >> 16) as u16)
     }
 
     pub fn write_int64(&mut self, sym: u64) -> std::io::Result<()> {
         // lower 32 bits
-        self.write_int((sym & 0xFFFFFFFF) as u32)?;
+        self.write_int((sym & 0x0000_0000_FFFF_FFFF) as u32)?;
         // upper 32 bits
         self.write_int((sym >> 32) as u32)
     }
@@ -371,7 +371,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let endbuffer = unsafe {
             self.out_buffer
                 .as_mut_ptr()
-                .offset((2 * AC_BUFFER_SIZE) as isize)
+                .add(2 * AC_BUFFER_SIZE)
         };
         let mut b = if self.out_byte as *const u8 == self.out_buffer.as_ptr() {
             unsafe { endbuffer.offset(-1) }
@@ -386,7 +386,7 @@ impl<T: Write> ArithmeticEncoder<T> {
                     b = self
                         .out_buffer
                         .as_mut_ptr()
-                        .offset((2 * AC_BUFFER_SIZE) as isize)
+                        .add(2 * AC_BUFFER_SIZE)
                         .offset(-1);
                 } else {
                     b = b.offset(-1);
@@ -403,7 +403,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let endbuffer = unsafe {
             self.out_buffer
                 .as_mut_ptr()
-                .offset((2 * AC_BUFFER_SIZE) as isize)
+                .add(2 * AC_BUFFER_SIZE)
         };
         loop {
             debug_assert!(self.out_buffer.as_ptr() <= self.out_byte);
@@ -430,7 +430,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         let endbuffer = unsafe {
             self.out_buffer
                 .as_mut_ptr()
-                .offset((2 * AC_BUFFER_SIZE) as isize)
+                .add(2 * AC_BUFFER_SIZE)
         };
         if self.out_byte == endbuffer {
             self.out_byte = self.out_buffer.as_mut_ptr();
@@ -438,7 +438,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         unsafe {
             let slc: &[u8] = std::slice::from_raw_parts(self.out_byte, AC_BUFFER_SIZE);
             self.out_stream.write_all(&slc)?;
-            self.end_byte = self.out_byte.offset(AC_BUFFER_SIZE as isize);
+            self.end_byte = self.out_byte.add(AC_BUFFER_SIZE);
 
             debug_assert!(self.end_byte > self.out_byte);
             debug_assert!(self.out_byte < endbuffer);

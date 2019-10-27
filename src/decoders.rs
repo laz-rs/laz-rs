@@ -122,7 +122,7 @@ impl<T: Read> ArithmeticDecoder<T> {
         let mut v = [0u8; 4];
         self.in_stream.read_exact(&mut v)?;
 
-        self.value = (v[0] as u32) << 24 | (v[1] as u32) << 16 | (v[2] as u32) << 8 | v[3] as u32;
+        self.value = u32::from(v[0]) << 24 | u32::from(v[1]) << 16 | u32::from(v[2]) << 8 | u32::from(v[3]);
         Ok(())
     }
 
@@ -231,7 +231,7 @@ impl<T: Read> ArithmeticDecoder<T> {
     pub fn read_bits(&mut self, mut bits: u32) -> std::io::Result<u32> {
         debug_assert!(bits > 0 && (bits <= 32));
         if bits > 19 {
-            let tmp = self.read_short()? as u32;
+            let tmp = u32::from(self.read_short()?);
             bits -= 16;
             let tmpl = self.read_bits(bits)? << 16;
             Ok(tmpl | tmp)
@@ -278,20 +278,20 @@ impl<T: Read> ArithmeticDecoder<T> {
     }
 
     pub fn read_int(&mut self) -> std::io::Result<u32> {
-        let lower_int = self.read_short()?;
-        let upper_int = self.read_short()?;
-        Ok((upper_int as u32) << 16 | (lower_int) as u32)
+        let lower_int = u32::from(self.read_short()?);
+        let upper_int = u32::from(self.read_short()?);
+        Ok(upper_int << 16 | lower_int)
     }
 
     pub fn read_int_64(&mut self) -> std::io::Result<u64> {
-        let lower_int = self.read_int()? as u64;
-        let upper_int = self.read_int()? as u64;
+        let lower_int = u64::from(self.read_int()?);
+        let upper_int = u64::from(self.read_int()?);
         Ok((upper_int << 32) | lower_int)
     }
 
     fn renorm_dec_interval(&mut self) -> std::io::Result<()> {
         loop {
-            self.value = (self.value << 8) | self.in_stream.read_u8()? as u32;
+            self.value = (self.value << 8) | u32::from(self.in_stream.read_u8()?);
             self.length <<= 8;
             if self.length >= AC_MIN_LENGTH {
                 break;
