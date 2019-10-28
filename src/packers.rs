@@ -30,7 +30,6 @@ pub trait Packable {
 }
 
 impl Packable for u32 {
-
     fn unpack_from(input: &[u8]) -> Self {
         if input.len() < 4 {
             panic!("u32::unpack_from expected a slice of 4 bytes");
@@ -79,7 +78,6 @@ impl Packable for u8 {
 }
 
 impl Packable for i32 {
-
     fn unpack_from(input: &[u8]) -> Self {
         u32::unpack_from(input) as i32
     }
@@ -90,7 +88,6 @@ impl Packable for i32 {
 }
 
 impl Packable for i16 {
-
     fn unpack_from(input: &[u8]) -> Self {
         u16::unpack_from(input) as i16
     }
@@ -101,7 +98,6 @@ impl Packable for i16 {
 }
 
 impl Packable for i8 {
-
     fn unpack_from(input: &[u8]) -> Self {
         input[0] as i8
     }

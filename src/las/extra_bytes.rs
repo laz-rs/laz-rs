@@ -110,7 +110,7 @@ pub mod v1 {
                 self.last_bytes[i] = current_bytes[i];
             }
             for (diff, mut model) in self.diffs.iter().zip(self.models.iter_mut()) {
-                encoder.encode_symbol(&mut model, *diff as u32)?;
+                encoder.encode_symbol(&mut model, u32::from(*diff))?;
             }
             Ok(())
         }
@@ -130,7 +130,6 @@ pub mod v1 {
                 count,
                 diffs: vec![0u8; count],
                 models: (0..count)
-                    .into_iter()
                     .map(|_i| ArithmeticModelBuilder::new(256).build())
                     .collect(),
             }
@@ -256,7 +255,10 @@ pub mod v3 {
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
                     let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
-                    new_context.last_bytes.bytes.copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+                    new_context
+                        .last_bytes
+                        .bytes
+                        .copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
                     self.contexts[*context] = new_context;
                 }
             }
@@ -295,7 +297,6 @@ pub mod v3 {
         }
     }
 
-
     pub struct LasExtraByteCompressor {
         // Each extra bytes has is own layer, thus its own decoder
         encoders: Vec<ArithmeticEncoder<Cursor<Vec<u8>>>>,
@@ -319,13 +320,17 @@ pub mod v3 {
         }
     }
 
-
     impl<W: Write> LayeredFieldCompressor<W> for LasExtraByteCompressor {
         fn size_of_field(&self) -> usize {
             self.num_extra_bytes
         }
 
-        fn init_first_point(&mut self, dst: &mut W, first_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+        fn init_first_point(
+            &mut self,
+            dst: &mut W,
+            first_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             for eb_context in &mut self.contexts {
                 eb_context.unused = true;
             }
@@ -338,11 +343,18 @@ pub mod v3 {
             Ok(())
         }
 
-        fn compress_field_with(&mut self, current_point: &[u8], context: &mut usize) -> std::io::Result<()> {
+        fn compress_field_with(
+            &mut self,
+            current_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
             if self.last_context_used != *context {
                 if self.contexts[*context].unused {
                     let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
-                    new_context.last_bytes.bytes.copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+                    new_context
+                        .last_bytes
+                        .bytes
+                        .copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
                     self.contexts[*context] = new_context;
                 }
             }
@@ -350,8 +362,7 @@ pub mod v3 {
 
             for i in 0..self.num_extra_bytes {
                 let diff = current_point[i] - the_context.last_bytes.bytes[i];
-                self.encoders[i].encode_symbol(
-                    &mut the_context.models[i], diff as u32)?;
+                self.encoders[i].encode_symbol(&mut the_context.models[i], u32::from(diff))?;
                 if diff != 0 {
                     self.has_byte_changed[i] = true;
                     the_context.last_bytes.bytes[i] = current_point[i];

@@ -74,7 +74,7 @@ impl IntegerCompressor {
             corr_range = range;
 
             while range != 0 {
-                range = range >> 1;
+                range >>= 1;
                 corr_bits += 1;
             }
             if corr_range == (1u32 << (corr_bits - 1)) {
@@ -169,15 +169,15 @@ impl IntegerCompressor {
 
         // this loop could be replaced with more efficient code
         while c1 != 0 {
-            c1 = c1 >> 1;
-            self.k = self.k + 1;
+            c1 >>= 1;
+            self.k += 1;
         }
 
         // the number k is between 0 and corr_bits and describes the interval the corrector
         encoder.encode_symbol(m_bit, self.k)?;
         if COMPRESS_ONLY_K {
             //TODO
-            Ok(())
+            panic!("COMPRESS_ONLY_K == true is not supported");
         } else {
             if self.k != 0 {
                 // then c is either smaller than 0 or bigger than 1
@@ -208,7 +208,7 @@ impl IntegerCompressor {
                         // c1 represents the lowest k-bits_high+1 bits
                         c1 = (c & ((1u32 << k1) - 1u32) as i32) as u32;
                         // c represents the highest bits_high bits
-                        c = c >> k1 as i32;
+                        c >>= k1 as i32;
                         // compress the higher bits using a context table
                         encoder.encode_symbol(
                             &mut self.m_corrector[(self.k - 1) as usize],

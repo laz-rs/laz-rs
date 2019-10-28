@@ -106,7 +106,6 @@ impl ArithmeticModel {
     }
 
     pub fn update(&mut self) {
-        //dbg!("ArithmeticModel::update");
         //halve counts when a threshold os reached
         self.total_count += self.update_cycle;
         if self.total_count > DM_MAX_COUNT {
@@ -115,15 +114,11 @@ impl ArithmeticModel {
                 *symbol_count = (*symbol_count + 1) >> 1;
                 self.total_count += *symbol_count;
             }
-            /* for n in 0..self.symbols as usize {
-                self.symbol_count[n] = (self.symbol_count[n] + 1) >> 1;
-                self.total_count += self.symbol_count[n];
-            }*/
         }
 
         // compute cumulative distribution, decoder table
         let mut sum = 0u32;
-        let scale = 0x80000000u32 / self.total_count;
+        let scale = 0x8000_0000u32 / self.total_count;
         let mut s = 0usize;
 
         if self.compress || self.table_size == 0 {
@@ -197,7 +192,7 @@ impl ArithmeticBitModel {
         }
 
         // compute scaled bit 0 probability
-        let scale = 0x80000000u32 / self.bit_count;
+        let scale = 0x8000_0000u32 / self.bit_count;
         self.bit_0_prob = (self.bit_0_count * scale) >> (31 - BM_LENGTH_SHIFT);
 
         // set frequency of model updates

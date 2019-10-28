@@ -198,7 +198,6 @@ impl LasPoint0 for Point0 {
 }
 
 impl Packable for Point0 {
-
     fn unpack_from(input: &[u8]) -> Self {
         if input.len() < 20 {
             panic!("Point10::unpack_from expected buffer of 20 bytes");
@@ -306,11 +305,11 @@ pub mod v1 {
     use std::io::{Read, Write};
 
     use crate::compressors::{
-        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
+        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
+        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
     };
     use crate::encoders::ArithmeticEncoder;
     use crate::las::point0::LasPoint0;
@@ -331,14 +330,12 @@ pub mod v1 {
                 } else {
                     *diff_array.get_unchecked(0)
                 }
+            } else if diff_array.get_unchecked(0) < diff_array.get_unchecked(2) {
+                *diff_array.get_unchecked(0)
+            } else if diff_array.get_unchecked(1) < diff_array.get_unchecked(2) {
+                *diff_array.get_unchecked(2)
             } else {
-                if diff_array.get_unchecked(0) < diff_array.get_unchecked(2) {
-                    *diff_array.get_unchecked(0)
-                } else if diff_array.get_unchecked(1) < diff_array.get_unchecked(2) {
-                    *diff_array.get_unchecked(2)
-                } else {
-                    *diff_array.get_unchecked(1)
-                }
+                *diff_array.get_unchecked(1)
             }
         }
     }
@@ -393,9 +390,9 @@ pub mod v1 {
                     .bits(16)
                     .build_initialized(),
                 changed_values_model: ArithmeticModelBuilder::new(64).build(),
-                bit_byte_models: (0..256).into_iter().map(|_| None).collect(),
-                classification_models: (0..256).into_iter().map(|_| None).collect(),
-                user_data_models: (0..256).into_iter().map(|_| None).collect(),
+                bit_byte_models: (0..256).map(|_| None).collect(),
+                classification_models: (0..256).map(|_| None).collect(),
+                user_data_models: (0..256).map(|_| None).collect(),
             }
         }
     }
@@ -454,9 +451,9 @@ pub mod v1 {
                     .build_initialized(),
                 ic_point_source_id: IntegerCompressorBuilder::new().bits(16).build_initialized(),
                 changed_values_model: ArithmeticModelBuilder::new(64).build(),
-                bit_byte_models: (0..256).into_iter().map(|_| None).collect(),
-                classification_models: (0..256).into_iter().map(|_| None).collect(),
-                user_data_models: (0..256).into_iter().map(|_| None).collect(),
+                bit_byte_models: (0..256).map(|_| None).collect(),
+                classification_models: (0..256).map(|_| None).collect(),
+                user_data_models: (0..256).map(|_| None).collect(),
             }
         }
     }
@@ -497,8 +494,8 @@ pub mod v1 {
             let k_bits = (k_bits + self.ic_dy.k()) / 2;
             self.ic_dz.compress(
                 encoder,
-                self.last_point.z(),
-                current_point.z(),
+                self.last_point.z,
+                current_point.z,
                 if k_bits < 19 { k_bits } else { 19 },
             )?;
 
@@ -508,18 +505,18 @@ pub mod v1 {
                 | ((self.last_point.bit_fields() != current_point.bit_fields()) as u8) << 4
                 | ((self.last_point.classification() != current_point.classification()) as u8) << 3
                 | ((self.last_point.scan_angle_rank() != current_point.scan_angle_rank()) as u8)
-                    << 2
+                << 2
                 | ((self.last_point.user_data() != current_point.user_data()) as u8) << 1
                 | (self.last_point.point_source_id() != current_point.point_source_id()) as u8;
 
-            encoder.encode_symbol(&mut self.changed_values_model, changed_values as u32)?;
+            encoder.encode_symbol(&mut self.changed_values_model, u32::from(changed_values))?;
 
             if changed_values != 0 {
                 if (changed_values & 32) != 0 {
                     self.ic_intensity.compress(
                         encoder,
-                        self.last_point.intensity() as i32,
-                        current_point.intensity() as i32,
+                        i32::from(self.last_point.intensity),
+                        i32::from(current_point.intensity),
                         DEFAULT_COMPRESS_CONTEXTS,
                     )?;
                 }
@@ -527,21 +524,21 @@ pub mod v1 {
                 if (changed_values & 16) != 0 {
                     let model = &mut self.bit_byte_models[self.last_point.bit_fields() as usize]
                         .get_or_insert(ArithmeticModelBuilder::new(256).build());
-                    encoder.encode_symbol(model, current_point.bit_fields() as u32)?;
+                    encoder.encode_symbol(model, u32::from(current_point.bit_fields()))?;
                 }
 
                 if (changed_values & 8) != 0 {
                     let model = &mut self.classification_models
                         [self.last_point.classification() as usize]
                         .get_or_insert(ArithmeticModelBuilder::new(256).build());
-                    encoder.encode_symbol(model, current_point.classification() as u32)?;
+                    encoder.encode_symbol(model, u32::from(current_point.classification))?;
                 }
 
                 if (changed_values & 4) != 0 {
                     self.ic_scan_angle_rank.compress(
                         encoder,
-                        self.last_point.scan_angle_rank() as i32,
-                        current_point.scan_angle_rank() as i32,
+                        i32::from(self.last_point.scan_angle_rank),
+                        i32::from(current_point.scan_angle_rank),
                         (k_bits < 3) as u32,
                     )?;
                 }
@@ -549,14 +546,14 @@ pub mod v1 {
                 if (changed_values & 2) != 0 {
                     let model = self.user_data_models[self.last_point.user_data() as usize]
                         .get_or_insert(ArithmeticModelBuilder::new(256).build());
-                    encoder.encode_symbol(model, current_point.user_data() as u32)?;
+                    encoder.encode_symbol(model, u32::from(current_point.user_data))?;
                 }
 
                 if (changed_values & 1) != 0 {
                     self.ic_point_source_id.compress(
                         encoder,
-                        self.last_point.point_source_id() as i32,
-                        current_point.point_source_id() as i32,
+                        i32::from(self.last_point.point_source_id),
+                        i32::from(current_point.point_source_id),
                         DEFAULT_COMPRESS_CONTEXTS,
                     )?;
                 }
@@ -639,7 +636,7 @@ pub mod v1 {
                     self.last_point
                         .set_scan_angle_rank(self.ic_scan_angle_rank.decompress(
                             &mut decoder,
-                            self.last_point.scan_angle_rank as i32,
+                            i32::from(self.last_point.scan_angle_rank),
                             (k_bits < 3) as u32,
                         )? as i8);
                 }
@@ -655,7 +652,7 @@ pub mod v1 {
                     self.last_point
                         .set_point_source_id(self.ic_point_source_id.decompress(
                             &mut decoder,
-                            self.last_point.point_source_id as i32,
+                            i32::from(self.last_point.point_source_id),
                             DEFAULT_DECOMPRESS_CONTEXTS,
                         )? as u16);
                 }
@@ -707,8 +704,8 @@ pub mod v2 {
 
             let bit_fields_changed = ((last.return_number() ^ current.return_number()) != 0)
                 | ((last.number_of_returns_of_given_pulse()
-                    ^ current.number_of_returns_of_given_pulse())
-                    != 0)
+                ^ current.number_of_returns_of_given_pulse())
+                != 0)
                 | (last.scan_direction_flag() ^ current.scan_direction_flag())
                 | (last.edge_of_flight_line() ^ current.edge_of_flight_line());
 
@@ -782,29 +779,23 @@ pub mod v2 {
             Self {
                 last_intensity: [0u16; 16],
                 last_x_diff_median: (0..16)
-                    .into_iter()
                     .map(|_i| utils::StreamingMedian::<i32>::new())
                     .collect(),
                 last_y_diff_median: (0..16)
-                    .into_iter()
                     .map(|_i| utils::StreamingMedian::<i32>::new())
                     .collect(),
                 last_height: [0i32; 8],
                 changed_values: ArithmeticModelBuilder::new(64).build(),
                 scan_angle_rank: (0..2)
-                    .into_iter()
                     .map(|_i| ArithmeticModelBuilder::new(256).build())
                     .collect(),
                 bit_byte: (0..256)
-                    .into_iter()
                     .map(|_i| ArithmeticModelBuilder::new(256).build())
                     .collect(),
                 classification: (0..256)
-                    .into_iter()
                     .map(|_i| ArithmeticModelBuilder::new(256).build())
                     .collect(),
                 user_data: (0..256)
-                    .into_iter()
                     .map(|_i| ArithmeticModelBuilder::new(256).build())
                     .collect(),
             }
@@ -884,18 +875,18 @@ pub mod v2 {
                 let last_b = self.last_point.bit_fields();
                 encoder.encode_symbol(
                     unsafe { self.common.bit_byte.get_unchecked_mut(last_b as usize) },
-                    b as u32,
+                    u32::from(b),
                 )?;
             }
 
             if changed_values.intensity_changed() {
                 self.ic_intensity.compress(
                     &mut encoder,
-                    self.common.last_intensity[m as usize] as i32,
-                    current_point.intensity() as i32,
-                    if m < 3 { m as u32 } else { 3 },
+                    i32::from(self.common.last_intensity[m as usize]),
+                    i32::from(current_point.intensity),
+                    if m < 3 { u32::from(m) } else { 3 },
                 )?;
-                self.common.last_intensity[m as usize] = current_point.intensity();
+                self.common.last_intensity[m as usize] = current_point.intensity;
             }
 
             if changed_values.classification_changed() {
@@ -905,7 +896,7 @@ pub mod v2 {
                             .classification
                             .get_unchecked_mut(self.last_point.classification as usize)
                     },
-                    current_point.classification() as u32,
+                    u32::from(current_point.classification),
                 )?;
             }
 
@@ -929,15 +920,15 @@ pub mod v2 {
                             .user_data
                             .get_unchecked_mut(self.last_point.user_data as usize)
                     },
-                    current_point.user_data() as u32,
+                    u32::from(current_point.user_data),
                 )?;
             }
 
             if changed_values.point_source_id_changed() {
                 self.ic_point_source_id.compress(
                     &mut encoder,
-                    self.last_point.point_source_id as i32,
-                    current_point.point_source_id() as i32,
+                    i32::from(self.last_point.point_source_id),
+                    i32::from(current_point.point_source_id),
                     0,
                 )?;
             }
@@ -960,10 +951,10 @@ pub mod v2 {
             let diff = current_point.y() - self.last_point.y;
             let context = (n == 1) as u32
                 + if k_bits < 20 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    20
-                };
+                utils::u32_zero_bit(k_bits)
+            } else {
+                20
+            };
             self.ic_dy.compress(&mut encoder, median, diff, context)?;
             unsafe {
                 self.common
@@ -976,10 +967,10 @@ pub mod v2 {
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
             let context = (n == 1) as u32
                 + if k_bits < 18 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    18
-                };
+                utils::u32_zero_bit(k_bits)
+            } else {
+                18
+            };
             self.ic_z.compress(
                 &mut encoder,
                 *unsafe { self.common.last_height.get_unchecked(l as usize) },
@@ -1079,8 +1070,8 @@ pub mod v2 {
                     if changed_value.intensity_changed() {
                         self.last_point.intensity = self.ic_intensity.decompress(
                             &mut decoder,
-                            *self.common.last_intensity.get_unchecked(m as usize) as i32,
-                            if m < 3 { m as u32 } else { 3 },
+                            i32::from(*self.common.last_intensity.get_unchecked(m as usize)),
+                            if m < 3 { u32::from(m) } else { 3 },
                         )? as u16;
                         *self.common.last_intensity.get_unchecked_mut(m as usize) =
                             self.last_point.intensity;
@@ -1123,7 +1114,7 @@ pub mod v2 {
                         self.last_point
                             .set_point_source_id(self.ic_point_source_id.decompress(
                                 &mut decoder,
-                                self.last_point.point_source_id as i32,
+                                i32::from(self.last_point.point_source_id),
                                 0,
                             )? as u16);
                     }
@@ -1158,10 +1149,10 @@ pub mod v2 {
                 let k_bits = self.ic_dx.k();
                 let context = (n == 1) as u32
                     + if k_bits < 20 {
-                        utils::u32_zero_bit(k_bits)
-                    } else {
-                        20
-                    };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    20
+                };
                 let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
                 self.last_point.y += diff;
                 self.common
@@ -1173,10 +1164,10 @@ pub mod v2 {
                 let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
                 let context = (n == 1) as u32
                     + if k_bits < 18 {
-                        utils::u32_zero_bit(k_bits)
-                    } else {
-                        18
-                    };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    18
+                };
                 self.last_point.z = self.ic_z.decompress(
                     &mut decoder,
                     *self.common.last_height.get_unchecked(l as usize),

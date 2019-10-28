@@ -1,6 +1,5 @@
 //! Defines the compressors and decompressors for the Near Infrared (Nir) data
 
-
 pub trait LasNIR {
     fn nir(&self) -> u16;
     fn set_nir(&mut self, new_val: u16);
@@ -30,11 +29,11 @@ pub mod v3 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
+    use crate::las::utils::copy_bytes_into_decoder;
     use crate::las::utils::{
         copy_encoder_content_to, lower_byte, lower_byte_changed, read_and_unpack, upper_byte,
         upper_byte_changed,
     };
-    use crate::las::utils::copy_bytes_into_decoder;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
@@ -125,15 +124,15 @@ pub mod v3 {
             let the_context = &mut self.contexts[self.last_context_used];
             if self.changed_nir {
                 let mut new_nir: u16;
-                let sym = self.decoder
-                    .decode_symbol(
-                        &mut the_context.bytes_used_model)?;
+                let sym = self
+                    .decoder
+                    .decode_symbol(&mut the_context.bytes_used_model)?;
 
                 if is_nth_bit_set!(sym, 0) {
                     let diff = self
                         .decoder
-                        .decode_symbol(
-                            &mut the_context.lower_byte_diff_model)? as u8;
+                        .decode_symbol(&mut the_context.lower_byte_diff_model)?
+                        as u8;
                     new_nir = u16::from(diff.wrapping_add(lower_byte(*last_nir)));
                 } else {
                     new_nir = *last_nir & 0x00FF;
@@ -142,8 +141,8 @@ pub mod v3 {
                 if is_nth_bit_set!(sym, 1) {
                     let diff = self
                         .decoder
-                        .decode_symbol(
-                            &mut the_context.upper_byte_diff_model)? as u8;
+                        .decode_symbol(&mut the_context.upper_byte_diff_model)?
+                        as u8;
                     let upper_byte = u16::from(diff.wrapping_add(upper_byte(*last_nir)));
                     new_nir |= (upper_byte << 8) & 0xFF00;
                 } else {
@@ -241,7 +240,8 @@ pub mod v3 {
 
             let sym = lower_byte_changed(current_nir, *last_nir) as u8
                 | (upper_byte_changed(current_nir, *last_nir) as u8) << 1;
-            self.encoder.encode_symbol(&mut the_context.bytes_used_model, u32::from(sym))?;
+            self.encoder
+                .encode_symbol(&mut the_context.bytes_used_model, u32::from(sym))?;
             if is_nth_bit_set!(sym, 0) {
                 let corr = lower_byte(current_nir).wrapping_sub(lower_byte(*last_nir));
                 self.encoder
