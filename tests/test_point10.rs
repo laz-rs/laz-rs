@@ -13,7 +13,7 @@ use laz::record::{
 fn test_compression_decompression_of_point_10() {
     let mut compressor =
         SequentialPointRecordCompressor::new(std::io::Cursor::new(Vec::<u8>::new()));
-    compressor.add_field_compressor(LasPoint0Compressor::new());
+    compressor.add_field_compressor(LasPoint0Compressor::default());
 
     let n: i32 = 10000;
     let mut buf = [0u8; 20];
@@ -42,7 +42,7 @@ fn test_compression_decompression_of_point_10() {
 
     let mut decompressor =
         SequentialPointRecordDecompressor::new(std::io::Cursor::new(compressed_data));
-    decompressor.add_field_decompressor(LasPoint0Decompressor::new());
+    decompressor.add_field_decompressor(LasPoint0Decompressor::default());
 
     for i in 0..n {
         decompressor.decompress_next(&mut buf).unwrap();
@@ -71,7 +71,7 @@ fn test_compression_decompression_of_point_10() {
 fn test_rgb() {
     let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
 
-    compressor.add_field_compressor(LasRGBCompressor::new());
+    compressor.add_field_compressor(LasRGBCompressor::default());
 
     let n = 10000;
 
@@ -91,7 +91,7 @@ fn test_rgb() {
 
     let mut decompressor =
         SequentialPointRecordDecompressor::new(std::io::Cursor::new(compressed_data));
-    decompressor.add_field_decompressor(LasRGBDecompressor::new());
+    decompressor.add_field_decompressor(LasRGBDecompressor::default());
 
     for i in 0..n {
         let expected_rgb = RGB {
@@ -110,7 +110,7 @@ fn test_rgb() {
 #[test]
 fn test_gps_time() {
     let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
-    compressor.add_field_compressor(GpsTimeCompressor::new());
+    compressor.add_field_compressor(GpsTimeCompressor::default());
 
     let n = 10000;
 
@@ -128,7 +128,7 @@ fn test_gps_time() {
     let compressed_data = compressor.into_stream().into_inner();
 
     let mut decompressor = SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
-    decompressor.add_field_decompressor(GpsTimeDecompressor::new());
+    decompressor.add_field_decompressor(GpsTimeDecompressor::default());
 
     for i in 0..n {
         let expected_gps_time = GpsTime {

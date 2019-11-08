@@ -90,8 +90,8 @@ loop_test_on_buffer!(
     "tests/data/point10.las",
     20,
     LAS_HEADER_SIZE,
-    vec_of_boxed_buffer_compressors![v1::LasPoint0Compressor::new()],
-    vec_of_boxed_buffer_decompressors![v1::LasPoint0Decompressor::new()]
+    vec_of_boxed_buffer_compressors![v1::LasPoint0Compressor::default()],
+    vec_of_boxed_buffer_decompressors![v1::LasPoint0Decompressor::default()]
 );
 
 loop_test_on_buffer!(
@@ -100,12 +100,12 @@ loop_test_on_buffer!(
     28,
     LAS_HEADER_SIZE,
     vec_of_boxed_buffer_compressors![
-        v1::LasPoint0Compressor::new(),
-        v1::LasGpsTimeCompressor::new()
+        v1::LasPoint0Compressor::default(),
+        v1::LasGpsTimeCompressor::default()
     ],
     vec_of_boxed_buffer_decompressors![
-        v1::LasPoint0Decompressor::new(),
-        v1::LasGpsTimeDecompressor::new()
+        v1::LasPoint0Decompressor::default(),
+        v1::LasGpsTimeDecompressor::default()
     ]
 );
 
@@ -114,10 +114,10 @@ loop_test_on_buffer!(
     "tests/data/point-color.las",
     26,
     LAS_HEADER_SIZE,
-    vec_of_boxed_buffer_compressors![v1::LasPoint0Compressor::new(), v1::LasRGBCompressor::new()],
+    vec_of_boxed_buffer_compressors![v1::LasPoint0Compressor::default(), v1::LasRGBCompressor::default()],
     vec_of_boxed_buffer_decompressors![
-        v1::LasPoint0Decompressor::new(),
-        v1::LasRGBDecompressor::new()
+        v1::LasPoint0Decompressor::default(),
+        v1::LasRGBDecompressor::default()
     ]
 );
 
@@ -127,14 +127,14 @@ loop_test_on_buffer!(
     34,
     LAS_HEADER_SIZE,
     vec_of_boxed_buffer_compressors![
-        v1::LasPoint0Compressor::new(),
-        v1::LasGpsTimeCompressor::new(),
-        v1::LasRGBCompressor::new()
+        v1::LasPoint0Compressor::default(),
+        v1::LasGpsTimeCompressor::default(),
+        v1::LasRGBCompressor::default()
     ],
     vec_of_boxed_buffer_decompressors![
-        v1::LasPoint0Decompressor::new(),
-        v1::LasGpsTimeDecompressor::new(),
-        v1::LasRGBDecompressor::new()
+        v1::LasPoint0Decompressor::default(),
+        v1::LasGpsTimeDecompressor::default(),
+        v1::LasRGBDecompressor::default()
     ]
 );
 
@@ -144,15 +144,15 @@ loop_test_on_buffer!(
     61,
     LAS_HEADER_SIZE + VLR_HEADER_SIZE + (5 * 192),
     vec_of_boxed_buffer_compressors![
-        v1::LasPoint0Compressor::new(),
-        v1::LasGpsTimeCompressor::new(),
-        v1::LasRGBCompressor::new(),
+        v1::LasPoint0Compressor::default(),
+        v1::LasGpsTimeCompressor::default(),
+        v1::LasRGBCompressor::default(),
         v1::LasExtraByteCompressor::new(27)
     ],
     vec_of_boxed_buffer_decompressors![
-        v1::LasPoint0Decompressor::new(),
-        v1::LasGpsTimeDecompressor::new(),
-        v1::LasRGBDecompressor::new(),
+        v1::LasPoint0Decompressor::default(),
+        v1::LasGpsTimeDecompressor::default(),
+        v1::LasRGBDecompressor::default(),
         v1::LasExtraByteDecompressor::new(27)
     ]
 );
