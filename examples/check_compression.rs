@@ -15,7 +15,10 @@ fn main() {
         .unwrap();
 
     let laz_items =
-        LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
+        LazItemRecordBuilder::default_for_point_format_id(
+            las_header.point_format_id,
+            las_header.num_extra_bytes()
+        );
     let mut compressor =
         LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
 

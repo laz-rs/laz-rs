@@ -375,6 +375,7 @@ pub mod v3 {
 
         fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
             for encoder in &mut self.encoders {
+                encoder.done()?;
                 dst.write_u32::<LittleEndian>(encoder.out_stream().get_ref().len() as u32)?;
             }
             Ok(())

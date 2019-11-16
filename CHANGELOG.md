@@ -3,8 +3,8 @@
     (std::io::Read, std::io::Write) it allows to create LasZipCompressors
     and LasZipDecompressors on std::io::Cursor(&[u8]), which will be needed to create a C FFI
     - Added version 3 of the compression and decompression for Point6, RGB,
-    Nir)
-    - Added functions to compress or decompress all points contained buffer
+        Nir, ExtraBytes)
+    - Added functions to compress or decompress all points contained in a buffer
     - Added a parallel optional feature (off by default) that gives
     access to functions to compress or decompress points using multiple threads.
     It uses the rayon crate. 

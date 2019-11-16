@@ -545,7 +545,9 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
                         self.add_field_compressor(las::v3::LasRGBCompressor::default());
                         self.add_field_compressor(las::v3::LasNIRCompressor::default());
                     }
-                    //TODO Extrabyte Compressor
+                   LazItemType::Byte14(n) => {
+                       self.add_field_compressor(las::v3::LasExtraByteCompressor::new(n as usize));
+                   }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             item.item_type,

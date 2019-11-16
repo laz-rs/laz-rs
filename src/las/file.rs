@@ -1,8 +1,14 @@
+//! This module contains a quick implementation of a LAS file reader
+//! with just enough code to be able to read points in any LAS file but not enough
+//! to support all the features of LAS.
+
 #![allow(dead_code)]
 use crate::las::laszip::{LasZipDecompressor, LazVlr};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{Read, Seek, SeekFrom};
 
+/// LAS header with only the minimum information
+/// to be able to read points contained in a LAS file.
 #[derive(Debug)]
 pub struct QuickHeader {
     pub major: u8,
@@ -45,6 +51,22 @@ impl QuickHeader {
             header_size,
         })
     }
+
+
+    pub fn num_extra_bytes(&self) -> u16 {
+        let point_size_wo_extra = match self.point_format_id {
+            0 => 20,
+            1 => 28,
+            2 => 26,
+            3 => 34,
+            6 => 30,
+            7 => 36,
+            8 => 38,
+            _ => panic!("Unknown fmt id")
+        };
+
+        self.point_size - point_size_wo_extra
+    }
 }
 
 pub struct Vlr {
@@ -80,6 +102,33 @@ impl Vlr {
     }
 }
 
+pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) -> Option<LazVlr> {
+    let mut laszip_vlr = None;
+    for _i in 0..header.num_vlrs {
+        let vlr = Vlr::read_from(src).unwrap();
+        if vlr.record_id == 22204
+            && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
+            == "laszip encoded"
+        {
+            laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
+        }
+    }
+    laszip_vlr
+}
+
+const IS_COMPRESSED_MASK: u8 = 0x80;
+fn is_point_format_compressed(point_format_id: u8) -> bool {
+    point_format_id & IS_COMPRESSED_MASK == IS_COMPRESSED_MASK
+}
+pub fn point_format_id_compressed_to_uncompressd(point_format_id: u8) -> u8 {
+    point_format_id & 0x3f
+}
+
+fn point_format_id_uncompressed_to_compressed(point_format_id: u8) -> u8 {
+    point_format_id | 0x80
+}
+
+
 pub trait LasPointReader {
     fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()>;
 }
@@ -100,6 +149,9 @@ impl<'a, R: Read + Seek> LasPointReader for LasZipDecompressor<'a, R> {
     }
 }
 
+
+
+/// Reader, that knows just enough things to be able to read LAS and LAZ data
 pub struct SimpleReader<'a> {
     pub header: QuickHeader,
     point_reader: Box<dyn LasPointReader + 'a>,
@@ -107,31 +159,6 @@ pub struct SimpleReader<'a> {
     current_index: u64,
 }
 
-pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) -> Option<LazVlr> {
-    let mut laszip_vlr = None;
-    for _i in 0..header.num_vlrs {
-        let vlr = Vlr::read_from(src).unwrap();
-        if vlr.record_id == 22204
-            && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
-                == "laszip encoded"
-        {
-            laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
-        }
-    }
-    laszip_vlr
-}
-
-const IS_COMPRESSED_MASK: u8 = 0x80;
-fn is_point_format_compressed(point_format_id: u8) -> bool {
-    point_format_id & IS_COMPRESSED_MASK == IS_COMPRESSED_MASK
-}
-pub fn point_format_id_compressed_to_uncompressd(point_format_id: u8) -> u8 {
-    point_format_id & 0x3f
-}
-
-fn point_format_id_uncompressed_to_compressed(point_format_id: u8) -> u8 {
-    point_format_id | 0x80
-}
 
 impl<'a> SimpleReader<'a> {
     pub fn new<R: Read + Seek + 'a>(mut src: R) -> std::io::Result<Self> {
