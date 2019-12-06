@@ -6,6 +6,11 @@ fn main() {
     use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
     let args: Vec<String> = std::env::args().collect();
 
+    if args.len() != 1 {
+        println!("Usage: {} LAS_PATH", args[0]);
+        std::process::exit(1);
+    }
+
     let mut las_file = BufReader::new(File::open(&args[1]).unwrap());
     let las_header = QuickHeader::read_from(&mut las_file).unwrap();
 

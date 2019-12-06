@@ -8,6 +8,10 @@ fn main() {
     use std::fs::File;
     use std::io::{BufReader, Seek, SeekFrom};
     let args: Vec<String> = std::env::args().collect();
+    if args.len() != 3 {
+        println!("Usage: {} LAZ_PATH LAS_PATH", args[0]);
+        std::process::exit(1);
+    }
 
     let mut laz_file = BufReader::new(File::open(&args[1]).unwrap());
     let laz_header = QuickHeader::read_from(&mut laz_file).unwrap();

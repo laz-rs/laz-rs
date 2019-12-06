@@ -6,8 +6,14 @@ use laz::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItemRecordBuilde
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let las_path = if let Some(path) = args.get(1) {
+        path
+    } else  {
+        println!("Usage: {} LAS_PATH", args[0]);
+        std::process::exit(1);
+    };
 
-    let mut las_file = BufReader::new(File::open(&args[1]).unwrap());
+    let mut las_file = BufReader::new(File::open(las_path).unwrap());
     let las_header = QuickHeader::read_from(&mut las_file).unwrap();
     println!("{:?}", las_header);
     las_file
