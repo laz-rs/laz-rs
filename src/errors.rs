@@ -12,6 +12,8 @@ pub enum LasZipError {
     UnknownCompressorType(u16),
     /// The type of compressor exists but it is not supported
     UnsupportedCompressorType(CompressorType),
+    /// The point format id is not supported
+    UnsupportedPointFormat(u8),
     /// Wrapper around and io error from the std lib
     IoError(std::io::Error),
     BufferLenNotMultipleOfPointSize {
@@ -51,6 +53,8 @@ impl fmt::Display for LasZipError {
                 "The len of the buffer ({}) is not a multiple of the point size {}",
                 bl, ps
             ),
+            LasZipError::UnsupportedPointFormat(id) =>
+                write!(f, "Point format {} is not supported", id)
         }
     }
 }

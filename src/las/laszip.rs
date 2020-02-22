@@ -208,17 +208,17 @@ impl LazItemRecordBuilder {
         PointFormat::version_3(num_extra_bytes)
     }
 
-    pub fn default_for_point_format_id(point_format_id: u8, num_extra_bytes: u16) -> Vec<LazItem> {
+    pub fn default_for_point_format_id(point_format_id: u8, num_extra_bytes: u16) -> Result<Vec<LazItem>, LasZipError> {
         use crate::las::{Point1, Point2, Point3, Point7, Point8};
         match point_format_id {
-            0 => LazItemRecordBuilder::default_version_of::<Point0>(num_extra_bytes),
-            1 => LazItemRecordBuilder::default_version_of::<Point1>(num_extra_bytes),
-            2 => LazItemRecordBuilder::default_version_of::<Point2>(num_extra_bytes),
-            3 => LazItemRecordBuilder::default_version_of::<Point3>(num_extra_bytes),
-            6 => LazItemRecordBuilder::default_version_of::<Point6>(num_extra_bytes),
-            7 => LazItemRecordBuilder::default_version_of::<Point7>(num_extra_bytes),
-            8 => LazItemRecordBuilder::default_version_of::<Point8>(num_extra_bytes),
-            _ => panic!("Point format id: {} is not supported", point_format_id),
+            0 => Ok(LazItemRecordBuilder::default_version_of::<Point0>(num_extra_bytes)),
+            1 => Ok(LazItemRecordBuilder::default_version_of::<Point1>(num_extra_bytes)),
+            2 => Ok(LazItemRecordBuilder::default_version_of::<Point2>(num_extra_bytes)),
+            3 => Ok(LazItemRecordBuilder::default_version_of::<Point3>(num_extra_bytes)),
+            6 => Ok(LazItemRecordBuilder::default_version_of::<Point6>(num_extra_bytes)),
+            7 => Ok(LazItemRecordBuilder::default_version_of::<Point7>(num_extra_bytes)),
+            8 => Ok(LazItemRecordBuilder::default_version_of::<Point8>(num_extra_bytes)),
+            _ => Err(LasZipError::UnsupportedPointFormat(point_format_id))
         }
     }
 
