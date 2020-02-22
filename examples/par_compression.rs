@@ -21,7 +21,7 @@ fn main() {
     let mut all_points = vec![0u8; las_header.point_size as usize * las_header.num_points as usize];
     las_file.read_exact(&mut all_points).unwrap();
     let laz_items =
-        LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0);
+        LazItemRecordBuilder::default_for_point_format_id(las_header.point_format_id, 0).unwrap();
     let laz_vlr = LazVlr::from_laz_items(laz_items);
 
     let mut compression_out_put = Cursor::new(Vec::<u8>::new());
