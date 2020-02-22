@@ -120,13 +120,25 @@ pub struct LazItem {
 }
 
 impl LazItem {
-    pub(crate) fn new(item_type: LazItemType, version: u16) -> Self {
+    pub fn new(item_type: LazItemType, version: u16) -> Self {
         let size = item_type.size();
         Self {
             item_type,
             size,
             version,
         }
+    }
+
+    pub fn item_type(&self) -> LazItemType {
+       self.item_type
+    }
+
+    pub fn size(&self) -> u16 {
+        self.size
+    }
+
+    pub fn version(&self) -> u16 {
+        self.version
     }
 
     fn read_from<R: Read>(src: &mut R) -> Result<Self, LasZipError> {
@@ -597,6 +609,14 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
     }
 
     // FIXME Seeking in Layered Compressed data is untested, make sure it works
+    /// Seeks to the point designed by the index
+    ///
+    /// # Important
+    ///
+    /// Seeking in compressed data has a higher cost than non compressed data
+    /// because the stream has to be moved to the start of the chunk
+    /// and then we have to decompress points in the chunk until we reach the
+    /// one we want.
     pub fn seek(&mut self, point_idx: u64) -> std::io::Result<()> {
         if let Some(chunk_table) = &self.chunk_table {
             let chunk_of_point = point_idx / self.vlr.chunk_size as u64;
@@ -804,6 +824,10 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
         Ok(())
     }
 
+    /// Must be called when you have compressed all your points
+    /// using the [`compress_one`] method
+    ///
+    /// [`compress_one`]: #method.compress_one
     pub fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
         self.update_chunk_table()?;
