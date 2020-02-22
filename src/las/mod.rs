@@ -1,17 +1,22 @@
-pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8};
+//! This module contains re-exports of the different version of
+//! LAS data compressors & decompressors as well as
+//! the definition of the point types.
 
 #[macro_use]
 mod utils;
+mod pointtypes;
+
+pub mod point0;
+pub mod point6;
 
 pub mod extra_bytes;
 pub mod file;
 pub mod gps;
 pub mod laszip;
 pub mod nir;
-pub mod point0;
-pub mod point6;
-mod pointtypes;
 pub mod rgb;
+
+pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8};
 
 pub mod v1 {
     //! This module only contains re exports of compressors / decompressors

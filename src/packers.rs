@@ -24,6 +24,14 @@
 ===============================================================================
 */
 
+//! Packing types from / to bytes
+
+//// Definition of the packing & unpacking trait
+/// 
+/// Types that can be packed and unpacked from byte slices.
+/// 
+/// This trait allows to have something that seems a bit faster
+/// that using a std::io::Cursor + the byteorder crate.
 pub trait Packable {
     fn unpack_from(input: &[u8]) -> Self;
     fn pack_into(&self, output: &mut [u8]);

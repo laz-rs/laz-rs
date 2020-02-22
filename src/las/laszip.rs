@@ -55,15 +55,23 @@ impl Version {
 /// The different type of data / fields found in the definition of LAS points
 #[derive(Debug, Copy, Clone)]
 pub enum LazItemType {
+    /// Extrabytes for LAS versions <= 1.3 & point format <= 5
     Byte(u16),
+    /// Point10 is the Point format id 0 of LAS for versions <= 1.3 & point format <= 5
     Point10,
+    /// GpsTime for LAS versions <= 1.3 & point format <= 5
     GpsTime,
+    /// RGB for LAS versions <= 1.3 & point format <= 5
     RGB12,
     //WavePacket13,
+    /// Point14 is the Point format id 6 of LAS for versions >= 1.4 & point format >= 6
     Point14,
+    /// RGB for LAS versions >= 1.4
     RGB14,
+    /// RGB + Nir for LAS versions >= 1.4
     RGBNIR14,
     //WavePacket14,
+    /// ExtraBytes for LAS versions >= 1.4
     Byte14(u16),
 }
 
@@ -112,13 +120,25 @@ pub struct LazItem {
 }
 
 impl LazItem {
-    pub(crate) fn new(item_type: LazItemType, version: u16) -> Self {
+    pub fn new(item_type: LazItemType, version: u16) -> Self {
         let size = item_type.size();
         Self {
             item_type,
             size,
             version,
         }
+    }
+
+    pub fn item_type(&self) -> LazItemType {
+       self.item_type
+    }
+
+    pub fn size(&self) -> u16 {
+        self.size
+    }
+
+    pub fn version(&self) -> u16 {
+        self.version
     }
 
     fn read_from<R: Read>(src: &mut R) -> Result<Self, LasZipError> {
@@ -404,6 +424,7 @@ impl Default for LazVlr {
     }
 }
 
+/// Builder struct to personalize the LazVlr
 pub struct LazVlrBuilder {
     laz_vlr: LazVlr,
 }
@@ -524,7 +545,7 @@ fn read_chunk_table<R: Read + Seek>(
     Ok(chunk_sizes)
 }
 
-/// Struct that handles the decompression of the points inside the source
+/// Struct that handles the decompression of the points written in a LAZ file
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + 'a>,
@@ -535,6 +556,9 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 }
 
 impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
+
+    /// Creates a new instance from a data source of compressed points
+    /// and the `record data` of the laszip vlr
     pub fn new_with_record_data(
         source: R,
         laszip_vlr_record_data: &[u8],
@@ -543,6 +567,8 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         Self::new(source, vlr)
     }
 
+    /// Creates a new instance from a data source of compressed points
+    /// and the LazVlr describing the compressed data
     pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
         if vlr.compressor != CompressorType::PointWiseChunked
             && vlr.compressor != CompressorType::LayeredChunked
@@ -583,6 +609,14 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
     }
 
     // FIXME Seeking in Layered Compressed data is untested, make sure it works
+    /// Seeks to the point designed by the index
+    ///
+    /// # Important
+    ///
+    /// Seeking in compressed data has a higher cost than non compressed data
+    /// because the stream has to be moved to the start of the chunk
+    /// and then we have to decompress points in the chunk until we reach the
+    /// one we want.
     pub fn seek(&mut self, point_idx: u64) -> std::io::Result<()> {
         if let Some(chunk_table) = &self.chunk_table {
             let chunk_of_point = point_idx / self.vlr.chunk_size as u64;
@@ -734,11 +768,17 @@ pub struct LasZipCompressor<'a, W: Write + 'a> {
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
 impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
+    /// Creates a new LasZipCompressor using the items provided,
+    ///
+    /// If you wish to use a different `chunk size` see [`from_laz_vlr`]
+    ///
+    /// [`from_laz_vlr`]: #method.from_laz_vlr
     pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
         let vlr = LazVlr::from_laz_items(items);
         Self::from_laz_vlr(output, vlr)
     }
 
+    /// Creates a compressor using the provided vlr.
     pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Result<Self, LasZipError> {
         let record_compressor = record_compressor_from_laz_items(&vlr.items, output)?;
         Ok(Self {
@@ -784,6 +824,10 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
         Ok(())
     }
 
+    /// Must be called when you have compressed all your points
+    /// using the [`compress_one`] method
+    ///
+    /// [`compress_one`]: #method.compress_one
     pub fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
         self.update_chunk_table()?;

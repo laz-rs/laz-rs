@@ -1,12 +1,18 @@
 use crate::las::laszip::{CompressorType, LazItemType};
 use std::fmt;
 
+/// Errors of this crate
 #[derive(Debug)]
 pub enum LasZipError {
+    /// The Laz item it not known
     UnknownLazItem(u16),
+    /// The compression version used for the item is not supported
     UnsupportedLazItemVersion(LazItemType, u16),
+    /// The type of compressor used is not known
     UnknownCompressorType(u16),
+    /// The type of compressor exists but it is not supported
     UnsupportedCompressorType(CompressorType),
+    /// Wrapper around and io error from the std lib
     IoError(std::io::Error),
     BufferLenNotMultipleOfPointSize {
         buffer_len: usize,
