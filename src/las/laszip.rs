@@ -604,6 +604,19 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         Ok(())
     }
 
+    /// Decompress as many points as the `out` slice can hold
+    ///
+    /// # Note
+    ///
+    /// If the `out` slice contains more space than there are points
+    /// the function will still decompress and thus and error will occur
+    pub fn decompress_many(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        for point in out.chunks_exact_mut(self.vlr.items_size() as usize) {
+            self.decompress_one(point)?;
+        }
+        Ok(())
+    }
+
     pub fn into_stream(self) -> R {
         self.record_decompressor.box_into_stream()
     }
@@ -824,6 +837,14 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
         Ok(())
     }
 
+    /// Compress all the points contained in the `input` slice
+    pub fn compress_many(&mut self, input: &[u8]) -> std::io::Result<()> {
+        for point in input.chunks_exact(self.vlr.items_size() as usize) {
+            self.compress_one(point)?;
+        }
+        Ok(())
+    }
+
     /// Must be called when you have compressed all your points
     /// using the [`compress_one`] method
     ///
@@ -874,9 +895,7 @@ pub fn compress_all<W: Write + Seek>(
             point_size,
         })
     } else {
-        for current_point_bytes in uncompressed_points_buf.chunks_exact(point_size) {
-            compressor.compress_one(current_point_bytes)?;
-        }
+        compressor.compress_many(uncompressed_points_buf)?;
         compressor.done()?;
         Ok(())
     }
