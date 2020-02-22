@@ -68,9 +68,10 @@
 //! use laz::{LasZipError, LazVlr, LasZipDecompressor};
 //! use std::fs::File;
 //!
-//! # fn read_first_point(path: &str, out: &mut [u8]) {
-//! #    let mut reader = laz::las::file::SimpleReader::new(File::open(path).unwrap()).unwrap();
-//! #    out.copy_from_slice(reader.read_next().unwrap().unwrap());
+//! # fn read_first_point(path: &str, out: &mut [u8]) -> std::io::Result<()> {
+//! #    let mut reader = laz::las::file::SimpleReader::new(File::open(path)?)?;
+//! #    out.copy_from_slice(reader.read_next().unwrap()?);
+//! #    Ok(())
 //! # }
 //! # fn seek_to_start_of_laszip_record_data(file: &mut File) -> std::io::Result<()> {
 //! #    use std::io::{Seek, SeekFrom};
@@ -78,15 +79,15 @@
 //! #    Ok(())
 //! # }
 //! # fn main() -> Result<(), LasZipError> {
-//! let mut laz_file = File::open("tests/data/point10.laz").unwrap();
-//! seek_to_start_of_laszip_record_data(&mut laz_file);
+//! let mut laz_file = File::open("tests/data/point10.laz")?;
+//! seek_to_start_of_laszip_record_data(&mut laz_file)?;
 //!
 //! let vlr = LazVlr::read_from(&mut laz_file)?;
 //! let mut decompression_output = vec![0u8; vlr.items_size() as usize];
 //! let mut decompressor = LasZipDecompressor::new(&mut laz_file, vlr)?;
 //!
 //! let mut ground_truth = vec![0u8; decompression_output.len()];
-//! read_first_point("tests/data/point10.las", &mut ground_truth);
+//! read_first_point("tests/data/point10.las", &mut ground_truth)?;
 //!
 //! decompressor.decompress_one(&mut decompression_output)?;
 //! assert_eq!(&decompression_output, &ground_truth);
