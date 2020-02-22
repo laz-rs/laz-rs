@@ -1,8 +1,9 @@
 # laz-rs
 
 Implementation or rather, translation of LAZ (laszip compression) format in Rust.
-Very much in a debugging state.
 
+The goal of this project is to be a port of the Laszip compression, not a full featured
+LAS reader.
 
 Original Implementations:
  - [LASzip](https://github.com/LASzip/LASzip)
