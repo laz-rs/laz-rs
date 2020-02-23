@@ -904,6 +904,13 @@ pub fn compress_all<W: Write + Seek>(
     }
 }
 
+/// Compresses all points in parallel
+///
+/// The data written will be a standard LAZ file data
+/// that means its organized like this:
+///  1) offset to the chunk_table (i64)
+///  2) the points data compressed
+///  3) the chunk table
 #[cfg(feature = "parallel")]
 pub fn par_compress_all<W: Write + Seek>(
     dst: &mut W,
@@ -1006,7 +1013,7 @@ impl<'a> FusedIterator for LazChunkIterator<'a> {}
 ///
 /// The `compressed_points_data` slice must contain all the laszip data
 /// that means:
-///   1) The offset to the chunk table
+///   1) The offset to the chunk table (i64)
 ///   2) the compressed points
 ///   3) the chunk table
 ///
