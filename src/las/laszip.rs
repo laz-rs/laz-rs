@@ -961,72 +961,6 @@ pub fn par_compress_all<W: Write + Seek>(
     }
 }
 
-#[cfg(feature = "parallel")]
-pub fn par_decompress_all<R: Read + Seek>(
-    src: &mut R,
-    points_out: &mut [u8],
-    laz_vlr: &LazVlr,
-) -> Result<(), LasZipError> {
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
-    use std::io::Cursor;
-
-    let point_size = laz_vlr.items_size() as usize;
-    if points_out.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: points_out.len(),
-            point_size,
-        })
-    } else {
-        let num_points_to_decompress = points_out.len() / point_size;
-
-        let mut num_chunks_to_read = num_points_to_decompress / laz_vlr.chunk_size as usize;
-        if num_points_to_decompress % laz_vlr.chunk_size as usize != 0 {
-            num_chunks_to_read += 1;
-        }
-
-        let offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
-        let chunk_sizes = read_chunk_table(src, offset_to_chunk_table)?;
-        if num_chunks_to_read > chunk_sizes.len() {
-            panic!("want to read more chunks than there are");
-        }
-
-        let chunks_data: Vec<Cursor<Vec<u8>>> = chunk_sizes[..num_chunks_to_read]
-            .iter()
-            .map(|size| {
-                let mut chunk_bytes = vec![0u8; *size as usize];
-                src.read_exact(&mut chunk_bytes)?;
-                Ok(Cursor::new(chunk_bytes))
-            })
-            .collect::<std::io::Result<Vec<Cursor<Vec<u8>>>>>()?;
-
-        let points_per_chunk = laz_vlr.chunk_size as usize;
-        let chunk_size_in_bytes = points_per_chunk * point_size;
-
-        let mut decompress_in_out =
-            Vec::<(&mut [u8], Cursor<Vec<u8>>)>::with_capacity(chunks_data.len());
-        for (slc_out, chunk_data) in points_out
-            .chunks_mut(chunk_size_in_bytes)
-            .into_iter()
-            .zip(chunks_data)
-        {
-            decompress_in_out.push((slc_out, chunk_data));
-        }
-
-        decompress_in_out
-            .into_par_iter()
-            .map(|(slc_out, src)| {
-                let mut record_decompressor =
-                    record_decompressor_from_laz_items(laz_vlr.items(), src)?;
-                for raw_point in slc_out.chunks_exact_mut(point_size) {
-                    record_decompressor.decompress_next(raw_point)?;
-                }
-                Ok(())
-            })
-            .collect::<Result<(), LasZipError>>()?;
-        Ok(())
-    }
-}
-
 /// Compressed chunk iterator
 ///
 /// This struct allows to iterate over the slices corresponding
@@ -1134,6 +1068,75 @@ pub fn par_decompress_buffer(
         Ok(())
     }
 }
+
+
+#[cfg(feature = "parallel")]
+pub fn par_decompress_all_from_file(
+    src: &mut std::io::BufReader<std::fs::File>,
+    points_out: &mut [u8],
+    laz_vlr: &LazVlr,
+) -> Result<(), LasZipError> {
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+    use std::io::Cursor;
+
+    let point_size = laz_vlr.items_size() as usize;
+    if points_out.len() % point_size != 0 {
+        Err(LasZipError::BufferLenNotMultipleOfPointSize {
+            buffer_len: points_out.len(),
+            point_size,
+        })
+    } else {
+        let num_points_to_decompress = points_out.len() / point_size;
+
+        let mut num_chunks_to_read = num_points_to_decompress / laz_vlr.chunk_size as usize;
+        if num_points_to_decompress % laz_vlr.chunk_size as usize != 0 {
+            num_chunks_to_read += 1;
+        }
+
+        let offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
+        let chunk_sizes = read_chunk_table(src, offset_to_chunk_table)?;
+        if num_chunks_to_read > chunk_sizes.len() {
+            panic!("want to read more chunks than there are");
+        }
+
+        let chunks_data: Vec<Cursor<Vec<u8>>> = chunk_sizes[..num_chunks_to_read]
+            .iter()
+            .map(|size| {
+                let mut chunk_bytes = vec![0u8; *size as usize];
+                src.read_exact(&mut chunk_bytes)?;
+                Ok(Cursor::new(chunk_bytes))
+            })
+            .collect::<std::io::Result<Vec<Cursor<Vec<u8>>>>>()?;
+
+        let points_per_chunk = laz_vlr.chunk_size as usize;
+        let chunk_size_in_bytes = points_per_chunk * point_size;
+
+        let mut decompress_in_out =
+            Vec::<(&mut [u8], Cursor<Vec<u8>>)>::with_capacity(chunks_data.len());
+        for (slc_out, chunk_data) in points_out
+            .chunks_mut(chunk_size_in_bytes)
+            .into_iter()
+            .zip(chunks_data)
+        {
+            decompress_in_out.push((slc_out, chunk_data));
+        }
+
+        decompress_in_out
+            .into_par_iter()
+            .map(|(slc_out, src)| {
+                let mut record_decompressor =
+                    record_decompressor_from_laz_items(laz_vlr.items(), src)?;
+                for raw_point in slc_out.chunks_exact_mut(point_size) {
+                    record_decompressor.decompress_next(raw_point)?;
+                }
+                Ok(())
+            })
+            .collect::<Result<(), LasZipError>>()?;
+        Ok(())
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::*;
