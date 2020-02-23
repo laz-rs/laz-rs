@@ -307,6 +307,10 @@ impl Default for CompressorType {
 }
 
 /// The data stored in the record_data of the Laszip Vlr
+///
+/// This vlr contains information needed to compress or decompress
+/// LAZ/LAS data. Such as the points per chunk, the fields & version
+/// of the compression/decompression algorithm.
 #[derive(Debug, Clone)]
 pub struct LazVlr {
     // coded on u16
@@ -860,6 +864,7 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
         Ok(())
     }
 
+    /// Returns the vlr used by this compressor
     pub fn vlr(&self) -> &LazVlr {
         &self.vlr
     }
@@ -884,20 +889,31 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     }
 }
 
+/// Compresses all points
+///
+/// The data written will be a standard LAZ file data
+/// that means its organized like this:
+///  1) offset to the chunk_table (i64)
+///  2) the points data compressed
+///  3) the chunk table
+///
+/// `dst`: Where the compressed data will be written
+///
+/// `uncompressed_points`: byte slice of the uncompressed points to be compressed
 pub fn compress_all<W: Write + Seek>(
     dst: &mut W,
-    uncompressed_points_buf: &[u8],
+    uncompressed_points: &[u8],
     laz_vlr: LazVlr,
 ) -> Result<(), LasZipError> {
     let mut compressor = LasZipCompressor::from_laz_vlr(dst, laz_vlr)?;
     let point_size = compressor.vlr().items_size() as usize;
-    if uncompressed_points_buf.len() % point_size != 0 {
+    if uncompressed_points.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: uncompressed_points_buf.len(),
+            buffer_len: uncompressed_points.len(),
             point_size,
         })
     } else {
-        compressor.compress_many(uncompressed_points_buf)?;
+        compressor.compress_many(uncompressed_points)?;
         compressor.done()?;
         Ok(())
     }
@@ -905,15 +921,13 @@ pub fn compress_all<W: Write + Seek>(
 
 /// Compresses all points in parallel
 ///
-/// The data written will be a standard LAZ file data
-/// that means its organized like this:
-///  1) offset to the chunk_table (i64)
-///  2) the points data compressed
-///  3) the chunk table
+/// Just like [`compress_all`] but the compression is done in mutliple threads
+///
+/// [`compress_all`]: fn.compress_all.html
 #[cfg(feature = "parallel")]
 pub fn par_compress_all<W: Write + Seek>(
     dst: &mut W,
-    points: &[u8],
+    uncompressed_points: &[u8],
     laz_vlr: &LazVlr,
 ) -> Result<(), LasZipError> {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -922,9 +936,9 @@ pub fn par_compress_all<W: Write + Seek>(
     let start_pos = dst.seek(SeekFrom::Current(0))?;
 
     let point_size = laz_vlr.items_size() as usize;
-    if points.len() % point_size != 0 {
+    if uncompressed_points.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: points.len(),
+            buffer_len: uncompressed_points.len(),
             point_size,
         })
     } else {
@@ -933,7 +947,7 @@ pub fn par_compress_all<W: Write + Seek>(
 
         // The last chunk may not have the same size,
         // the chunks() method takes care of that for us
-        let all_slices = points.chunks(chunk_size_in_bytes).collect::<Vec<_>>();
+        let all_slices = uncompressed_points.chunks(chunk_size_in_bytes).collect::<Vec<_>>();
 
         let chunks = all_slices
             .into_par_iter()

@@ -115,4 +115,8 @@ pub mod record;
 
 pub use errors::LasZipError;
 pub use las::laszip::{LasZipCompressor, LasZipDecompressor, LazItemType, LazItem, LazVlr, LazVlrBuilder, LazItemRecordBuilder};
+pub use las::laszip::compress_all;
+#[cfg(feature = "parallel")]
+pub use las::laszip::{par_compress_all, par_decompress_buffer};
+
 
