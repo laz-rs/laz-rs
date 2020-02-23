@@ -98,6 +98,19 @@
 //!
 //! [`LasZipCompressor`]: las/laszip/struct.LasZipCompressor.html
 //! [`LasZipDecompressor`]: las/laszip/struct.LasZipDecompressor.html
+//!
+//!
+//!
+//! # Parallelism
+//!
+//! This crates has an optional feature 'parallel'.
+//! When using this feature, additional `par_` methods are exposed.
+//!
+//! - [`par_compress_all`]
+//! - [`par_decompress_buffer`]
+//!
+//! [`par_compress_all`]: las/laszip/fn.compress_all.html
+//! [`par_decompress_buffer`]: las/laszip/fn.par_decompress_buffer.html
 
 pub(crate) mod compressors;
 pub(crate) mod decoders;

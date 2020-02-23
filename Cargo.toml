@@ -27,4 +27,5 @@ criterion = "0.2"
 name = "benchmark"
 harness = false
 
-
+[package.metadata.docs.rs]
+features = ["parallel"]
