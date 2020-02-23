@@ -483,7 +483,7 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
     Ok(decompressor)
 }
 
-pub fn record_compressor_from_laz_items<'a, W: Write + 'a>(
+fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     items: &Vec<LazItem>,
     output: W,
 ) -> Result<Box<dyn RecordCompressor<W> + 'a>, LasZipError> {
