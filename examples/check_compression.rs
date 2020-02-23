@@ -8,7 +8,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let las_path = if let Some(path) = args.get(1) {
         path
-    } else  {
+    } else {
         println!("Usage: {} LAS_PATH", args[0]);
         std::process::exit(1);
     };
@@ -20,11 +20,11 @@ fn main() {
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))
         .unwrap();
 
-    let laz_items =
-        LazItemRecordBuilder::default_for_point_format_id(
-            las_header.point_format_id,
-            las_header.num_extra_bytes()
-        ).unwrap();
+    let laz_items = LazItemRecordBuilder::default_for_point_format_id(
+        las_header.point_format_id,
+        las_header.num_extra_bytes(),
+    )
+    .unwrap();
     let mut compressor =
         LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
 

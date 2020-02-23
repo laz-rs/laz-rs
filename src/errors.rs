@@ -53,8 +53,9 @@ impl fmt::Display for LasZipError {
                 "The len of the buffer ({}) is not a multiple of the point size {}",
                 bl, ps
             ),
-            LasZipError::UnsupportedPointFormat(id) =>
+            LasZipError::UnsupportedPointFormat(id) => {
                 write!(f, "Point format {} is not supported", id)
+            }
         }
     }
 }

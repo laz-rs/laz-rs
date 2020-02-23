@@ -560,18 +560,20 @@ pub mod v2 {
 
             if color_diff.lower_green_byte_changed() {
                 corr = decoder.decode_symbol(&mut models.lower_green_byte)? as u8;
-                this_val.green =
-                    u16::from(corr.wrapping_add(u8_clamp(diff + i32::from(lower_byte(last.green)))));
+                this_val.green = u16::from(
+                    corr.wrapping_add(u8_clamp(diff + i32::from(lower_byte(last.green)))),
+                );
             } else {
                 this_val.green = last.green & 0x00FF;
             }
 
             if color_diff.lower_blue_byte_changed() {
                 corr = decoder.decode_symbol(&mut models.lower_blue_byte)? as u8;
-                diff = (diff + i32::from(lower_byte(this_val.green)) - i32::from(lower_byte(last.green)))
+                diff = (diff + i32::from(lower_byte(this_val.green))
+                    - i32::from(lower_byte(last.green)))
                     / 2;
-                this_val.blue = u16::from(
-                    corr.wrapping_add(u8_clamp(diff + i32::from(lower_byte(last.blue)))));
+                this_val.blue =
+                    u16::from(corr.wrapping_add(u8_clamp(diff + i32::from(lower_byte(last.blue)))));
             } else {
                 this_val.blue = last.blue & 0x00FF;
             }
@@ -579,19 +581,22 @@ pub mod v2 {
             diff = i32::from(upper_byte(this_val.red)) - i32::from(upper_byte(last.red));
             if color_diff.upper_green_byte_changed() {
                 corr = decoder.decode_symbol(&mut models.upper_green_byte)? as u8;
-                this_val.green |=
-                    u16::from(corr.wrapping_add(u8_clamp(diff + i32::from(upper_byte(last.green))))) << 8;
+                this_val.green |= u16::from(
+                    corr.wrapping_add(u8_clamp(diff + i32::from(upper_byte(last.green)))),
+                ) << 8;
             } else {
                 this_val.green |= last.green & 0xFF00;
             }
 
             if color_diff.upper_blue_byte_changed() {
                 corr = decoder.decode_symbol(&mut models.upper_blue_byte)? as u8;
-                diff =
-                    (diff + i32::from(upper_byte(this_val.green)) - i32::from(upper_byte(last.green))) / 2;
+                diff = (diff + i32::from(upper_byte(this_val.green))
+                    - i32::from(upper_byte(last.green)))
+                    / 2;
 
-                this_val.blue |= u16::from(corr.wrapping_add(u8_clamp(diff + i32::from(upper_byte(last.blue)))))
-                    << 8;
+                this_val.blue |=
+                    u16::from(corr.wrapping_add(u8_clamp(diff + i32::from(upper_byte(last.blue)))))
+                        << 8;
             } else {
                 this_val.blue |= last.blue & 0xFF00;
             }

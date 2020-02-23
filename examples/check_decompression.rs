@@ -10,7 +10,7 @@ fn main() {
     }
 
     let laz_path = &args[1];
-    let las_path =& args[2];
+    let las_path = &args[2];
     let laz_file = std::io::BufReader::new(File::open(laz_path).unwrap());
     let las_file = std::io::BufReader::new(File::open(las_path).unwrap());
 

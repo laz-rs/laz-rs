@@ -211,17 +211,34 @@ impl LazItemRecordBuilder {
         PointFormat::version_3(num_extra_bytes)
     }
 
-    pub fn default_for_point_format_id(point_format_id: u8, num_extra_bytes: u16) -> Result<Vec<LazItem>, LasZipError> {
+    pub fn default_for_point_format_id(
+        point_format_id: u8,
+        num_extra_bytes: u16,
+    ) -> Result<Vec<LazItem>, LasZipError> {
         use crate::las::{Point1, Point2, Point3, Point7, Point8};
         match point_format_id {
-            0 => Ok(LazItemRecordBuilder::default_version_of::<Point0>(num_extra_bytes)),
-            1 => Ok(LazItemRecordBuilder::default_version_of::<Point1>(num_extra_bytes)),
-            2 => Ok(LazItemRecordBuilder::default_version_of::<Point2>(num_extra_bytes)),
-            3 => Ok(LazItemRecordBuilder::default_version_of::<Point3>(num_extra_bytes)),
-            6 => Ok(LazItemRecordBuilder::default_version_of::<Point6>(num_extra_bytes)),
-            7 => Ok(LazItemRecordBuilder::default_version_of::<Point7>(num_extra_bytes)),
-            8 => Ok(LazItemRecordBuilder::default_version_of::<Point8>(num_extra_bytes)),
-            _ => Err(LasZipError::UnsupportedPointFormat(point_format_id))
+            0 => Ok(LazItemRecordBuilder::default_version_of::<Point0>(
+                num_extra_bytes,
+            )),
+            1 => Ok(LazItemRecordBuilder::default_version_of::<Point1>(
+                num_extra_bytes,
+            )),
+            2 => Ok(LazItemRecordBuilder::default_version_of::<Point2>(
+                num_extra_bytes,
+            )),
+            3 => Ok(LazItemRecordBuilder::default_version_of::<Point3>(
+                num_extra_bytes,
+            )),
+            6 => Ok(LazItemRecordBuilder::default_version_of::<Point6>(
+                num_extra_bytes,
+            )),
+            7 => Ok(LazItemRecordBuilder::default_version_of::<Point7>(
+                num_extra_bytes,
+            )),
+            8 => Ok(LazItemRecordBuilder::default_version_of::<Point8>(
+                num_extra_bytes,
+            )),
+            _ => Err(LasZipError::UnsupportedPointFormat(point_format_id)),
         }
     }
 
@@ -921,7 +938,7 @@ pub fn compress_all<W: Write + Seek>(
 
 /// Compresses all points in parallel
 ///
-/// Just like [`compress_all`] but the compression is done in mutliple threads
+/// Just like [`compress_all`] but the compression is done in multiple threads
 ///
 /// [`compress_all`]: fn.compress_all.html
 #[cfg(feature = "parallel")]
@@ -947,7 +964,9 @@ pub fn par_compress_all<W: Write + Seek>(
 
         // The last chunk may not have the same size,
         // the chunks() method takes care of that for us
-        let all_slices = uncompressed_points.chunks(chunk_size_in_bytes).collect::<Vec<_>>();
+        let all_slices = uncompressed_points
+            .chunks(chunk_size_in_bytes)
+            .collect::<Vec<_>>();
 
         let chunks = all_slices
             .into_par_iter()
@@ -1060,8 +1079,14 @@ pub fn par_decompress_buffer(
         let offset_to_chunk_table = cursor.read_i64::<LittleEndian>()?;
         let chunk_sizes = read_chunk_table(&mut cursor, offset_to_chunk_table)?;
 
-        let compressed_points = &compressed_points_data[std::mem::size_of::<i64>()..offset_to_chunk_table as usize];
-        par_decompress(compressed_points, decompressed_points, laz_vlr, &chunk_sizes)
+        let compressed_points =
+            &compressed_points_data[std::mem::size_of::<i64>()..offset_to_chunk_table as usize];
+        par_decompress(
+            compressed_points,
+            decompressed_points,
+            laz_vlr,
+            &chunk_sizes,
+        )
     }
 }
 
@@ -1094,7 +1119,7 @@ pub fn par_decompress_all_from_file_greedy(
     } else {
         let start_pos = src.seek(SeekFrom::Current(0))?;
         let mut offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
-        if offset_to_chunk_table <= 1  {
+        if offset_to_chunk_table <= 1 {
             src.seek(SeekFrom::End(-8))?;
             offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
         }
@@ -1104,7 +1129,6 @@ pub fn par_decompress_all_from_file_greedy(
         par_decompress(&compressed_points, points_out, laz_vlr, &chunk_sizes)
     }
 }
-
 
 /// Actual the parallel decompression
 ///
@@ -1126,14 +1150,13 @@ fn par_decompress(
 
     // FIXME we collect into a Vec because zip cannot be made 'into_par_iter' by rayon
     //  (or at least i don't know how)
-    let decompression_jobs: Vec<(&[u8], &mut [u8])> = input_chunks_iter
-        .zip(output_chunks_iter)
-        .collect();
-    decompression_jobs.into_par_iter()
+    let decompression_jobs: Vec<(&[u8], &mut [u8])> =
+        input_chunks_iter.zip(output_chunks_iter).collect();
+    decompression_jobs
+        .into_par_iter()
         .map(|(chunk_in, chunk_out)| {
             let src = std::io::Cursor::new(chunk_in);
-            let mut record_decompressor =
-                record_decompressor_from_laz_items(laz_vlr.items(), src)?;
+            let mut record_decompressor = record_decompressor_from_laz_items(laz_vlr.items(), src)?;
             for raw_point in chunk_out.chunks_exact_mut(point_size) {
                 record_decompressor.decompress_next(raw_point)?;
             }
@@ -1142,7 +1165,6 @@ fn par_decompress(
         .collect::<Result<(), LasZipError>>()?;
     Ok(())
 }
-
 
 #[cfg(test)]
 mod test {

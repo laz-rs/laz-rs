@@ -305,11 +305,11 @@ pub mod v1 {
     use std::io::{Read, Write};
 
     use crate::compressors::{
-        DEFAULT_COMPRESS_CONTEXTS, IntegerCompressor, IntegerCompressorBuilder,
+        IntegerCompressor, IntegerCompressorBuilder, DEFAULT_COMPRESS_CONTEXTS,
     };
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{
-        DEFAULT_DECOMPRESS_CONTEXTS, IntegerDecompressor, IntegerDecompressorBuilder,
+        IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
     };
     use crate::encoders::ArithmeticEncoder;
     use crate::las::point0::LasPoint0;
@@ -505,7 +505,7 @@ pub mod v1 {
                 | ((self.last_point.bit_fields() != current_point.bit_fields()) as u8) << 4
                 | ((self.last_point.classification() != current_point.classification()) as u8) << 3
                 | ((self.last_point.scan_angle_rank() != current_point.scan_angle_rank()) as u8)
-                << 2
+                    << 2
                 | ((self.last_point.user_data() != current_point.user_data()) as u8) << 1
                 | (self.last_point.point_source_id() != current_point.point_source_id()) as u8;
 
@@ -704,8 +704,8 @@ pub mod v2 {
 
             let bit_fields_changed = ((last.return_number() ^ current.return_number()) != 0)
                 | ((last.number_of_returns_of_given_pulse()
-                ^ current.number_of_returns_of_given_pulse())
-                != 0)
+                    ^ current.number_of_returns_of_given_pulse())
+                    != 0)
                 | (last.scan_direction_flag() ^ current.scan_direction_flag())
                 | (last.edge_of_flight_line() ^ current.edge_of_flight_line());
 
@@ -951,10 +951,10 @@ pub mod v2 {
             let diff = current_point.y() - self.last_point.y;
             let context = (n == 1) as u32
                 + if k_bits < 20 {
-                utils::u32_zero_bit(k_bits)
-            } else {
-                20
-            };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    20
+                };
             self.ic_dy.compress(&mut encoder, median, diff, context)?;
             unsafe {
                 self.common
@@ -967,10 +967,10 @@ pub mod v2 {
             let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
             let context = (n == 1) as u32
                 + if k_bits < 18 {
-                utils::u32_zero_bit(k_bits)
-            } else {
-                18
-            };
+                    utils::u32_zero_bit(k_bits)
+                } else {
+                    18
+                };
             self.ic_z.compress(
                 &mut encoder,
                 *unsafe { self.common.last_height.get_unchecked(l as usize) },
@@ -1149,10 +1149,10 @@ pub mod v2 {
                 let k_bits = self.ic_dx.k();
                 let context = (n == 1) as u32
                     + if k_bits < 20 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    20
-                };
+                        utils::u32_zero_bit(k_bits)
+                    } else {
+                        20
+                    };
                 let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
                 self.last_point.y += diff;
                 self.common
@@ -1164,10 +1164,10 @@ pub mod v2 {
                 let k_bits = (self.ic_dx.k() + self.ic_dy.k()) / 2;
                 let context = (n == 1) as u32
                     + if k_bits < 18 {
-                    utils::u32_zero_bit(k_bits)
-                } else {
-                    18
-                };
+                        utils::u32_zero_bit(k_bits)
+                    } else {
+                        18
+                    };
                 self.last_point.z = self.ic_z.decompress(
                     &mut decoder,
                     *self.common.last_height.get_unchecked(l as usize),

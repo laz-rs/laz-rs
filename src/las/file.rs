@@ -52,7 +52,6 @@ impl QuickHeader {
         })
     }
 
-
     pub fn num_extra_bytes(&self) -> u16 {
         let point_size_wo_extra = match self.point_format_id {
             0 => 20,
@@ -62,7 +61,7 @@ impl QuickHeader {
             6 => 30,
             7 => 36,
             8 => 38,
-            _ => panic!("Unknown fmt id")
+            _ => panic!("Unknown fmt id"),
         };
 
         self.point_size - point_size_wo_extra
@@ -108,7 +107,7 @@ pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) 
         let vlr = Vlr::read_from(src).unwrap();
         if vlr.record_id == 22204
             && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
-            == "laszip encoded"
+                == "laszip encoded"
         {
             laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
         }
@@ -127,7 +126,6 @@ pub fn point_format_id_compressed_to_uncompressd(point_format_id: u8) -> u8 {
 fn point_format_id_uncompressed_to_compressed(point_format_id: u8) -> u8 {
     point_format_id | 0x80
 }
-
 
 pub trait LasPointReader {
     fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()>;
@@ -149,8 +147,6 @@ impl<'a, R: Read + Seek> LasPointReader for LasZipDecompressor<'a, R> {
     }
 }
 
-
-
 /// Reader, that knows just enough things to be able to read LAS and LAZ data
 pub struct SimpleReader<'a> {
     pub header: QuickHeader,
@@ -158,7 +154,6 @@ pub struct SimpleReader<'a> {
     internal_buffer: Vec<u8>,
     current_index: u64,
 }
-
 
 impl<'a> SimpleReader<'a> {
     pub fn new<R: Read + Seek + 'a>(mut src: R) -> std::io::Result<Self> {

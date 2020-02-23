@@ -880,10 +880,12 @@ pub mod v2 {
                         self.common
                             .last_gps_times
                             .get_unchecked_mut(self.common.last)
-                            .value += i64::from(*self
-                            .common
-                            .last_gps_time_diffs
-                            .get_unchecked(self.common.last));
+                            .value += i64::from(
+                            *self
+                                .common
+                                .last_gps_time_diffs
+                                .get_unchecked(self.common.last),
+                        );
                         *self
                             .common
                             .multi_extreme_counters
@@ -894,16 +896,18 @@ pub mod v2 {
                         self.common
                             .last_gps_times
                             .get_unchecked_mut(self.common.next)
-                            .value = i64::from(self.ic_gps_time.decompress(
-                            &mut decoder,
-                            (self
-                                .common
-                                .last_gps_times
-                                .get_unchecked(self.common.last)
-                                .value
-                                >> 32) as i32,
-                            8,
-                        )?);
+                            .value = i64::from(
+                            self.ic_gps_time.decompress(
+                                &mut decoder,
+                                (self
+                                    .common
+                                    .last_gps_times
+                                    .get_unchecked(self.common.last)
+                                    .value
+                                    >> 32) as i32,
+                                8,
+                            )?,
+                        );
                         self.common
                             .last_gps_times
                             .get_unchecked_mut(self.common.next)
@@ -934,14 +938,16 @@ pub mod v2 {
                         self.common
                             .last_gps_times
                             .get_unchecked_mut(self.common.last)
-                            .value += i64::from(self.ic_gps_time.decompress(
-                            &mut decoder,
-                            *self
-                                .common
-                                .last_gps_time_diffs
-                                .get_unchecked(self.common.last as usize),
-                            1,
-                        )?);
+                            .value += i64::from(
+                            self.ic_gps_time.decompress(
+                                &mut decoder,
+                                *self
+                                    .common
+                                    .last_gps_time_diffs
+                                    .get_unchecked(self.common.last as usize),
+                                1,
+                            )?,
+                        );
                         *self
                             .common
                             .multi_extreme_counters
@@ -1080,16 +1086,18 @@ pub mod v2 {
                         self.common
                             .last_gps_times
                             .get_unchecked_mut(self.common.next)
-                            .value = i64::from(self.ic_gps_time.decompress(
-                            &mut decoder,
-                            (self
-                                .common
-                                .last_gps_times
-                                .get_unchecked(self.common.last)
-                                .value
-                                >> 32) as i32,
-                            8,
-                        )?);
+                            .value = i64::from(
+                            self.ic_gps_time.decompress(
+                                &mut decoder,
+                                (self
+                                    .common
+                                    .last_gps_times
+                                    .get_unchecked(self.common.last)
+                                    .value
+                                    >> 32) as i32,
+                                8,
+                            )?,
+                        );
                         self.common
                             .last_gps_times
                             .get_unchecked_mut(self.common.next)

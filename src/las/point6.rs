@@ -720,11 +720,12 @@ pub mod v3 {
                     let next_gps_time = &mut the_context.gps_sequences.last_gps_times
                         [the_context.gps_sequences.next];
 
-                    next_gps_time.value = i64::from(the_context.decompressors.gps_time.decompress(
-                        &mut self.decoders.gps_time,
-                        (last_gps_time >> 32) as i32,
-                        8,
-                    )?);
+                    next_gps_time.value =
+                        i64::from(the_context.decompressors.gps_time.decompress(
+                            &mut self.decoders.gps_time,
+                            (last_gps_time >> 32) as i32,
+                            8,
+                        )?);
                     next_gps_time.value <<= 32;
                     next_gps_time.value |= i64::from(self.decoders.gps_time.read_int()?);
                     the_context.gps_sequences.last = the_context.gps_sequences.next;
@@ -848,16 +849,16 @@ pub mod v3 {
                 } else if multi == LASZIP_GPS_TIME_MULTI_CODE_FULL {
                     the_context.gps_sequences.next = (the_context.gps_sequences.next + 1) & 3;
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next] =
-                        GpsTime::from(
-                            i64::from(the_context.decompressors.gps_time.decompress(
+                        GpsTime::from(i64::from(
+                            the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
                                 (the_context.gps_sequences.last_gps_times
                                     [the_context.gps_sequences.last]
                                     .value
                                     >> 32) as i32,
                                 8,
-                            )?),
-                        );
+                            )?,
+                        ));
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next]
                         .value <<= 32;
                     the_context.gps_sequences.last_gps_times[the_context.gps_sequences.next]
@@ -1675,11 +1676,7 @@ pub mod v3 {
 
             if scanner_channel_changed {
                 let diff = i32::from(scanner_channel) - self.current_context as i32;
-                let symbol = if diff > 0 {
-                    diff - 1
-                } else {
-                    diff + 4 - 1
-                };
+                let symbol = if diff > 0 { diff - 1 } else { diff + 4 - 1 };
                 self.encoders.channel_returns_xy.encode_symbol(
                     &mut self.contexts[self.current_context].models.scanner_channel,
                     symbol as u32,
@@ -1814,7 +1811,9 @@ pub mod v3 {
             }
             the_context.compressors.intensity.compress(
                 &mut self.encoders.intensity,
-                i32::from(the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize]),
+                i32::from(
+                    the_context.last_intensities[(cpr << 1) as usize | gps_time_changed as usize],
+                ),
                 i32::from(current_point.intensity),
                 cpr,
             )?;

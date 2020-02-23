@@ -114,7 +114,10 @@ loop_test_on_buffer!(
     "tests/data/point-color.las",
     26,
     LAS_HEADER_SIZE,
-    vec_of_boxed_buffer_compressors![v1::LasPoint0Compressor::default(), v1::LasRGBCompressor::default()],
+    vec_of_boxed_buffer_compressors![
+        v1::LasPoint0Compressor::default(),
+        v1::LasRGBCompressor::default()
+    ],
     vec_of_boxed_buffer_decompressors![
         v1::LasPoint0Decompressor::default(),
         v1::LasRGBDecompressor::default()

@@ -4,11 +4,11 @@ extern crate laz;
 
 use criterion::Criterion;
 
+use laz::las::file::QuickHeader;
 use laz::las::v2;
-use laz::las::file::{QuickHeader};
-use std::io::{Seek, SeekFrom, Read, Cursor, BufReader};
-use laz::record::{SequentialPointRecordCompressor, RecordCompressor};
+use laz::record::{RecordCompressor, SequentialPointRecordCompressor};
 use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 
 /*
 fn point0_v2_compression_benchmark(c: &mut Criterion) {
@@ -45,7 +45,9 @@ impl RawPointsData {
 fn get_raw_points_data(path: &str) -> RawPointsData {
     let mut test_file = BufReader::new(File::open(path).unwrap());
     let hdr = QuickHeader::read_from(&mut test_file).unwrap();
-    test_file.seek(SeekFrom::Start(hdr.offset_to_points as u64)).unwrap();
+    test_file
+        .seek(SeekFrom::Start(hdr.offset_to_points as u64))
+        .unwrap();
     let mut points_data = Vec::<u8>::new();
     test_file.read_to_end(&mut points_data).unwrap();
     RawPointsData {
@@ -65,7 +67,6 @@ fn point_0_v2_record_compression_benchmark(c: &mut Criterion) {
         b.iter(|| record_compressor.compress_next(raw_pts_iter.next().unwrap()));
     });
 }
-
 
 fn point_1_v2_record_compression_benchmark(c: &mut Criterion) {
     let raw_points_data = get_raw_points_data("tests/data/point-time.las");
@@ -107,11 +108,11 @@ fn point_3_v2_record_compression_benchmark(c: &mut Criterion) {
     });
 }
 
-
-criterion_group!(version_2_point_formats,
- point_0_v2_record_compression_benchmark,
- point_1_v2_record_compression_benchmark,
- point_2_v2_record_compression_benchmark,
- point_3_v2_record_compression_benchmark
- );
+criterion_group!(
+    version_2_point_formats,
+    point_0_v2_record_compression_benchmark,
+    point_1_v2_record_compression_benchmark,
+    point_2_v2_record_compression_benchmark,
+    point_3_v2_record_compression_benchmark
+);
 criterion_main!(version_2_point_formats);

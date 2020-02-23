@@ -26,13 +26,13 @@ pub trait FieldDecompressor<R: Read> {
     fn size_of_field(&self) -> usize;
 
     /// Decompress the first point's field from the `src`, and pack it into the `first_point` slice
-    /// 
+    ///
     /// The `first_point` slice will have a len of exactly `self_of_field()` bytes.
     fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()>;
 
-    /// Decompress the next point's field from the `decoder` and pack the 
+    /// Decompress the next point's field from the `decoder` and pack the
     /// decompressed data in the `buf` slice.
-    /// 
+    ///
     /// The `buf` slice will have a len of exactly `self_of_field()` bytes.
     fn decompress_with(
         &mut self,
@@ -634,9 +634,9 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
                         self.add_field_compressor(las::v3::LasRGBCompressor::default());
                         self.add_field_compressor(las::v3::LasNIRCompressor::default());
                     }
-                   LazItemType::Byte14(n) => {
-                       self.add_field_compressor(las::v3::LasExtraByteCompressor::new(n as usize));
-                   }
+                    LazItemType::Byte14(n) => {
+                        self.add_field_compressor(las::v3::LasExtraByteCompressor::new(n as usize));
+                    }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             item.item_type,

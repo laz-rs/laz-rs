@@ -129,11 +129,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         self.length = decoders::AC_MAX_LENGTH;
         self.out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
         self.out_byte = self.out_buffer.as_mut_ptr();
-        self.end_byte = unsafe {
-            self.out_buffer
-                .as_ptr()
-                .add(2 * AC_BUFFER_SIZE)
-        };
+        self.end_byte = unsafe { self.out_buffer.as_ptr().add(2 * AC_BUFFER_SIZE) };
     }
 
     pub fn done(&mut self) -> std::io::Result<()> {
@@ -159,16 +155,11 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
         self.renorm_enc_interval()?;
 
-        let endbuffer = unsafe {
-            self.out_buffer
-                .as_mut_ptr()
-                .add(2 * AC_BUFFER_SIZE)
-        };
+        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
         if self.end_byte != endbuffer {
             unsafe {
                 debug_assert!(
-                    (self.out_byte as *const u8)
-                        < self.out_buffer.as_ptr().add(AC_BUFFER_SIZE)
+                    (self.out_byte as *const u8) < self.out_buffer.as_ptr().add(AC_BUFFER_SIZE)
                 );
                 let slc: &[u8] = std::slice::from_raw_parts(
                     self.out_buffer.as_ptr().add(AC_BUFFER_SIZE),
@@ -368,11 +359,7 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn propagate_carry(&mut self) {
-        let endbuffer = unsafe {
-            self.out_buffer
-                .as_mut_ptr()
-                .add(2 * AC_BUFFER_SIZE)
-        };
+        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
         let mut b = if self.out_byte as *const u8 == self.out_buffer.as_ptr() {
             unsafe { endbuffer.offset(-1) }
         } else {
@@ -400,11 +387,7 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn renorm_enc_interval(&mut self) -> std::io::Result<()> {
-        let endbuffer = unsafe {
-            self.out_buffer
-                .as_mut_ptr()
-                .add(2 * AC_BUFFER_SIZE)
-        };
+        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
         loop {
             debug_assert!(self.out_buffer.as_ptr() <= self.out_byte);
             debug_assert!(self.out_byte < endbuffer);
@@ -427,11 +410,7 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn manage_out_buffer(&mut self) -> std::io::Result<()> {
-        let endbuffer = unsafe {
-            self.out_buffer
-                .as_mut_ptr()
-                .add(2 * AC_BUFFER_SIZE)
-        };
+        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
         if self.out_byte == endbuffer {
             self.out_byte = self.out_buffer.as_mut_ptr();
         }

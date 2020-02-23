@@ -103,7 +103,6 @@ impl<T: Zero + Copy + PartialOrd> StreamingMedian<T> {
     }
 }
 
-
 #[inline]
 pub fn flag_diff<T>(value: T, other: T, flag: <T as BitXor>::Output) -> bool
 where

@@ -99,7 +99,6 @@
 //! [`LasZipCompressor`]: las/laszip/struct.LasZipCompressor.html
 //! [`LasZipDecompressor`]: las/laszip/struct.LasZipDecompressor.html
 
-
 pub(crate) mod compressors;
 pub(crate) mod decoders;
 pub(crate) mod decompressors;
@@ -114,9 +113,10 @@ pub mod packers;
 pub mod record;
 
 pub use errors::LasZipError;
-pub use las::laszip::{LasZipCompressor, LasZipDecompressor, LazItemType, LazItem, LazVlr, LazVlrBuilder, LazItemRecordBuilder};
 pub use las::laszip::compress_all;
 #[cfg(feature = "parallel")]
 pub use las::laszip::{par_compress_all, par_decompress_buffer};
-
-
+pub use las::laszip::{
+    LasZipCompressor, LasZipDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr,
+    LazVlrBuilder,
+};
