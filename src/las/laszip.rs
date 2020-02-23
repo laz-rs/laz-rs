@@ -133,7 +133,7 @@ impl LazItem {
     }
 
     pub fn item_type(&self) -> LazItemType {
-       self.item_type
+        self.item_type
     }
 
     pub fn size(&self) -> u16 {
@@ -475,7 +475,7 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
             return Err(LasZipError::UnsupportedLazItemVersion(
                 first_item.item_type,
                 first_item.version,
-            ))
+            ));
         }
     };
 
@@ -504,7 +504,7 @@ pub fn record_compressor_from_laz_items<'a, W: Write + 'a>(
             return Err(LasZipError::UnsupportedLazItemVersion(
                 first_item.item_type,
                 first_item.version,
-            ))
+            ));
         }
     };
     compressor.set_fields_from(items)?;
@@ -559,7 +559,6 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 }
 
 impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
-
     /// Creates a new instance from a data source of compressed points
     /// and the `record data` of the laszip vlr
     pub fn new_with_record_data(
@@ -982,12 +981,12 @@ struct LazChunkIterator<'a> {
 impl<'a> LazChunkIterator<'a> {
     /// Creates a new iterator.
     ///
-    /// `all_chunks` is the slice of all the point data
+    /// `all_chunks` is the slice of all the point data (and just the actual points)
     /// `chunk_table` is, well, the chunk table
     fn new(all_chunks: &'a [u8], chunk_table: &'a Vec<u64>) -> Self {
         Self {
             next_chunks: all_chunks,
-            chunk_sizes: chunk_table.iter()
+            chunk_sizes: chunk_table.iter(),
         }
     }
 }
@@ -1034,10 +1033,8 @@ impl<'a> FusedIterator for LazChunkIterator<'a> {}
 pub fn par_decompress_buffer(
     compressed_points_data: &[u8],
     decompressed_points: &mut [u8],
-    laz_vlr: &LazVlr
+    laz_vlr: &LazVlr,
 ) -> Result<(), LasZipError> {
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
     let point_size = laz_vlr.items_size() as usize;
     if decompressed_points.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
@@ -1045,47 +1042,35 @@ pub fn par_decompress_buffer(
             point_size,
         })
     } else {
-        let decompressed_chunk_size = laz_vlr.chunk_size as usize * point_size;
         let mut cursor = std::io::Cursor::new(compressed_points_data);
         let offset_to_chunk_table = cursor.read_i64::<LittleEndian>()?;
         let chunk_sizes = read_chunk_table(&mut cursor, offset_to_chunk_table)?;
 
         let compressed_points = &compressed_points_data[std::mem::size_of::<i64>()..offset_to_chunk_table as usize];
-
-        let input_chunks_iter = LazChunkIterator::new(compressed_points, &chunk_sizes);
-        let output_chunks_iter = decompressed_points.chunks_mut(decompressed_chunk_size as usize);
-
-        // FIXME we collect into a Vec because zip cannot be made 'into_par_iter' by rayon
-        //  (or at least i don't know how)
-        let decompression_jobs: Vec<(&[u8], &mut [u8])> = input_chunks_iter
-            .zip(output_chunks_iter)
-            .collect();
-        decompression_jobs.into_par_iter()
-            .map(|(chunk_in, chunk_out)| {
-                let src = std::io::Cursor::new(chunk_in);
-                let mut record_decompressor =
-                    record_decompressor_from_laz_items(laz_vlr.items(), src)?;
-                for raw_point in chunk_out.chunks_exact_mut(point_size) {
-                    record_decompressor.decompress_next(raw_point)?;
-                }
-                Ok(())
-            })
-            .collect::<Result<(), LasZipError>>()?;
-
-        Ok(())
+        par_decompress(compressed_points, decompressed_points, laz_vlr, &chunk_sizes)
     }
 }
 
-
+/// Decompress points from the file in parallel greedily
+///
+/// What is meant by 'greedy' here is that this function
+/// will read in memory all the compressed points in order to decompress them
+/// as opposed to reading a chunk of points when needed
+///
+/// This fn will decompress as many points as the `decompress_points` can hold.
+/// (But will still load the whole point data in memory even if the
+/// `decompress_points` cannot hold all the points)
+///
+/// Each chunk is sent for decompression in a thread.
+///
+///
+/// `src` must be at the start of the LAZ point data
 #[cfg(feature = "parallel")]
-pub fn par_decompress_all_from_file(
+pub fn par_decompress_all_from_file_greedy(
     src: &mut std::io::BufReader<std::fs::File>,
     points_out: &mut [u8],
     laz_vlr: &LazVlr,
 ) -> Result<(), LasZipError> {
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
-    use std::io::Cursor;
-
     let point_size = laz_vlr.items_size() as usize;
     if points_out.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
@@ -1093,54 +1078,55 @@ pub fn par_decompress_all_from_file(
             point_size,
         })
     } else {
-        let num_points_to_decompress = points_out.len() / point_size;
-
-        let mut num_chunks_to_read = num_points_to_decompress / laz_vlr.chunk_size as usize;
-        if num_points_to_decompress % laz_vlr.chunk_size as usize != 0 {
-            num_chunks_to_read += 1;
+        let start_pos = src.seek(SeekFrom::Current(0))?;
+        let mut offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
+        if offset_to_chunk_table <= 1  {
+            src.seek(SeekFrom::End(-8))?;
+            offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
         }
-
-        let offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
+        let mut compressed_points = vec![0u8; (offset_to_chunk_table as u64 - start_pos) as usize];
+        src.read_exact(&mut compressed_points)?;
         let chunk_sizes = read_chunk_table(src, offset_to_chunk_table)?;
-        if num_chunks_to_read > chunk_sizes.len() {
-            panic!("want to read more chunks than there are");
-        }
-
-        let chunks_data: Vec<Cursor<Vec<u8>>> = chunk_sizes[..num_chunks_to_read]
-            .iter()
-            .map(|size| {
-                let mut chunk_bytes = vec![0u8; *size as usize];
-                src.read_exact(&mut chunk_bytes)?;
-                Ok(Cursor::new(chunk_bytes))
-            })
-            .collect::<std::io::Result<Vec<Cursor<Vec<u8>>>>>()?;
-
-        let points_per_chunk = laz_vlr.chunk_size as usize;
-        let chunk_size_in_bytes = points_per_chunk * point_size;
-
-        let mut decompress_in_out =
-            Vec::<(&mut [u8], Cursor<Vec<u8>>)>::with_capacity(chunks_data.len());
-        for (slc_out, chunk_data) in points_out
-            .chunks_mut(chunk_size_in_bytes)
-            .into_iter()
-            .zip(chunks_data)
-        {
-            decompress_in_out.push((slc_out, chunk_data));
-        }
-
-        decompress_in_out
-            .into_par_iter()
-            .map(|(slc_out, src)| {
-                let mut record_decompressor =
-                    record_decompressor_from_laz_items(laz_vlr.items(), src)?;
-                for raw_point in slc_out.chunks_exact_mut(point_size) {
-                    record_decompressor.decompress_next(raw_point)?;
-                }
-                Ok(())
-            })
-            .collect::<Result<(), LasZipError>>()?;
-        Ok(())
+        par_decompress(&compressed_points, points_out, laz_vlr, &chunk_sizes)
     }
+}
+
+
+/// Actual the parallel decompression
+///
+/// `compressed_points` must contains only the bytes corresponding to the points
+/// (so no offset, no chunk_table)
+#[cfg(feature = "parallel")]
+fn par_decompress(
+    compressed_points: &[u8],
+    decompressed_points: &mut [u8],
+    laz_vlr: &LazVlr,
+    chunk_sizes: &Vec<u64>,
+) -> Result<(), LasZipError> {
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+    let point_size = laz_vlr.items_size() as usize;
+    let decompressed_chunk_size = laz_vlr.chunk_size as usize * point_size;
+    let input_chunks_iter = LazChunkIterator::new(compressed_points, &chunk_sizes);
+    let output_chunks_iter = decompressed_points.chunks_mut(decompressed_chunk_size as usize);
+
+    // FIXME we collect into a Vec because zip cannot be made 'into_par_iter' by rayon
+    //  (or at least i don't know how)
+    let decompression_jobs: Vec<(&[u8], &mut [u8])> = input_chunks_iter
+        .zip(output_chunks_iter)
+        .collect();
+    decompression_jobs.into_par_iter()
+        .map(|(chunk_in, chunk_out)| {
+            let src = std::io::Cursor::new(chunk_in);
+            let mut record_decompressor =
+                record_decompressor_from_laz_items(laz_vlr.items(), src)?;
+            for raw_point in chunk_out.chunks_exact_mut(point_size) {
+                record_decompressor.decompress_next(raw_point)?;
+            }
+            Ok(())
+        })
+        .collect::<Result<(), LasZipError>>()?;
+    Ok(())
 }
 
 

@@ -4,7 +4,7 @@ fn main() {
     use laz::las::file::{
         point_format_id_compressed_to_uncompressd, read_vlrs_and_get_laszip_vlr, SimpleReader,
     };
-    use laz::las::laszip::par_decompress_all_from_file;
+    use laz::las::laszip::par_decompress_all_from_file_greedy;
     use std::fs::File;
     use std::io::{BufReader, Seek, SeekFrom};
     let args: Vec<String> = std::env::args().collect();
@@ -27,7 +27,7 @@ fn main() {
 
     let mut all_points = vec![0u8; laz_header.point_size as usize * laz_header.num_points as usize];
 
-    par_decompress_all_from_file(&mut laz_file, &mut all_points, &laszip_vlr).unwrap();
+    par_decompress_all_from_file_greedy(&mut laz_file, &mut all_points, &laszip_vlr).unwrap();
 
     if let Some(las_path) = args.get(2) {
         let mut las_file =
