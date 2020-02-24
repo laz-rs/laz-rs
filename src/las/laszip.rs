@@ -940,6 +940,10 @@ pub fn compress_all<W: Write + Seek>(
 ///
 /// Just like [`compress_all`] but the compression is done in multiple threads
 ///
+/// # Note
+///
+/// Point order [is conserved](https://github.com/rayon-rs/rayon/issues/551)
+///
 /// [`compress_all`]: fn.compress_all.html
 #[cfg(feature = "parallel")]
 pub fn par_compress_all<W: Write + Seek>(

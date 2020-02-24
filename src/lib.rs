@@ -109,7 +109,7 @@
 //! - [`par_compress_all`]
 //! - [`par_decompress_buffer`]
 //!
-//! [`par_compress_all`]: las/laszip/fn.compress_all.html
+//! [`par_compress_all`]: las/laszip/fn.par_compress_all.html
 //! [`par_decompress_buffer`]: las/laszip/fn.par_decompress_buffer.html
 
 pub(crate) mod compressors;
