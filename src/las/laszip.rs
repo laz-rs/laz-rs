@@ -936,6 +936,49 @@ pub fn compress_buffer<W: Write + Seek>(
     }
 }
 
+
+/// Decompresses all points from the buffer
+///
+/// The `compressed_points_data` slice must contain all the laszip data
+/// that means:
+///   1) The offset to the chunk table (i64)
+///   2) the compressed points
+///   3) the chunk table (optional)
+///
+///
+/// This fn will decompress as many points as the `decompress_points` can hold.
+///
+/// # Important
+///
+/// In a LAZ file, the chunk table offset is counted from the start of the
+/// LAZ file. Here since we only have the buffer points data, you must make
+/// sure the offset is counted since the start of point data.
+///
+/// So you should update the value before calling this function.
+/// Otherwise you will get an IoError like 'failed to fill whole buffer'
+/// due to this function seeking past the end of the data.
+pub fn decompress_buffer(
+    compressed_points_data: &[u8],
+    decompressed_points: &mut [u8],
+    laz_vlr: LazVlr,
+) -> Result<(), LasZipError> {
+    let point_size = laz_vlr.items_size() as usize;
+    if decompressed_points.len() % point_size != 0 {
+        Err(LasZipError::BufferLenNotMultipleOfPointSize {
+            buffer_len: decompressed_points.len(),
+            point_size,
+        })
+    } else {
+        let src = std::io::Cursor::new(compressed_points_data);
+        LasZipDecompressor::new(src, laz_vlr)
+            .and_then(| mut decompressor| {
+                decompressor.decompress_many(decompressed_points)?;
+                Ok(())
+            }
+        )
+    }
+}
+
 /// Compresses all points in parallel
 ///
 /// Just like [`compress_buffer`] but the compression is done in multiple threads
@@ -1047,25 +1090,14 @@ impl<'a> FusedIterator for LazChunkIterator<'a> {}
 ///
 /// Each chunk is sent for decompression in a thread.
 ///
-/// The `compressed_points_data` slice must contain all the laszip data
-/// that means:
-///   1) The offset to the chunk table (i64)
-///   2) the compressed points
-///   3) the chunk table
-///
-///
-/// This fn will decompress as many points as the `decompress_points` can hold.
+/// Just like [`decompress_buffer`] but the decompression is done using multiple threads
 ///
 /// # Important
 ///
-/// In a LAZ file, the chunk table offset is counted from the start of the
-/// LAZ file. Here since we only have the buffer points data, you must make
-/// sure the offset is counted since the start of point data.
+/// All the points in the doc of [`decompress_buffer`] applies to this
+/// fn with the addition that  the chunk table _IS_ mandatory
 ///
-/// So you should update the value before calling this function.
-/// Otherwise you will get an IoError like 'failed to fill whole buffer'
-/// due to this function seeking past the end of the data.
-///
+/// [`decompress_buffer`]: fn.decompress_buffer.html
 #[cfg(feature = "parallel")]
 pub fn par_decompress_buffer(
     compressed_points_data: &[u8],

@@ -126,7 +126,7 @@ pub mod packers;
 pub mod record;
 
 pub use errors::LasZipError;
-pub use las::laszip::compress_buffer;
+pub use las::laszip::{compress_buffer, decompress_buffer};
 #[cfg(feature = "parallel")]
 pub use las::laszip::{par_compress_buffer, par_decompress_buffer};
 pub use las::laszip::{
