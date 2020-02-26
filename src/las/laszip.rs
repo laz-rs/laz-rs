@@ -917,7 +917,7 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
 /// `dst`: Where the compressed data will be written
 ///
 /// `uncompressed_points`: byte slice of the uncompressed points to be compressed
-pub fn compress_all<W: Write + Seek>(
+pub fn compress_buffer<W: Write + Seek>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: LazVlr,
@@ -938,15 +938,15 @@ pub fn compress_all<W: Write + Seek>(
 
 /// Compresses all points in parallel
 ///
-/// Just like [`compress_all`] but the compression is done in multiple threads
+/// Just like [`compress_buffer`] but the compression is done in multiple threads
 ///
 /// # Note
 ///
 /// Point order [is conserved](https://github.com/rayon-rs/rayon/issues/551)
 ///
-/// [`compress_all`]: fn.compress_all.html
+/// [`compress_buffer`]: fn.compress_buffer.html
 #[cfg(feature = "parallel")]
-pub fn par_compress_all<W: Write + Seek>(
+pub fn par_compress_buffer<W: Write + Seek>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: &LazVlr,

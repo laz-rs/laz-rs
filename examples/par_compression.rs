@@ -1,7 +1,7 @@
 #[cfg(feature = "parallel")]
 fn main() {
     use laz::las::file::QuickHeader;
-    use laz::las::laszip::{par_compress_all, LasZipDecompressor, LazItemRecordBuilder, LazVlr};
+    use laz::las::laszip::{par_compress_buffer, LasZipDecompressor, LazItemRecordBuilder, LazVlr};
     use std::fs::File;
     use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
     let args: Vec<String> = std::env::args().collect();
@@ -25,7 +25,7 @@ fn main() {
     let laz_vlr = LazVlr::from_laz_items(laz_items);
 
     let mut compression_out_put = Cursor::new(Vec::<u8>::new());
-    par_compress_all(&mut compression_out_put, &all_points, &laz_vlr).unwrap();
+    par_compress_buffer(&mut compression_out_put, &all_points, &laz_vlr).unwrap();
 
     compression_out_put.set_position(0);
     let mut decompressor = LasZipDecompressor::new(compression_out_put, laz_vlr).unwrap();
