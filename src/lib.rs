@@ -106,10 +106,10 @@
 //! This crates has an optional feature 'parallel'.
 //! When using this feature, additional `par_` methods are exposed.
 //!
-//! - [`par_compress_all`]
+//! - [`par_compress_buffer`]
 //! - [`par_decompress_buffer`]
 //!
-//! [`par_compress_all`]: las/laszip/fn.par_compress_all.html
+//! [`par_compress_buffer`]: las/laszip/fn.par_compress_buffer.html
 //! [`par_decompress_buffer`]: las/laszip/fn.par_decompress_buffer.html
 
 pub(crate) mod compressors;
