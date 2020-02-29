@@ -319,6 +319,14 @@ impl Packable for Point6 {
             GpsTime::from(self.gps_time).pack_into(&mut output[22..30]);
         }
     }
+
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        unimplemented!()
+    }
+
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]

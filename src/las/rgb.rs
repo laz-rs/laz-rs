@@ -129,17 +129,27 @@ impl ColorDiff {
 
 impl Packable for RGB {
     fn unpack_from(input: &[u8]) -> Self {
-        Self {
-            red: u16::unpack_from(&input[0..2]),
-            green: u16::unpack_from(&input[2..4]),
-            blue: u16::unpack_from(&input[4..6]),
-        }
+        assert!(input.len() >= 6);
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        u16::pack_into(&self.red, &mut output[0..2]);
-        u16::pack_into(&self.green, &mut output[2..4]);
-        u16::pack_into(&self.blue, &mut output[4..6]);
+        assert!(output.len() >= 6);
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        Self {
+            red: u16::unpack_from_unchecked(input.get_unchecked(0..2)),
+            green: u16::unpack_from_unchecked(&input.get_unchecked(2..4)),
+            blue: u16::unpack_from_unchecked(&input.get_unchecked(4..6)),
+        }
+    }
+
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        u16::pack_into_unchecked(&self.red, output.get_unchecked_mut(0..2));
+        u16::pack_into_unchecked(&self.green, output.get_unchecked_mut(2..4));
+        u16::pack_into_unchecked(&self.blue, output.get_unchecked_mut(4..6));
     }
 }
 
@@ -294,7 +304,7 @@ pub mod v1 {
                 )? as u16)
                     << 8;
             }
-            self.last.pack_into(buf);
+            unsafe { self.last.pack_into_unchecked(buf) };
             Ok(())
         }
     }
@@ -305,7 +315,7 @@ pub mod v1 {
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last = RGB::unpack_from(buf);
+            self.last = unsafe { RGB::unpack_from_unchecked(buf) };
             dst.write_all(buf)
         }
 
@@ -314,7 +324,7 @@ pub mod v1 {
             mut encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = RGB::unpack_from(buf);
+            let current_point = unsafe { RGB::unpack_from_unchecked(buf) };
             let sym = ((lower_byte(self.last.red()) != lower_byte(current_point.red())) as u8) << 0
                 | ((upper_byte(self.last.red()) != upper_byte(current_point.red())) as u8) << 1
                 | ((lower_byte(self.last.green()) != lower_byte(current_point.green())) as u8) << 2
@@ -499,7 +509,7 @@ pub mod v2 {
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last = super::RGB::unpack_from(&buf);
+            self.last = unsafe { super::RGB::unpack_from_unchecked(&buf) };
             dst.write_all(buf)
         }
 
@@ -508,7 +518,7 @@ pub mod v2 {
             encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = super::RGB::unpack_from(&buf);
+            let current_point = unsafe { super::RGB::unpack_from_unchecked(&buf) };
             compress_rgb_using(encoder, &mut self.models, &current_point, &self.last)?;
             self.last = current_point;
             Ok(())
@@ -624,7 +634,7 @@ pub mod v2 {
         ) -> std::io::Result<()> {
             let this_val = decompress_rgb_using(decoder, &mut self.models, &self.last)?;
             self.last = this_val;
-            this_val.pack_into(buf);
+            unsafe { this_val.pack_into_unchecked(buf) };
             Ok(())
         }
     }
@@ -746,10 +756,10 @@ pub mod v3 {
                     &mut self.contexts[self.last_context_used].models,
                     last_item,
                 )?;
-                new.pack_into(current_point);
+                unsafe { new.pack_into_unchecked(current_point) };
                 *last_item = new;
             } else {
-                last_item.pack_into(current_point);
+                unsafe { last_item.pack_into_unchecked(current_point) };
             }
 
             Ok(())
@@ -804,13 +814,13 @@ pub mod v3 {
         ) -> std::io::Result<()> {
             dst.write_all(first_point)?;
             self.contexts[*context] = Some(v2::RGBModels::default());
-            self.last_rgbs[*context] = Some(RGB::unpack_from(first_point));
+            self.last_rgbs[*context] = unsafe { Some(RGB::unpack_from_unchecked(first_point)) };
             self.last_context_used = *context;
             Ok(())
         }
 
         fn compress_field_with(&mut self, buf: &[u8], context: &mut usize) -> std::io::Result<()> {
-            let current_point = RGB::unpack_from(buf);
+            let current_point = unsafe { RGB::unpack_from_unchecked(buf) };
             let mut last_rgb = self.last_rgbs[self.last_context_used]
                 .as_mut()
                 .expect("internal error: last value is not initialized");

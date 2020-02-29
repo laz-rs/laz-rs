@@ -9,6 +9,7 @@ use laz::las::v2;
 use laz::record::{RecordCompressor, SequentialPointRecordCompressor};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+use laz::packers::Packable;
 
 /*
 fn point0_v2_compression_benchmark(c: &mut Criterion) {
@@ -108,6 +109,29 @@ fn point_3_v2_record_compression_benchmark(c: &mut Criterion) {
     });
 }
 
+
+fn point_0_unpack_checked_benchmark(c: &mut Criterion) {
+    let raw_points_data = get_raw_points_data("tests/data/point10.las");
+    c.bench_function("point_0_unpack_checked", move |b| {
+        let mut raw_pts_iter = raw_points_data.cycling_iterator();
+        b.iter(|| {
+            let _point = laz::las::point0::Point0::unpack_from(raw_pts_iter.next().unwrap());
+        });
+    });
+}
+
+fn point_0_unpack_unchecked_benchmark(c: &mut Criterion) {
+    let raw_points_data = get_raw_points_data("tests/data/point10.las");
+    c.bench_function("point_0_unpack_checked", move |b| {
+        let mut raw_pts_iter = raw_points_data.cycling_iterator();
+        b.iter(|| {
+            unsafe {
+                let _point = laz::las::point0::Point0::unpack_from_unchecked(raw_pts_iter.next().unwrap());
+            }
+        });
+    });
+}
+
 criterion_group!(
     version_2_point_formats,
     point_0_v2_record_compression_benchmark,
@@ -115,4 +139,11 @@ criterion_group!(
     point_2_v2_record_compression_benchmark,
     point_3_v2_record_compression_benchmark
 );
-criterion_main!(version_2_point_formats);
+
+criterion_group!(
+    fields_unpacking,
+    point_0_unpack_checked_benchmark,
+    point_0_unpack_unchecked_benchmark
+);
+
+criterion_main!(version_2_point_formats, fields_unpacking);

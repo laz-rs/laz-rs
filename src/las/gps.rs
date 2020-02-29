@@ -129,29 +129,32 @@ impl LasGpsTime for GpsTime {
 
 impl Packable for GpsTime {
     fn unpack_from(input: &[u8]) -> Self {
-        if input.len() < std::mem::size_of::<i64>() {
-            panic!(
-                "GpsTime::unpack_from expected a buffer of {} bytes",
-                std::mem::size_of::<i64>()
-            );
-        }
-        let lower = u32::unpack_from(&input[0..std::mem::size_of::<u32>()]);
-        let upper =
-            u32::unpack_from(&input[std::mem::size_of::<u32>()..(2 * std::mem::size_of::<u32>())]);
+        assert!(input.len() >= 8, "GpsTime::unpack_from expected a buffer of 8 bytes");
+        unsafe { Self::unpack_from_unchecked(input) }
+    }
+
+    fn pack_into(&self, output: &mut [u8]) {
+        assert!(output.len() >= 8, "GpsTime::pack_into expected a buffer of 8 bytes");
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        let lower = u32::unpack_from_unchecked(input.get_unchecked(0..4));
+        let upper = u32::unpack_from_unchecked(input.get_unchecked(4..8));
 
         GpsTime {
             value: i64::from(upper) << 32 | i64::from(lower),
         }
     }
 
-    fn pack_into(&self, output: &mut [u8]) {
-        u32::pack_into(
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        u32::pack_into_unchecked(
             &((self.value & 0xFFFF_FFFF) as u32),
-            &mut output[0..std::mem::size_of::<u32>()],
+             output.get_unchecked_mut(0..4),
         );
-        u32::pack_into(
+        u32::pack_into_unchecked(
             &((self.value >> 32) as u32),
-            &mut output[std::mem::size_of::<u32>()..(2 * std::mem::size_of::<u32>())],
+            output.get_unchecked_mut(4..8),
         );
     }
 }
@@ -235,7 +238,7 @@ pub mod v1 {
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_gps = GpsTime::unpack_from(buf).into();
+            self.last_gps = unsafe { GpsTime::unpack_from_unchecked(buf).into() };
             dst.write_all(buf)
         }
 
@@ -244,7 +247,7 @@ pub mod v1 {
             mut encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = GpsTime::unpack_from(buf);
+            let current_point = unsafe { GpsTime::unpack_from_unchecked(buf) };
             let current_gps_time_value = current_point.gps_time().to_bits() as i64;
 
             if self.last_gps_time_diff == 0 {
@@ -440,7 +443,7 @@ pub mod v1 {
                     self.last_gps = decoder.read_int_64()? as i64;
                 }
             }
-            GpsTime::from(self.last_gps).pack_into(buf);
+            unsafe { GpsTime::from(self.last_gps).pack_into_unchecked(buf) };
             Ok(())
         }
     }
@@ -1125,7 +1128,7 @@ pub mod v2 {
                 self.common
                     .last_gps_times
                     .get_unchecked(self.common.last)
-                    .pack_into(buf);
+                    .pack_into_unchecked(buf);
                 Ok(())
             }
         }

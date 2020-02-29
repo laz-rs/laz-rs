@@ -26,7 +26,7 @@
 
 //! Packing types from / to bytes
 
-//// Definition of the packing & unpacking trait
+/// Definition of the packing & unpacking trait
 ///
 /// Types that can be packed and unpacked from byte slices.
 ///
@@ -35,43 +35,60 @@
 pub trait Packable {
     fn unpack_from(input: &[u8]) -> Self;
     fn pack_into(&self, output: &mut [u8]);
+
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self;
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]);
 }
 
 impl Packable for u32 {
     fn unpack_from(input: &[u8]) -> Self {
-        if input.len() < 4 {
-            panic!("u32::unpack_from expected a slice of 4 bytes");
-        }
-        unsafe {
-            let b1 = *input.get_unchecked(0);
-            let b2 = *input.get_unchecked(1);
-            let b3 = *input.get_unchecked(2);
-            let b4 = *input.get_unchecked(3);
-
-            u32::from_le_bytes([b1, b2, b3, b4])
-        }
+        assert!(input.len() >= 4, "u32::unpack_from expected a slice of 4 bytes");
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        output[..4].copy_from_slice(&self.to_le_bytes());
+        assert!(output.len() >= 4, "u32::pack_into expected a slice of 4 bytes");
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        let b1 = *input.get_unchecked(0);
+        let b2 = *input.get_unchecked(1);
+        let b3 = *input.get_unchecked(2);
+        let b4 = *input.get_unchecked(3);
+
+        u32::from_le_bytes([b1, b2, b3, b4])
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        output.get_unchecked_mut(..4).copy_from_slice(&self.to_le_bytes())
     }
 }
 
 impl Packable for u16 {
     fn unpack_from(input: &[u8]) -> Self {
-        if input.len() < 2 {
-            panic!("u16::unpack_from expected a slice of 2 bytes");
-        }
-        unsafe {
-            let b1 = *input.get_unchecked(0);
-            let b2 = *input.get_unchecked(1);
-
-            u16::from_le_bytes([b1, b2])
-        }
+        assert!(input.len() >= 2, "u16::unpack_from expected a slice of 2 bytes");
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        output[..2].copy_from_slice(&self.to_le_bytes());
+        assert!(output.len() >= 2, "u32::pack_into expected a slice of 4 bytes");
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        let b1 = *input.get_unchecked(0);
+        let b2 = *input.get_unchecked(1);
+
+        u16::from_le_bytes([b1, b2])
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        output.get_unchecked_mut(..2).copy_from_slice(&self.to_le_bytes());
     }
 }
 
@@ -83,6 +100,16 @@ impl Packable for u8 {
     fn pack_into(&self, output: &mut [u8]) {
         output[0] = *self;
     }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        *input.get_unchecked(0)
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        *output.get_unchecked_mut(0) = *self;
+    }
 }
 
 impl Packable for i32 {
@@ -90,8 +117,18 @@ impl Packable for i32 {
         u32::unpack_from(input) as i32
     }
 
-    fn pack_into(&self, mut output: &mut [u8]) {
-        (*self as u32).pack_into(&mut output)
+    fn pack_into(&self, output: &mut [u8]) {
+        (*self as u32).pack_into(output)
+    }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        u32::unpack_from_unchecked(input) as i32
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        (*self as u32).pack_into_unchecked(output)
     }
 }
 
@@ -103,6 +140,16 @@ impl Packable for i16 {
     fn pack_into(&self, mut output: &mut [u8]) {
         (*self as u16).pack_into(&mut output)
     }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        u16::unpack_from_unchecked(input) as i16
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        (*self as u16).pack_into_unchecked(output)
+    }
 }
 
 impl Packable for i8 {
@@ -112,6 +159,16 @@ impl Packable for i8 {
 
     fn pack_into(&self, output: &mut [u8]) {
         output[0] = *self as u8;
+    }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        *input.get_unchecked(0) as i8
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        *output.get_unchecked_mut(0) = (*self) as u8;
     }
 }
 
