@@ -41,11 +41,13 @@ pub trait Packable {
 }
 
 impl Packable for u32 {
+    #[inline]
     fn unpack_from(input: &[u8]) -> Self {
         assert!(input.len() >= 4, "u32::unpack_from expected a slice of 4 bytes");
         unsafe { Self::unpack_from_unchecked(input) }
     }
 
+    #[inline]
     fn pack_into(&self, output: &mut [u8]) {
         assert!(output.len() >= 4, "u32::pack_into expected a slice of 4 bytes");
         unsafe { self.pack_into_unchecked(output) }
@@ -68,11 +70,13 @@ impl Packable for u32 {
 }
 
 impl Packable for u16 {
+    #[inline]
     fn unpack_from(input: &[u8]) -> Self {
         assert!(input.len() >= 2, "u16::unpack_from expected a slice of 2 bytes");
         unsafe { Self::unpack_from_unchecked(input) }
     }
 
+    #[inline]
     fn pack_into(&self, output: &mut [u8]) {
         assert!(output.len() >= 2, "u32::pack_into expected a slice of 4 bytes");
         unsafe { self.pack_into_unchecked(output) }
@@ -93,10 +97,12 @@ impl Packable for u16 {
 }
 
 impl Packable for u8 {
+    #[inline]
     fn unpack_from(input: &[u8]) -> Self {
         input[0]
     }
 
+    #[inline]
     fn pack_into(&self, output: &mut [u8]) {
         output[0] = *self;
     }
@@ -113,10 +119,12 @@ impl Packable for u8 {
 }
 
 impl Packable for i32 {
+    #[inline]
     fn unpack_from(input: &[u8]) -> Self {
         u32::unpack_from(input) as i32
     }
 
+    #[inline]
     fn pack_into(&self, output: &mut [u8]) {
         (*self as u32).pack_into(output)
     }
@@ -133,10 +141,12 @@ impl Packable for i32 {
 }
 
 impl Packable for i16 {
+    #[inline]
     fn unpack_from(input: &[u8]) -> Self {
         u16::unpack_from(input) as i16
     }
 
+    #[inline]
     fn pack_into(&self, mut output: &mut [u8]) {
         (*self as u16).pack_into(&mut output)
     }
@@ -153,10 +163,12 @@ impl Packable for i16 {
 }
 
 impl Packable for i8 {
+    #[inline]
     fn unpack_from(input: &[u8]) -> Self {
         input[0] as i8
     }
 
+    #[inline]
     fn pack_into(&self, output: &mut [u8]) {
         output[0] = *self as u8;
     }

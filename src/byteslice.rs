@@ -15,6 +15,7 @@ impl<'a> ChunksIrregular<'a> {
 impl<'a> Iterator for ChunksIrregular<'a> {
     type Item = &'a [u8];
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let size = self.sizes.next()?;
         let (head, tail) = self.remainder.split_at(*size);
@@ -40,6 +41,7 @@ impl<'a> ChunksIrregularMut<'a> {
 impl<'a> Iterator for ChunksIrregularMut<'a> {
     type Item = &'a mut [u8];
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Heavily inspired from the implementation of std::slice::ChunksMut
         let size = self.sizes.next()?;
