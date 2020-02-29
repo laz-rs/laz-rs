@@ -171,17 +171,3 @@ impl Packable for i8 {
         *output.get_unchecked_mut(0) = (*self) as u8;
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_packer() {
-        let in_val: i32 = -25;
-        let mut buf = [0u8; std::mem::size_of::<i32>()];
-        in_val.pack_into(&mut buf);
-        let v = i32::unpack_from(&buf);
-        assert_eq!(v, in_val);
-    }
-}
