@@ -522,7 +522,7 @@ pub mod v2 {
             buf: &[u8],
         ) -> std::io::Result<()> {
             let this_val = GpsTime::unpack_from(&buf);
-            assert!(self.common.last < 4);
+            debug_assert!(self.common.last < 4);
             unsafe {
                 if *self
                     .common
@@ -859,7 +859,7 @@ pub mod v2 {
             buf: &mut [u8],
         ) -> std::io::Result<()> {
             let mut multi: i32;
-            assert!(self.common.last < 4);
+            debug_assert!(self.common.last < 4);
             unsafe {
                 if *self
                     .common
