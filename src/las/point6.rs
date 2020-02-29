@@ -282,50 +282,44 @@ impl Point6 {
 
 impl Packable for Point6 {
     fn unpack_from(input: &[u8]) -> Self {
-        if input.len() < Self::SIZE {
-            panic!("Point6::unpack_from expected buffer of 30 bytes");
-        } else {
-            Point6 {
-                x: i32::unpack_from(&input[..4]),
-                y: i32::unpack_from(&input[4..8]),
-                z: i32::unpack_from(&input[8..12]),
-                bit_fields: u8::unpack_from(&input[14..15]),
-                flags: u8::unpack_from(&input[15..16]),
-                intensity: u16::unpack_from(&input[12..14]),
-                classification: u8::unpack_from(&input[16..17]),
-                scan_angle_rank: u16::unpack_from(&input[18..20]),
-                user_data: u8::unpack_from(&input[17..18]),
-                point_source_id: u16::unpack_from(&input[20..22]),
-                gps_time: f64::from(GpsTime::unpack_from(&input[22..30])),
-                gps_time_change: false,
-            }
-        }
+        assert!(input.len() >= Self::SIZE, "Point6::unpack_from expected buffer of 30 bytes");
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        if output.len() < Self::SIZE {
-            panic!("Point6::pack_into expected buffer of 30 bytes");
-        } else {
-            self.x.pack_into(&mut output[..4]);
-            self.y.pack_into(&mut output[4..8]);
-            self.z.pack_into(&mut output[8..12]);
-            self.intensity.pack_into(&mut output[12..14]);
-            self.bit_fields.pack_into(&mut output[14..15]);
-            self.flags.pack_into(&mut output[15..16]);
-            self.classification.pack_into(&mut output[16..17]);
-            self.user_data.pack_into(&mut output[17..18]);
-            self.scan_angle_rank.pack_into(&mut output[18..20]);
-            self.point_source_id.pack_into(&mut output[20..22]);
-            GpsTime::from(self.gps_time).pack_into(&mut output[22..30]);
-        }
+        assert!(output.len() >= Self::SIZE, "Point6::pack_into expected buffer of 30 bytes");
+        unsafe { self.pack_into_unchecked(output) }
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
-        unimplemented!()
+        Point6 {
+            x: i32::unpack_from_unchecked(&input[..4]),
+            y: i32::unpack_from_unchecked(&input[4..8]),
+            z: i32::unpack_from_unchecked(&input[8..12]),
+            bit_fields: u8::unpack_from_unchecked(&input[14..15]),
+            flags: u8::unpack_from_unchecked(&input[15..16]),
+            intensity: u16::unpack_from_unchecked(&input[12..14]),
+            classification: u8::unpack_from_unchecked(&input[16..17]),
+            scan_angle_rank: u16::unpack_from_unchecked(&input[18..20]),
+            user_data: u8::unpack_from_unchecked(&input[17..18]),
+            point_source_id: u16::unpack_from_unchecked(&input[20..22]),
+            gps_time: f64::from(GpsTime::unpack_from_unchecked(&input[22..30])),
+            gps_time_change: false,
+        }
     }
 
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
-        unimplemented!()
+        self.x.pack_into_unchecked(&mut output[..4]);
+        self.y.pack_into_unchecked(&mut output[4..8]);
+        self.z.pack_into_unchecked(&mut output[8..12]);
+        self.intensity.pack_into_unchecked(&mut output[12..14]);
+        self.bit_fields.pack_into_unchecked(&mut output[14..15]);
+        self.flags.pack_into_unchecked(&mut output[15..16]);
+        self.classification.pack_into_unchecked(&mut output[16..17]);
+        self.user_data.pack_into_unchecked(&mut output[17..18]);
+        self.scan_angle_rank.pack_into_unchecked(&mut output[18..20]);
+        self.point_source_id.pack_into_unchecked(&mut output[20..22]);
+        GpsTime::from(self.gps_time).pack_into_unchecked(&mut output[22..30]);
     }
 }
 

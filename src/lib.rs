@@ -118,6 +118,7 @@ pub(crate) mod decompressors;
 pub(crate) mod encoders;
 pub(crate) mod models;
 
+mod byteslice;
 pub mod checking;
 pub mod errors;
 pub mod las;

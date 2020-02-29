@@ -1178,10 +1178,12 @@ fn par_decompress(
     chunk_sizes: &Vec<u64>,
 ) -> Result<(), LasZipError> {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
+    use crate::byteslice::ChunksIrregular;
 
     let point_size = laz_vlr.items_size() as usize;
     let decompressed_chunk_size = laz_vlr.chunk_size as usize * point_size;
-    let input_chunks_iter = LazChunkIterator::new(compressed_points, &chunk_sizes);
+    let sizes = chunk_sizes.iter().map(|s| *s as usize).collect::<Vec<usize>>();
+    let input_chunks_iter = ChunksIrregular::new(compressed_points, &sizes);
     let output_chunks_iter = decompressed_points.chunks_mut(decompressed_chunk_size as usize);
 
     // FIXME we collect into a Vec because zip cannot be made 'into_par_iter' by rayon

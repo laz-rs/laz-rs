@@ -26,7 +26,6 @@
 
 //! Defines the Point Format 0 ands different version of compressors and decompressors
 
-use std::mem::size_of;
 
 use crate::packers::Packable;
 
