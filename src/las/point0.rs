@@ -614,6 +614,39 @@ pub mod v1 {
             Ok(())
         }
     }
+
+
+    #[cfg(test)]
+    mod test {
+        use super::median_diff;
+
+        #[test]
+        fn median_diff_test_1_elem() {
+            let a = [1, 0, 0];
+            assert_eq!(median_diff(&a), 0);
+
+            let a = [-1, 0, 0];
+            assert_eq!(median_diff(&a), 0);
+        }
+
+        #[test]
+        fn median_diff_test_2_elem() {
+            let a = [3, 1, 0];
+            assert_eq!(median_diff(&a), 1);
+
+            let a = [-3, 1, 0];
+            assert_eq!(median_diff(&a), 0);
+        }
+
+        #[test]
+        fn median_diff_test_3_elem() {
+            let a = [3, 1, 4];
+            assert_eq!(median_diff(&a), 3);
+
+            let a = [-3, 1, -5];
+            assert_eq!(median_diff(&a), -3);
+        }
+    }
 }
 
 pub mod v2 {
