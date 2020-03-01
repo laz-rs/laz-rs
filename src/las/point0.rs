@@ -208,6 +208,7 @@ impl Packable for Point0 {
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        debug_assert!(input.len() >= 20, "Point10::unpack_from expected buffer of 20 bytes");
         let mut point = Self {
             x: i32::unpack_from_unchecked(input.get_unchecked(..4)),
             y: i32::unpack_from_unchecked(input.get_unchecked(4..8)),
@@ -227,6 +228,7 @@ impl Packable for Point0 {
     }
 
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        debug_assert!(output.len() >= 20, "Point10::pack_into expected buffer of 20 bytes");
         i32::pack_into_unchecked(&self.x, output.get_unchecked_mut(0..4));
         i32::pack_into_unchecked(&self.y, output.get_unchecked_mut(4..8));
         i32::pack_into_unchecked(&self.z, output.get_unchecked_mut(8..12));
@@ -408,7 +410,7 @@ pub mod v1 {
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
             dst.write_all(buf)?;
-            self.last_point = unsafe { Point0::unpack_from_unchecked(buf) };
+            self.last_point = Point0::unpack_from(buf);
             Ok(())
         }
 
@@ -417,7 +419,7 @@ pub mod v1 {
             encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = unsafe { Point0::unpack_from_unchecked(buf) };
+            let current_point = Point0::unpack_from(buf);
             let median_x = median_diff(&self.last_x_diffs);
             let median_y = median_diff(&self.last_y_diffs);
 
@@ -519,7 +521,7 @@ pub mod v1 {
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
             src.read_exact(first_point)?;
-            self.last_point = unsafe { Point0::unpack_from_unchecked(first_point) };
+            self.last_point = Point0::unpack_from(first_point);
             Ok(())
         }
 
@@ -608,7 +610,7 @@ pub mod v1 {
             if self.last_incr > 2 {
                 self.last_incr = 0;
             }
-            unsafe { self.last_point.pack_into_unchecked(buf) };
+            self.last_point.pack_into(buf);
             Ok(())
         }
     }
@@ -787,7 +789,7 @@ pub mod v2 {
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_point = unsafe { Point0::unpack_from_unchecked(buf) };
+            self.last_point = Point0::unpack_from(buf);
             dst.write_all(buf)
         }
 
@@ -796,7 +798,7 @@ pub mod v2 {
             mut encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = unsafe { Point0::unpack_from_unchecked(&buf) } ;
+            let current_point = Point0::unpack_from(&buf);
             let r = current_point.return_number();
             let n = current_point.number_of_returns_of_given_pulse();
             // According to table  m is in range 0..16
@@ -972,7 +974,7 @@ pub mod v2 {
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
             src.read_exact(first_point)?;
-            self.last_point = unsafe { Point0::unpack_from_unchecked(first_point) };
+            self.last_point = Point0::unpack_from(first_point);
             self.last_point.intensity = 0;
             Ok(())
         }
@@ -1117,8 +1119,8 @@ pub mod v2 {
                     context,
                 )?;
                 *self.common.last_height.get_unchecked_mut(l as usize) = self.last_point.z();
-                self.last_point.pack_into_unchecked(buf);
             }
+            self.last_point.pack_into(buf);
             Ok(())
         }
     }

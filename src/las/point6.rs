@@ -292,6 +292,7 @@ impl Packable for Point6 {
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        debug_assert!(input.len() >= Self::SIZE, "Point6::unpack_from expected buffer of 30 bytes");
         Point6 {
             x: i32::unpack_from_unchecked(&input[..4]),
             y: i32::unpack_from_unchecked(&input[4..8]),
@@ -309,6 +310,7 @@ impl Packable for Point6 {
     }
 
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        debug_assert!(output.len() >= Self::SIZE, "Point6::pack_into expected buffer of 30 bytes");
         self.x.pack_into_unchecked(&mut output[..4]);
         self.y.pack_into_unchecked(&mut output[4..8]);
         self.z.pack_into_unchecked(&mut output[8..12]);

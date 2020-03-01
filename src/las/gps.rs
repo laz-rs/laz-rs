@@ -139,6 +139,7 @@ impl Packable for GpsTime {
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        debug_assert!(input.len() >= 8, "GpsTime::unpack_from expected a buffer of 8 bytes");
         let lower = u32::unpack_from_unchecked(input.get_unchecked(0..4));
         let upper = u32::unpack_from_unchecked(input.get_unchecked(4..8));
 
@@ -148,6 +149,7 @@ impl Packable for GpsTime {
     }
 
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        debug_assert!(output.len() >= 8, "GpsTime::pack_into expected a buffer of 8 bytes");
         u32::pack_into_unchecked(
             &((self.value & 0xFFFF_FFFF) as u32),
              output.get_unchecked_mut(0..4),
@@ -238,7 +240,7 @@ pub mod v1 {
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_gps = unsafe { GpsTime::unpack_from_unchecked(buf).into() };
+            self.last_gps = GpsTime::unpack_from(buf).into();
             dst.write_all(buf)
         }
 
@@ -247,7 +249,7 @@ pub mod v1 {
             mut encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = unsafe { GpsTime::unpack_from_unchecked(buf) };
+            let current_point = GpsTime::unpack_from(buf);
             let current_gps_time_value = current_point.gps_time().to_bits() as i64;
 
             if self.last_gps_time_diff == 0 {
@@ -443,7 +445,7 @@ pub mod v1 {
                     self.last_gps = decoder.read_int_64()? as i64;
                 }
             }
-            unsafe { GpsTime::from(self.last_gps).pack_into_unchecked(buf) };
+            GpsTime::from(self.last_gps).pack_into(buf);
             Ok(())
         }
     }
