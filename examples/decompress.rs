@@ -4,7 +4,6 @@ use std::io;
 
 use std::io::{Read};
 use std::time::Instant;
-use std::process::exit;
 
 
 #[cfg(not(feature = "parallel"))]
@@ -16,13 +15,7 @@ fn main() {
         false
     };
 
-    laz::las::laszip::decompress_all_from(&env::args().nth(1).unwrap());
-
-    let now = Instant::now();
     let mut laz_file = io::BufReader::new(fs::File::open(env::args().nth(1).unwrap()).unwrap());
-    let duration = now.elapsed();
-    println!("Decompressed in {}s {} ms", duration.as_secs(), duration.subsec_millis());
-    exit(0);
 
     let now = Instant::now();
     if stream_mode {
