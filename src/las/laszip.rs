@@ -22,9 +22,6 @@ use crate::record::{
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
 
-#[cfg(feature = "parallel")]
-use std::iter::FusedIterator;
-
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &str = "laszip encoded";
@@ -1046,45 +1043,6 @@ pub fn par_compress_buffer<W: Write + Seek>(
         Ok(())
     }
 }
-
-/// Compressed chunk iterator
-///
-/// This struct allows to iterate over the slices corresponding
-/// to the chunks of a LAZ compressed points data by using the chunk table.
-#[cfg(feature = "parallel")]
-struct LazChunkIterator<'a> {
-    next_chunks: &'a [u8],
-    chunk_sizes: std::slice::Iter<'a, u64>,
-}
-
-#[cfg(feature = "parallel")]
-impl<'a> LazChunkIterator<'a> {
-    /// Creates a new iterator.
-    ///
-    /// `all_chunks` is the slice of all the point data (and just the actual points)
-    /// `chunk_table` is, well, the chunk table
-    fn new(all_chunks: &'a [u8], chunk_table: &'a Vec<u64>) -> Self {
-        Self {
-            next_chunks: all_chunks,
-            chunk_sizes: chunk_table.iter(),
-        }
-    }
-}
-
-#[cfg(feature = "parallel")]
-impl<'a> Iterator for LazChunkIterator<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let size = self.chunk_sizes.next()?;
-        let (current, next) = self.next_chunks.split_at(*size as usize);
-        self.next_chunks = next;
-        Some(current)
-    }
-}
-
-#[cfg(feature = "parallel")]
-impl<'a> FusedIterator for LazChunkIterator<'a> {}
 
 /// Decompresses all points from the buffer in parallel.
 ///
