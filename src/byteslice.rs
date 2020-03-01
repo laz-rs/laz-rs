@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 pub struct ChunksIrregular<'a> {
     remainder: &'a [u8],
     sizes: std::slice::Iter<'a, usize>,
@@ -23,6 +25,8 @@ impl<'a> Iterator for ChunksIrregular<'a> {
         Some(head)
     }
 }
+
+impl<'a> FusedIterator for ChunksIrregular<'a> {}
 
 pub struct ChunksIrregularMut<'a> {
     remainder: &'a mut [u8],
@@ -51,3 +55,5 @@ impl<'a> Iterator for ChunksIrregularMut<'a> {
         Some(head)
     }
 }
+
+impl<'a> FusedIterator for ChunksIrregularMut<'a> {}
