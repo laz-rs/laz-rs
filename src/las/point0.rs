@@ -26,8 +26,6 @@
 
 //! Defines the Point Format 0 ands different version of compressors and decompressors
 
-use std::mem::size_of;
-
 use crate::packers::Packable;
 
 pub trait LasPoint0 {
@@ -199,105 +197,60 @@ impl LasPoint0 for Point0 {
 
 impl Packable for Point0 {
     fn unpack_from(input: &[u8]) -> Self {
-        if input.len() < 20 {
-            panic!("Point10::unpack_from expected buffer of 20 bytes");
-        }
-
-        unsafe {
-            let mut point = Point0::default();
-
-            let mut start = 0;
-            let mut end = size_of::<i32>();
-            point.x = i32::unpack_from(&input.get_unchecked(start..end));
-            start += size_of::<i32>();
-            end += size_of::<i32>();
-            point.y = i32::unpack_from(&input.get_unchecked(start..end));
-            start += size_of::<i32>();
-            end += size_of::<i32>();
-            point.z = i32::unpack_from(&input.get_unchecked(start..end));
-
-            start = end;
-            end += size_of::<u16>();
-            point.intensity = u16::unpack_from(&input.get_unchecked(start..end));
-
-            start = end;
-            end += size_of::<u8>();
-            let bitfields = u8::unpack_from(&input.get_unchecked(start..end));
-            point.populate_bit_fields_from(bitfields);
-
-            start = end;
-            end += size_of::<u8>();
-            point.classification = u8::unpack_from(&input.get_unchecked(start..end));
-
-            start = end;
-            end += size_of::<i8>();
-            point.scan_angle_rank = i8::unpack_from(&input.get_unchecked(start..end));
-
-            start = end;
-            end += size_of::<i8>();
-            point.user_data = u8::unpack_from(&input.get_unchecked(start..end));
-
-            start = end;
-            end += size_of::<u16>();
-            point.point_source_id = u16::unpack_from(&input.get_unchecked(start..end));
-            debug_assert_eq!(end, 20);
-            point
-        }
+        assert!(
+            input.len() >= 20,
+            "Point10::unpack_from expected buffer of 20 bytes"
+        );
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        if output.len() < 20 {
-            panic!("Point10::unpack_from expected buffer of 20 bytes");
-        }
-        unsafe {
-            let mut start = 0;
-            let mut end = size_of::<i32>();
+        assert!(
+            output.len() >= 20,
+            "Point10::pack_into expected buffer of 20 bytes"
+        );
+        unsafe { self.pack_into_unchecked(output) }
+    }
 
-            i32::pack_into(&self.x, &mut output.get_unchecked_mut(start..end));
-            start += size_of::<i32>();
-            end += size_of::<i32>();
-            i32::pack_into(&self.y, &mut output.get_unchecked_mut(start..end));
-            start += size_of::<i32>();
-            end += size_of::<i32>();
-            i32::pack_into(&self.z, &mut output.get_unchecked_mut(start..end));
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        debug_assert!(
+            input.len() >= 20,
+            "Point10::unpack_from expected buffer of 20 bytes"
+        );
+        let mut point = Self {
+            x: i32::unpack_from_unchecked(input.get_unchecked(..4)),
+            y: i32::unpack_from_unchecked(input.get_unchecked(4..8)),
+            z: i32::unpack_from_unchecked(input.get_unchecked(8..12)),
+            intensity: u16::unpack_from_unchecked(input.get_unchecked(12..14)),
+            number_of_returns_of_given_pulse: 0,
+            scan_direction_flag: false,
+            edge_of_flight_line: false,
+            return_number: 0,
+            classification: *input.get_unchecked(15),
+            scan_angle_rank: *input.get_unchecked(16) as i8,
+            user_data: *input.get_unchecked(17),
+            point_source_id: u16::unpack_from_unchecked(input.get_unchecked(18..20)),
+        };
+        point.set_bit_fields(*input.get_unchecked(14));
+        point
+    }
 
-            start = end;
-            end += size_of::<u16>();
-            u16::pack_into(&self.intensity, &mut output.get_unchecked_mut(start..end));
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        debug_assert!(
+            output.len() >= 20,
+            "Point10::pack_into expected buffer of 20 bytes"
+        );
+        i32::pack_into_unchecked(&self.x, output.get_unchecked_mut(0..4));
+        i32::pack_into_unchecked(&self.y, output.get_unchecked_mut(4..8));
+        i32::pack_into_unchecked(&self.z, output.get_unchecked_mut(8..12));
 
-            start = end;
-            end += size_of::<u8>();
-            u8::pack_into(
-                &self.bit_fields_to_byte(),
-                &mut output.get_unchecked_mut(start..end),
-            );
+        u16::pack_into_unchecked(&self.intensity, output.get_unchecked_mut(12..14));
 
-            start = end;
-            end += size_of::<u8>();
-            u8::pack_into(
-                &self.classification,
-                &mut output.get_unchecked_mut(start..end),
-            );
-
-            start = end;
-            end += size_of::<i8>();
-            i8::pack_into(
-                &self.scan_angle_rank,
-                &mut output.get_unchecked_mut(start..end),
-            );
-
-            start = end;
-            end += size_of::<i8>();
-            u8::pack_into(&self.user_data, &mut output.get_unchecked_mut(start..end));
-
-            start = end;
-            end += size_of::<u16>();
-            u16::pack_into(
-                &self.point_source_id,
-                &mut output.get_unchecked_mut(start..end),
-            );
-            debug_assert_eq!(end, 20);
-        }
+        *output.get_unchecked_mut(14) = self.bit_fields_to_byte();
+        *output.get_unchecked_mut(15) = self.classification;
+        *output.get_unchecked_mut(16) = self.scan_angle_rank as u8;
+        *output.get_unchecked_mut(17) = self.user_data;
+        u16::pack_into_unchecked(&self.point_source_id, output.get_unchecked_mut(18..20));
     }
 }
 
@@ -667,6 +620,38 @@ pub mod v1 {
             }
             self.last_point.pack_into(buf);
             Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::median_diff;
+
+        #[test]
+        fn median_diff_test_1_elem() {
+            let a = [1, 0, 0];
+            assert_eq!(median_diff(&a), 0);
+
+            let a = [-1, 0, 0];
+            assert_eq!(median_diff(&a), 0);
+        }
+
+        #[test]
+        fn median_diff_test_2_elem() {
+            let a = [3, 1, 0];
+            assert_eq!(median_diff(&a), 1);
+
+            let a = [-3, 1, 0];
+            assert_eq!(median_diff(&a), 0);
+        }
+
+        #[test]
+        fn median_diff_test_3_elem() {
+            let a = [3, 1, 4];
+            assert_eq!(median_diff(&a), 3);
+
+            let a = [-3, 1, -5];
+            assert_eq!(median_diff(&a), -3);
         }
     }
 }

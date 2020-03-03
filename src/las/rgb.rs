@@ -129,17 +129,29 @@ impl ColorDiff {
 
 impl Packable for RGB {
     fn unpack_from(input: &[u8]) -> Self {
-        Self {
-            red: u16::unpack_from(&input[0..2]),
-            green: u16::unpack_from(&input[2..4]),
-            blue: u16::unpack_from(&input[4..6]),
-        }
+        assert!(input.len() >= 6);
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        u16::pack_into(&self.red, &mut output[0..2]);
-        u16::pack_into(&self.green, &mut output[2..4]);
-        u16::pack_into(&self.blue, &mut output[4..6]);
+        assert!(output.len() >= 6);
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        debug_assert!(input.len() >= 6);
+        Self {
+            red: u16::unpack_from_unchecked(input.get_unchecked(0..2)),
+            green: u16::unpack_from_unchecked(&input.get_unchecked(2..4)),
+            blue: u16::unpack_from_unchecked(&input.get_unchecked(4..6)),
+        }
+    }
+
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        debug_assert!(output.len() >= 6);
+        u16::pack_into_unchecked(&self.red, output.get_unchecked_mut(0..2));
+        u16::pack_into_unchecked(&self.green, output.get_unchecked_mut(2..4));
+        u16::pack_into_unchecked(&self.blue, output.get_unchecked_mut(4..6));
     }
 }
 

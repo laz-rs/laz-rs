@@ -115,6 +115,16 @@ pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) 
     laszip_vlr
 }
 
+pub fn read_header_and_vlrs<R: Read + Seek>(
+    src: &mut R,
+) -> std::io::Result<(QuickHeader, Option<LazVlr>)> {
+    let hdr = QuickHeader::read_from(src)?;
+    src.seek(SeekFrom::Start(hdr.header_size as u64))?;
+    let laz_vlr = read_vlrs_and_get_laszip_vlr(src, &hdr);
+    src.seek(SeekFrom::Start(hdr.offset_to_points as u64))?;
+    Ok((hdr, laz_vlr))
+}
+
 const IS_COMPRESSED_MASK: u8 = 0x80;
 fn is_point_format_compressed(point_format_id: u8) -> bool {
     point_format_id & IS_COMPRESSED_MASK == IS_COMPRESSED_MASK

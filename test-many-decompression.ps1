@@ -13,6 +13,9 @@ For ($i = 0; $i -lt $laz_files.Length; $i++) {
     $command = "cargo run --release --example check_decompression " +  $laz_files[$i] + " " + $las_files[$i]
     Write-Host $i  " / "  $laz_files.Length
     Invoke-Expression -ErrorAction Stop $command
+    if ($lastexitcode -ne 0) {
+        exit
+    }
 }
 
 
