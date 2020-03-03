@@ -5,7 +5,6 @@ on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v1
       - name: Build
@@ -15,10 +14,25 @@ jobs:
 
   build-parallel-feature:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v1
       - name: Build with parallel
         run: cargo build --features parallel --verbose
       - name: Run tests with parallel
         run: cargo test --features parallel --verbose
+
+   fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - run: rustup component add rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
