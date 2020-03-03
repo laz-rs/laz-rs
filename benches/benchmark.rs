@@ -6,10 +6,10 @@ use criterion::Criterion;
 
 use laz::las::file::QuickHeader;
 use laz::las::v2;
+use laz::packers::Packable;
 use laz::record::{RecordCompressor, SequentialPointRecordCompressor};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
-use laz::packers::Packable;
 
 /*
 fn point0_v2_compression_benchmark(c: &mut Criterion) {
@@ -109,7 +109,6 @@ fn point_3_v2_record_compression_benchmark(c: &mut Criterion) {
     });
 }
 
-
 fn point_0_unpack_checked_benchmark(c: &mut Criterion) {
     let raw_points_data = get_raw_points_data("tests/data/point10.las");
     c.bench_function("point_0_unpack_checked", move |b| {
@@ -124,10 +123,9 @@ fn point_0_unpack_unchecked_benchmark(c: &mut Criterion) {
     let raw_points_data = get_raw_points_data("tests/data/point10.las");
     c.bench_function("point_0_unpack_checked", move |b| {
         let mut raw_pts_iter = raw_points_data.cycling_iterator();
-        b.iter(|| {
-            unsafe {
-                let _point = laz::las::point0::Point0::unpack_from_unchecked(raw_pts_iter.next().unwrap());
-            }
+        b.iter(|| unsafe {
+            let _point =
+                laz::las::point0::Point0::unpack_from_unchecked(raw_pts_iter.next().unwrap());
         });
     });
 }

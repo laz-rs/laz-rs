@@ -282,17 +282,26 @@ impl Point6 {
 
 impl Packable for Point6 {
     fn unpack_from(input: &[u8]) -> Self {
-        assert!(input.len() >= Self::SIZE, "Point6::unpack_from expected buffer of 30 bytes");
+        assert!(
+            input.len() >= Self::SIZE,
+            "Point6::unpack_from expected buffer of 30 bytes"
+        );
         unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        assert!(output.len() >= Self::SIZE, "Point6::pack_into expected buffer of 30 bytes");
+        assert!(
+            output.len() >= Self::SIZE,
+            "Point6::pack_into expected buffer of 30 bytes"
+        );
         unsafe { self.pack_into_unchecked(output) }
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
-        debug_assert!(input.len() >= Self::SIZE, "Point6::unpack_from expected buffer of 30 bytes");
+        debug_assert!(
+            input.len() >= Self::SIZE,
+            "Point6::unpack_from expected buffer of 30 bytes"
+        );
         Point6 {
             x: i32::unpack_from_unchecked(&input[..4]),
             y: i32::unpack_from_unchecked(&input[4..8]),
@@ -310,7 +319,10 @@ impl Packable for Point6 {
     }
 
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
-        debug_assert!(output.len() >= Self::SIZE, "Point6::pack_into expected buffer of 30 bytes");
+        debug_assert!(
+            output.len() >= Self::SIZE,
+            "Point6::pack_into expected buffer of 30 bytes"
+        );
         self.x.pack_into_unchecked(&mut output[..4]);
         self.y.pack_into_unchecked(&mut output[4..8]);
         self.z.pack_into_unchecked(&mut output[8..12]);
@@ -319,8 +331,10 @@ impl Packable for Point6 {
         self.flags.pack_into_unchecked(&mut output[15..16]);
         self.classification.pack_into_unchecked(&mut output[16..17]);
         self.user_data.pack_into_unchecked(&mut output[17..18]);
-        self.scan_angle_rank.pack_into_unchecked(&mut output[18..20]);
-        self.point_source_id.pack_into_unchecked(&mut output[20..22]);
+        self.scan_angle_rank
+            .pack_into_unchecked(&mut output[18..20]);
+        self.point_source_id
+            .pack_into_unchecked(&mut output[20..22]);
         GpsTime::from(self.gps_time).pack_into_unchecked(&mut output[22..30]);
     }
 }

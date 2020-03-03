@@ -115,7 +115,9 @@ pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) 
     laszip_vlr
 }
 
-pub fn read_header_and_vlrs<R: Read + Seek>(src: &mut R) -> std::io::Result<(QuickHeader, Option<LazVlr>)> {
+pub fn read_header_and_vlrs<R: Read + Seek>(
+    src: &mut R,
+) -> std::io::Result<(QuickHeader, Option<LazVlr>)> {
     let hdr = QuickHeader::read_from(src)?;
     src.seek(SeekFrom::Start(hdr.header_size as u64))?;
     let laz_vlr = read_vlrs_and_get_laszip_vlr(src, &hdr);

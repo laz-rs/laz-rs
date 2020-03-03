@@ -43,13 +43,19 @@ pub trait Packable {
 impl Packable for u32 {
     #[inline]
     fn unpack_from(input: &[u8]) -> Self {
-        assert!(input.len() >= 4, "u32::unpack_from expected a slice of 4 bytes");
+        assert!(
+            input.len() >= 4,
+            "u32::unpack_from expected a slice of 4 bytes"
+        );
         unsafe { Self::unpack_from_unchecked(input) }
     }
 
     #[inline]
     fn pack_into(&self, output: &mut [u8]) {
-        assert!(output.len() >= 4, "u32::pack_into expected a slice of 4 bytes");
+        assert!(
+            output.len() >= 4,
+            "u32::pack_into expected a slice of 4 bytes"
+        );
         unsafe { self.pack_into_unchecked(output) }
     }
 
@@ -65,20 +71,28 @@ impl Packable for u32 {
 
     #[inline]
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
-        output.get_unchecked_mut(..4).copy_from_slice(&self.to_le_bytes())
+        output
+            .get_unchecked_mut(..4)
+            .copy_from_slice(&self.to_le_bytes())
     }
 }
 
 impl Packable for u16 {
     #[inline]
     fn unpack_from(input: &[u8]) -> Self {
-        assert!(input.len() >= 2, "u16::unpack_from expected a slice of 2 bytes");
+        assert!(
+            input.len() >= 2,
+            "u16::unpack_from expected a slice of 2 bytes"
+        );
         unsafe { Self::unpack_from_unchecked(input) }
     }
 
     #[inline]
     fn pack_into(&self, output: &mut [u8]) {
-        assert!(output.len() >= 2, "u32::pack_into expected a slice of 4 bytes");
+        assert!(
+            output.len() >= 2,
+            "u32::pack_into expected a slice of 4 bytes"
+        );
         unsafe { self.pack_into_unchecked(output) }
     }
 
@@ -92,7 +106,9 @@ impl Packable for u16 {
 
     #[inline]
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
-        output.get_unchecked_mut(..2).copy_from_slice(&self.to_le_bytes());
+        output
+            .get_unchecked_mut(..2)
+            .copy_from_slice(&self.to_le_bytes());
     }
 }
 

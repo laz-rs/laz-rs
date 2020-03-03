@@ -2,14 +2,12 @@ use std::env;
 use std::fs;
 use std::io;
 
-use std::io::{Read};
+use std::io::Read;
 use std::time::Instant;
-
 
 #[cfg(not(feature = "parallel"))]
 fn main() {
-    let stream_mode=
-    if env::args().last().unwrap() == "--stream" {
+    let stream_mode = if env::args().last().unwrap() == "--stream" {
         true
     } else {
         false
@@ -32,7 +30,8 @@ fn main() {
             .and_then(|mut decompressor| {
                 decompressor.decompress_many(&mut point_buf)?;
                 Ok(())
-            }).unwrap();
+            })
+            .unwrap();
     } else {
         let (hdr, laz_vlr) = laz::las::file::read_header_and_vlrs(&mut laz_file).unwrap();
         let laz_vlr = laz_vlr.expect("No laszip VLR, is it really a LAZ file ?");
@@ -44,7 +43,11 @@ fn main() {
         }
     }
     let duration = now.elapsed();
-    println!("Decompressed in {}s {} ms", duration.as_secs(), duration.subsec_millis());
+    println!(
+        "Decompressed in {}s {} ms",
+        duration.as_secs(),
+        duration.subsec_millis()
+    );
 }
 #[cfg(feature = "parallel")]
 fn main() {
@@ -56,7 +59,12 @@ fn main() {
 
     let mut point_buf = vec![0u8; hdr.point_size as usize * hdr.num_points as usize];
     let now = Instant::now();
-    laz::las::laszip::par_decompress_all_from_file_greedy(&mut laz_file, &mut point_buf, &laz_vlr).unwrap();
+    laz::las::laszip::par_decompress_all_from_file_greedy(&mut laz_file, &mut point_buf, &laz_vlr)
+        .unwrap();
     let duration = now.elapsed();
-    println!("Decompressed in {}s {} ms", duration.as_secs(), duration.subsec_millis());
+    println!(
+        "Decompressed in {}s {} ms",
+        duration.as_secs(),
+        duration.subsec_millis()
+    );
 }

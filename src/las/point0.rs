@@ -26,7 +26,6 @@
 
 //! Defines the Point Format 0 ands different version of compressors and decompressors
 
-
 use crate::packers::Packable;
 
 pub trait LasPoint0 {
@@ -198,17 +197,26 @@ impl LasPoint0 for Point0 {
 
 impl Packable for Point0 {
     fn unpack_from(input: &[u8]) -> Self {
-        assert!(input.len() >= 20, "Point10::unpack_from expected buffer of 20 bytes");
+        assert!(
+            input.len() >= 20,
+            "Point10::unpack_from expected buffer of 20 bytes"
+        );
         unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
-        assert!(output.len() >= 20, "Point10::pack_into expected buffer of 20 bytes");
+        assert!(
+            output.len() >= 20,
+            "Point10::pack_into expected buffer of 20 bytes"
+        );
         unsafe { self.pack_into_unchecked(output) }
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
-        debug_assert!(input.len() >= 20, "Point10::unpack_from expected buffer of 20 bytes");
+        debug_assert!(
+            input.len() >= 20,
+            "Point10::unpack_from expected buffer of 20 bytes"
+        );
         let mut point = Self {
             x: i32::unpack_from_unchecked(input.get_unchecked(..4)),
             y: i32::unpack_from_unchecked(input.get_unchecked(4..8)),
@@ -221,14 +229,17 @@ impl Packable for Point0 {
             classification: *input.get_unchecked(15),
             scan_angle_rank: *input.get_unchecked(16) as i8,
             user_data: *input.get_unchecked(17),
-            point_source_id: u16::unpack_from_unchecked(input.get_unchecked(18..20))
+            point_source_id: u16::unpack_from_unchecked(input.get_unchecked(18..20)),
         };
         point.set_bit_fields(*input.get_unchecked(14));
         point
     }
 
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
-        debug_assert!(output.len() >= 20, "Point10::pack_into expected buffer of 20 bytes");
+        debug_assert!(
+            output.len() >= 20,
+            "Point10::pack_into expected buffer of 20 bytes"
+        );
         i32::pack_into_unchecked(&self.x, output.get_unchecked_mut(0..4));
         i32::pack_into_unchecked(&self.y, output.get_unchecked_mut(4..8));
         i32::pack_into_unchecked(&self.z, output.get_unchecked_mut(8..12));
@@ -239,10 +250,7 @@ impl Packable for Point0 {
         *output.get_unchecked_mut(15) = self.classification;
         *output.get_unchecked_mut(16) = self.scan_angle_rank as u8;
         *output.get_unchecked_mut(17) = self.user_data;
-        u16::pack_into_unchecked(
-            &self.point_source_id,
-            output.get_unchecked_mut(18..20),
-        );
+        u16::pack_into_unchecked(&self.point_source_id, output.get_unchecked_mut(18..20));
     }
 }
 
@@ -614,7 +622,6 @@ pub mod v1 {
             Ok(())
         }
     }
-
 
     #[cfg(test)]
     mod test {

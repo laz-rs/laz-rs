@@ -4,12 +4,11 @@ use std::io::{Read, Seek, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::byteslice::{ChunksIrregular, ChunksIrregularMut};
 use crate::decoders;
 use crate::encoders;
 use crate::las;
 use crate::las::laszip::{LasZipError, LazItem, LazItemType};
-use crate::byteslice::{ChunksIrregularMut, ChunksIrregular};
-
 
 /***************************************************************************************************
                     Decompression Related Traits
@@ -123,7 +122,7 @@ impl<'a, R: Read> SequentialPointRecordDecompressor<'a, R> {
             decoder: decoders::ArithmeticDecoder::new(input),
             is_first_decompression: true,
             record_size: 0,
-            fields_sizes: vec![]
+            fields_sizes: vec![],
         }
     }
 
@@ -204,16 +203,15 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
     }
 
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        let decompressors_and_data = self.field_decompressors
+        let decompressors_and_data = self
+            .field_decompressors
             .iter_mut()
             .zip(ChunksIrregularMut::new(out, &self.fields_sizes));
 
         if self.is_first_decompression {
             for (fields_decompressor, out_field_data) in decompressors_and_data {
-                fields_decompressor.decompress_first(
-                    &mut self.decoder.in_stream(),
-                    out_field_data
-                )?;
+                fields_decompressor
+                    .decompress_first(&mut self.decoder.in_stream(), out_field_data)?;
             }
             self.is_first_decompression = false;
             // the decoder needs to be told that it should read the
@@ -337,7 +335,8 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
     }
 
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        let decompressors_and_data = self.field_decompressors
+        let decompressors_and_data = self
+            .field_decompressors
             .iter_mut()
             .zip(ChunksIrregularMut::new(out, &self.fields_sizes));
 
@@ -471,7 +470,7 @@ pub struct SequentialPointRecordCompressor<'a, W: Write> {
     field_compressors: Vec<Box<dyn FieldCompressor<W> + 'a>>,
     encoder: encoders::ArithmeticEncoder<W>,
     record_size: usize,
-    fields_sizes: Vec<usize>
+    fields_sizes: Vec<usize>,
 }
 
 impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
@@ -481,7 +480,7 @@ impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
             field_compressors: vec![],
             encoder: encoders::ArithmeticEncoder::new(output),
             record_size: 0,
-            fields_sizes: vec![]
+            fields_sizes: vec![],
         }
     }
 
@@ -560,16 +559,14 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
     }
 
     fn compress_next(&mut self, input: &[u8]) -> std::io::Result<()> {
-        let field_compressors_and_data = self.field_compressors
+        let field_compressors_and_data = self
+            .field_compressors
             .iter_mut()
             .zip(ChunksIrregular::new(input, &self.fields_sizes));
 
         if self.is_first_compression {
             for (field_compressor, field_data) in field_compressors_and_data {
-                field_compressor.compress_first(
-                    self.encoder.out_stream(),
-                    field_data
-                )?;
+                field_compressor.compress_first(self.encoder.out_stream(), field_data)?;
             }
             self.is_first_compression = false;
         } else {
@@ -615,7 +612,7 @@ pub struct LayeredPointRecordCompressor<'a, W: Write> {
     point_count: u32,
     dst: W,
     record_size: usize,
-    fields_sizes: Vec<usize>
+    fields_sizes: Vec<usize>,
 }
 
 impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
@@ -625,7 +622,7 @@ impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
             record_size: 0,
             point_count: 0,
             dst,
-            fields_sizes: vec![]
+            fields_sizes: vec![],
         }
     }
 
@@ -679,17 +676,14 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
 
     fn compress_next(&mut self, point: &[u8]) -> std::io::Result<()> {
         let mut context = 0usize;
-        let compressors_and_data = self.field_compressors
+        let compressors_and_data = self
+            .field_compressors
             .iter_mut()
-            .zip(ChunksIrregular::new(point,&self.fields_sizes));
+            .zip(ChunksIrregular::new(point, &self.fields_sizes));
 
         if self.point_count == 0 {
             for (field_compressor, field_data) in compressors_and_data {
-                field_compressor.init_first_point(
-                    &mut self.dst,
-                    field_data,
-                    &mut context,
-                )?;
+                field_compressor.init_first_point(&mut self.dst, field_data, &mut context)?;
             }
         } else {
             for (field_compressor, field_data) in compressors_and_data {
@@ -732,5 +726,3 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
         self.dst
     }
 }
-
-

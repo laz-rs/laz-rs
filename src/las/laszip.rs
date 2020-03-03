@@ -933,7 +933,6 @@ pub fn compress_buffer<W: Write + Seek>(
     }
 }
 
-
 /// Decompresses all points from the buffer
 ///
 /// The `compressed_points_data` slice must contain all the laszip data
@@ -967,12 +966,10 @@ pub fn decompress_buffer(
         })
     } else {
         let src = std::io::Cursor::new(compressed_points_data);
-        LasZipDecompressor::new(src, laz_vlr)
-            .and_then(| mut decompressor| {
-                decompressor.decompress_many(decompressed_points)?;
-                Ok(())
-            }
-        )
+        LasZipDecompressor::new(src, laz_vlr).and_then(|mut decompressor| {
+            decompressor.decompress_many(decompressed_points)?;
+            Ok(())
+        })
     }
 }
 
@@ -1135,12 +1132,15 @@ fn par_decompress(
     laz_vlr: &LazVlr,
     chunk_sizes: &Vec<u64>,
 ) -> Result<(), LasZipError> {
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use crate::byteslice::ChunksIrregular;
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     let point_size = laz_vlr.items_size() as usize;
     let decompressed_chunk_size = laz_vlr.chunk_size as usize * point_size;
-    let sizes = chunk_sizes.iter().map(|s| *s as usize).collect::<Vec<usize>>();
+    let sizes = chunk_sizes
+        .iter()
+        .map(|s| *s as usize)
+        .collect::<Vec<usize>>();
     let input_chunks_iter = ChunksIrregular::new(compressed_points, &sizes);
     let output_chunks_iter = decompressed_points.chunks_mut(decompressed_chunk_size as usize);
 
