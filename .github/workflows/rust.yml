@@ -21,7 +21,7 @@ jobs:
       - name: Run tests with parallel
         run: cargo test --features parallel --verbose
 
-   fmt:
+  fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
