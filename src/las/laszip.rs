@@ -55,7 +55,7 @@ impl Version {
 /// The different type of data / fields found in the definition of LAS points
 #[derive(Debug, Copy, Clone)]
 pub enum LazItemType {
-    /// Extrabytes for LAS versions <= 1.3 & point format <= 5
+    /// ExtraBytes for LAS versions <= 1.3 & point format <= 5
     Byte(u16),
     /// Point10 is the Point format id 0 of LAS for versions <= 1.3 & point format <= 5
     Point10,

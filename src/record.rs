@@ -447,7 +447,7 @@ pub trait RecordCompressor<W> {
 
     /// Compress the next point
     fn compress_next(&mut self, input: &[u8]) -> std::io::Result<()>;
-    /// Tells the compressor the no more points will be compressed
+    /// Tells the compressor that no more points will be compressed
     fn done(&mut self) -> std::io::Result<()>;
     /// Resets the compressor to its initial state
     fn reset(&mut self);
