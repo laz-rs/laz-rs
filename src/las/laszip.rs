@@ -1151,7 +1151,7 @@ pub fn par_decompress_all_from_file_greedy(
 /// `compressed_points` must contains only the bytes corresponding to the points
 /// (so no offset, no chunk_table)
 #[cfg(feature = "parallel")]
-fn par_decompress(
+pub fn par_decompress(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
