@@ -529,7 +529,32 @@ fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     Ok(compressor)
 }
 
-fn read_chunk_table<R: Read + Seek>(
+/// Reads the chunk table from the source
+///
+/// The source position is expected to be at the start of the point data
+pub fn read_chunk_table<R: Read + Seek>(
+    src: &mut R,
+) -> Option<std::io::Result<Vec<u64>>> {
+    let current_pos = match src.seek(SeekFrom::Current(0)) {
+        Ok(p) => p,
+        Err(e) => return Some(Err(e))
+    };
+
+    let offset_to_chunk_table = match src.read_i64::<LittleEndian>() {
+        Ok(p) => p,
+        Err(e) => return Some(Err(e))
+    };
+
+    if offset_to_chunk_table >= 0 && offset_to_chunk_table as u64 == current_pos {
+        // In that case the compressor was probably stopped
+        // before being able to write the chunk table
+        None
+    } else {
+        Some(read_chunk_table_at_offset(src, offset_to_chunk_table))
+    }
+}
+
+fn read_chunk_table_at_offset<R: Read + Seek>(
     mut src: &mut R,
     mut offset_to_chunk_table: i64,
 ) -> std::io::Result<Vec<u64>> {
@@ -727,7 +752,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
 
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
         let stream = self.record_decompressor.borrow_stream_mut();
-        let chunk_sizes = read_chunk_table(stream, self.offset_to_chunk_table)?;
+        let chunk_sizes = read_chunk_table_at_offset(stream, self.offset_to_chunk_table)?;
         let number_of_chunks = chunk_sizes.len();
         let mut chunk_starts = vec![0u64; number_of_chunks as usize];
         chunk_starts[0] = self.data_start;
@@ -1068,7 +1093,7 @@ pub fn par_decompress_buffer(
     } else {
         let mut cursor = std::io::Cursor::new(compressed_points_data);
         let offset_to_chunk_table = cursor.read_i64::<LittleEndian>()?;
-        let chunk_sizes = read_chunk_table(&mut cursor, offset_to_chunk_table)?;
+        let chunk_sizes = read_chunk_table_at_offset(&mut cursor, offset_to_chunk_table)?;
 
         let compressed_points =
             &compressed_points_data[std::mem::size_of::<i64>()..offset_to_chunk_table as usize];
@@ -1116,7 +1141,7 @@ pub fn par_decompress_all_from_file_greedy(
         }
         let mut compressed_points = vec![0u8; (offset_to_chunk_table as u64 - start_pos) as usize];
         src.read_exact(&mut compressed_points)?;
-        let chunk_sizes = read_chunk_table(src, offset_to_chunk_table)?;
+        let chunk_sizes = read_chunk_table_at_offset(src, offset_to_chunk_table)?;
         par_decompress(&compressed_points, points_out, laz_vlr, &chunk_sizes)
     }
 }
