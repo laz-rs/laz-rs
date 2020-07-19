@@ -40,6 +40,7 @@ impl QuickHeader {
             u64::from(src.read_u32::<LittleEndian>()?)
         };
 
+        src.seek(SeekFrom::Start(header_size as u64))?;
         Ok(Self {
             major,
             minor,
@@ -68,6 +69,7 @@ impl QuickHeader {
     }
 }
 
+#[derive(Debug)]
 pub struct Vlr {
     user_id: [u8; 16],
     record_id: u16,

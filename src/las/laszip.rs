@@ -532,17 +532,15 @@ fn record_compressor_from_laz_items<'a, W: Write + 'a>(
 /// Reads the chunk table from the source
 ///
 /// The source position is expected to be at the start of the point data
-pub fn read_chunk_table<R: Read + Seek>(
-    src: &mut R,
-) -> Option<std::io::Result<Vec<u64>>> {
+pub fn read_chunk_table<R: Read + Seek>(src: &mut R) -> Option<std::io::Result<Vec<u64>>> {
     let current_pos = match src.seek(SeekFrom::Current(0)) {
         Ok(p) => p,
-        Err(e) => return Some(Err(e))
+        Err(e) => return Some(Err(e)),
     };
 
     let offset_to_chunk_table = match src.read_i64::<LittleEndian>() {
         Ok(p) => p,
-        Err(e) => return Some(Err(e))
+        Err(e) => return Some(Err(e)),
     };
 
     if offset_to_chunk_table >= 0 && offset_to_chunk_table as u64 == current_pos {
