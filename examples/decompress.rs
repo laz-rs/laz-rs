@@ -2,11 +2,12 @@ use std::env;
 use std::fs;
 use std::io;
 
-use std::io::Read;
 use std::time::Instant;
 
 #[cfg(not(feature = "parallel"))]
 fn main() {
+    use std::io::Read;
+
     let stream_mode = if env::args().last().unwrap() == "--stream" {
         true
     } else {
@@ -51,8 +52,6 @@ fn main() {
 }
 #[cfg(feature = "parallel")]
 fn main() {
-    use std::io::{Seek, SeekFrom};
-
     let mut laz_file = io::BufReader::new(fs::File::open(env::args().nth(1).unwrap()).unwrap());
     let (hdr, laz_vlr) = laz::las::file::read_header_and_vlrs(&mut laz_file).unwrap();
     let laz_vlr = laz_vlr.expect("No laszip VLR, is it really a LAZ file ?");

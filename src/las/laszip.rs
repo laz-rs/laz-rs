@@ -1194,8 +1194,7 @@ pub fn par_decompress_all_from_file_greedy(
             point_size,
         })
     } else {
-        let chunk_table = read_chunk_table(src)
-            .ok_or(LasZipError::MissingChunkTable)??;
+        let chunk_table = read_chunk_table(src).ok_or(LasZipError::MissingChunkTable)??;
 
         let point_data_size = chunk_table.iter().copied().sum::<u64>();
 
@@ -1315,6 +1314,7 @@ impl<W: Write + Seek> ParLasZipCompressor<W> {
 }
 
 #[cfg(feature = "parallel")]
+/// Laszip decompressor, that can decompress data using multiple threads
 pub struct ParLasZipDecompressor<R> {
     vlr: LazVlr,
     chunk_table: Vec<u64>,
@@ -1327,9 +1327,11 @@ pub struct ParLasZipDecompressor<R> {
 
 #[cfg(feature = "parallel")]
 impl<R: Read + Seek> ParLasZipDecompressor<R> {
+    /// Creates a new decompressor
+    ///
+    /// Fails if no chunk table could be found.
     pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
-        let chunk_table = read_chunk_table(&mut source)
-            .ok_or(LasZipError::MissingChunkTable)??;
+        let chunk_table = read_chunk_table(&mut source).ok_or(LasZipError::MissingChunkTable)??;
 
         Ok(Self {
             source,
@@ -1342,6 +1344,10 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         })
     }
 
+    /// Decompresses many points using multiple threads
+    ///
+    /// For this function to actually use multiple threads, the `points`
+    /// buffer shall hold more points that the vlr's `chunk_size`.
     pub fn decompress_many(&mut self, out: &mut [u8]) -> Result<(), LasZipError> {
         let point_size = self.vlr.items_size() as usize;
         assert_eq!(out.len() % point_size, 0);

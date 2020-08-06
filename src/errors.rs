@@ -59,9 +59,7 @@ impl fmt::Display for LasZipError {
             LasZipError::UnsupportedPointFormat(id) => {
                 write!(f, "Point format {} is not supported", id)
             }
-            LasZipError::MissingChunkTable => {
-                write!(f, "The chunk table could not be found")
-            }
+            LasZipError::MissingChunkTable => write!(f, "The chunk table could not be found"),
         }
     }
 }

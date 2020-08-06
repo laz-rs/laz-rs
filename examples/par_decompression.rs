@@ -1,50 +1,74 @@
+use laz::las::file::read_header_and_vlrs;
+
 #[cfg(feature = "parallel")]
 fn main() {
-    use laz::las::file::QuickHeader;
-    use laz::las::file::{
-        point_format_id_compressed_to_uncompressd, read_vlrs_and_get_laszip_vlr, SimpleReader,
-    };
+    use laz::las::file::{point_format_id_compressed_to_uncompressd, SimpleReader};
     use laz::las::laszip::par_decompress_all_from_file_greedy;
     use std::fs::File;
-    use std::io::{BufReader, Seek, SeekFrom};
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
-        println!("Usage: {} LAZ_PATH LAS_PATH", args[0]);
-        std::process::exit(1);
-    }
+    use std::io::BufReader;
+    let mut args: Vec<String> = std::env::args().collect();
 
-    let mut laz_file = BufReader::new(File::open(&args[1]).unwrap());
-    let laz_header = QuickHeader::read_from(&mut laz_file).unwrap();
-    laz_file
-        .seek(SeekFrom::Start(laz_header.header_size as u64))
-        .unwrap();
-    let laszip_vlr =
-        read_vlrs_and_get_laszip_vlr(&mut laz_file, &laz_header).expect("no laszip vlr found");
+    if let Some(greedy_arg_pos) = args.iter().position(|arg| arg == "--greedy") {
+        args.remove(greedy_arg_pos);
+        if args.len() != 3 {
+            println!("Usage: par_decompression LAZ_PATH LAS_PATH");
+            std::process::exit(1);
+        }
 
-    laz_file
-        .seek(SeekFrom::Start(laz_header.offset_to_points as u64))
-        .unwrap();
+        let mut laz_file = BufReader::new(File::open(&args[1]).unwrap());
+        let (laz_header, laz_vlr) = read_header_and_vlrs(&mut laz_file).unwrap();
+        let laz_vlr = laz_vlr.expect("No LasZip Vlr in the laz file");
 
-    let mut all_points = vec![0u8; laz_header.point_size as usize * laz_header.num_points as usize];
+        let mut all_points =
+            vec![0u8; laz_header.point_size as usize * laz_header.num_points as usize];
 
-    par_decompress_all_from_file_greedy(&mut laz_file, &mut all_points, &laszip_vlr).unwrap();
+        par_decompress_all_from_file_greedy(&mut laz_file, &mut all_points, &laz_vlr).unwrap();
 
-    if let Some(las_path) = args.get(2) {
         let mut las_file =
-            SimpleReader::new(BufReader::new(File::open(las_path).unwrap())).unwrap();
+            SimpleReader::new(BufReader::new(File::open(&args[2]).unwrap())).unwrap();
         assert_eq!(
             las_file.header.point_format_id,
             point_format_id_compressed_to_uncompressd(laz_header.point_format_id)
         );
         assert_eq!(las_file.header.num_points, laz_header.num_points);
-        for i in 0..laz_header.num_points as usize {
+        for decompressed_point in all_points.chunks_exact(laz_header.point_size as usize) {
             let las_point = las_file.read_next().unwrap().unwrap();
-            let decompress_point = &all_points
-                [(i * laz_header.point_size as usize)..(i + 1) * laz_header.point_size as usize];
-            assert_eq!(decompress_point, las_point);
+            assert_eq!(decompressed_point, las_point);
         }
     } else {
-        println!("No LAS file path given, decompression result can't be checked");
+        if args.len() != 3 {
+            println!("Usage: par_decompression LAZ_PATH LAS_PATH");
+            std::process::exit(1);
+        }
+
+        let mut laz_file = BufReader::new(File::open(&args[1]).unwrap());
+        let (laz_header, laz_vlr) = read_header_and_vlrs(&mut laz_file).unwrap();
+        let laz_vlr = laz_vlr.expect("No LasZip Vlr in the laz file");
+
+        let mut las_reader =
+            SimpleReader::new(BufReader::new(File::open(&args[2]).unwrap())).unwrap();
+        let mut decompressor = laz::ParLasZipDecompressor::new(laz_file, laz_vlr).unwrap();
+
+        let mut laz_points = vec![];
+
+        let num_points_per_iter = 1_158_989;
+        let mut num_points_left = laz_header.num_points;
+
+        while num_points_left > 0 {
+            let num_points_to_read = std::cmp::min(num_points_left, num_points_per_iter);
+            laz_points.resize(
+                num_points_to_read as usize * laz_header.point_size as usize,
+                0u8,
+            );
+
+            decompressor.decompress_many(&mut laz_points).unwrap();
+
+            for decompressed_point in laz_points.chunks_exact(laz_header.point_size as usize) {
+                let las_point = las_reader.read_next().unwrap().unwrap();
+                assert_eq!(decompressed_point, las_point);
+            }
+            num_points_left -= num_points_to_read;
+        }
     }
 }
 
