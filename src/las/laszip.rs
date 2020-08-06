@@ -532,6 +532,9 @@ fn record_compressor_from_laz_items<'a, W: Write + 'a>(
 /// Reads the chunk table from the source
 ///
 /// The source position is expected to be at the start of the point data
+///
+/// The position of the `src` is at where the points actually starts
+/// (ie after the chunk table offset).
 pub fn read_chunk_table<R: Read + Seek>(src: &mut R) -> Option<std::io::Result<Vec<u64>>> {
     let current_pos = match src.seek(SeekFrom::Current(0)) {
         Ok(p) => p,
@@ -1191,16 +1194,14 @@ pub fn par_decompress_all_from_file_greedy(
             point_size,
         })
     } else {
-        let start_pos = src.seek(SeekFrom::Current(0))?;
-        let mut offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
-        if offset_to_chunk_table <= 1 {
-            src.seek(SeekFrom::End(-8))?;
-            offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
-        }
-        let mut compressed_points = vec![0u8; (offset_to_chunk_table as u64 - start_pos) as usize];
+        let chunk_table = read_chunk_table(src)
+            .ok_or(LasZipError::MissingChunkTable)??;
+
+        let point_data_size = chunk_table.iter().copied().sum::<u64>();
+
+        let mut compressed_points = vec![0u8; point_data_size as usize];
         src.read_exact(&mut compressed_points)?;
-        let chunk_sizes = read_chunk_table_at_offset(src, offset_to_chunk_table)?;
-        par_decompress(&compressed_points, points_out, laz_vlr, &chunk_sizes)
+        par_decompress(&compressed_points, points_out, laz_vlr, &chunk_table)
     }
 }
 
@@ -1326,10 +1327,11 @@ pub struct ParLasZipDecompressor<R> {
 
 #[cfg(feature = "parallel")]
 impl<R: Read + Seek> ParLasZipDecompressor<R> {
-    pub fn new(mut source: R, vlr: LazVlr) -> Self {
-        let chunk_table = read_chunk_table(&mut source).unwrap().unwrap();
+    pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
+        let chunk_table = read_chunk_table(&mut source)
+            .ok_or(LasZipError::MissingChunkTable)??;
 
-        Self {
+        Ok(Self {
             source,
             vlr,
             chunk_table,
@@ -1337,7 +1339,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             internal_buffer: vec![],
             outernal_buffer: vec![],
             last_chunk_read: 0,
-        }
+        })
     }
 
     pub fn decompress_many(&mut self, out: &mut [u8]) -> Result<(), LasZipError> {
