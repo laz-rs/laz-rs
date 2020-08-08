@@ -532,6 +532,9 @@ fn record_compressor_from_laz_items<'a, W: Write + 'a>(
 /// Reads the chunk table from the source
 ///
 /// The source position is expected to be at the start of the point data
+///
+/// The position of the `src` is at where the points actually starts
+/// (ie after the chunk table offset).
 pub fn read_chunk_table<R: Read + Seek>(src: &mut R) -> Option<std::io::Result<Vec<u64>>> {
     let current_pos = match src.seek(SeekFrom::Current(0)) {
         Ok(p) => p,
@@ -789,7 +792,9 @@ fn write_chunk_table<W: Write>(
     Ok(())
 }
 
-/// Updates the 'chunk table offset' is the first 8 byte (i64) of a Laszip compressed data
+/// Updates the 'chunk table offset'
+///
+/// It is the first 8 byte (i64) of a Laszip compressed data
 ///
 /// This function expects the position of the destination to be at the start of the chunk_table
 /// (whether it is written or not).
@@ -1011,10 +1016,32 @@ pub fn par_compress_buffer<W: Write + Seek>(
     uncompressed_points: &[u8],
     laz_vlr: &LazVlr,
 ) -> Result<(), LasZipError> {
+    let start_pos = dst.seek(SeekFrom::Current(0))?;
+    // Reserve the bytes for the chunk table offset that will be updated later
+    dst.write_i64::<LittleEndian>(start_pos as i64)?;
+
+    let chunk_sizes = par_compress(dst, uncompressed_points, laz_vlr)?;
+
+    update_chunk_table_offset(dst, SeekFrom::Start(start_pos))?;
+    write_chunk_table(dst, &chunk_sizes)?;
+    Ok(())
+}
+
+/// Compresses the points contained in `uncompressed_points` writing the result in the `dst`
+/// and returns the size of each chunk
+///
+/// Does not write nor update the offset to the chunk table
+/// And does not write the chunk table
+///
+/// Returns the size of each compressed chunk of point written
+#[cfg(feature = "parallel")]
+pub fn par_compress<W: Write>(
+    dst: &mut W,
+    uncompressed_points: &[u8],
+    laz_vlr: &LazVlr,
+) -> Result<Vec<usize>, LasZipError> {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use std::io::Cursor;
-
-    let start_pos = dst.seek(SeekFrom::Current(0))?;
 
     let point_size = laz_vlr.items_size() as usize;
     if uncompressed_points.len() % point_size != 0 {
@@ -1049,18 +1076,13 @@ pub fn par_compress_buffer<W: Write + Seek>(
             })
             .collect::<Vec<Result<Cursor<Vec<u8>>, LasZipError>>>();
 
-        // Reserve the bytes for the chunk table offset that will be updated later
-        dst.write_i64::<LittleEndian>(0)?;
         let mut chunk_sizes = Vec::<usize>::with_capacity(chunks.len());
         for chunk_result in chunks {
             let chunk = chunk_result?;
             chunk_sizes.push(chunk.get_ref().len());
             dst.write_all(chunk.get_ref())?;
         }
-
-        update_chunk_table_offset(dst, SeekFrom::Start(start_pos))?;
-        write_chunk_table(dst, &chunk_sizes)?;
-        Ok(())
+        Ok(chunk_sizes)
     }
 }
 
@@ -1104,46 +1126,6 @@ pub fn par_decompress_buffer(
     }
 }
 
-/// Decompress points from the file in parallel greedily
-///
-/// What is meant by 'greedy' here is that this function
-/// will read in memory all the compressed points in order to decompress them
-/// as opposed to reading a chunk of points when needed
-///
-/// This fn will decompress as many points as the `decompress_points` can hold.
-/// (But will still load the whole point data in memory even if the
-/// `decompress_points` cannot hold all the points)
-///
-/// Each chunk is sent for decompression in a thread.
-///
-///
-/// `src` must be at the start of the LAZ point data
-#[cfg(feature = "parallel")]
-pub fn par_decompress_all_from_file_greedy(
-    src: &mut std::io::BufReader<std::fs::File>,
-    points_out: &mut [u8],
-    laz_vlr: &LazVlr,
-) -> Result<(), LasZipError> {
-    let point_size = laz_vlr.items_size() as usize;
-    if points_out.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: points_out.len(),
-            point_size,
-        })
-    } else {
-        let start_pos = src.seek(SeekFrom::Current(0))?;
-        let mut offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
-        if offset_to_chunk_table <= 1 {
-            src.seek(SeekFrom::End(-8))?;
-            offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
-        }
-        let mut compressed_points = vec![0u8; (offset_to_chunk_table as u64 - start_pos) as usize];
-        src.read_exact(&mut compressed_points)?;
-        let chunk_sizes = read_chunk_table_at_offset(src, offset_to_chunk_table)?;
-        par_decompress(&compressed_points, points_out, laz_vlr, &chunk_sizes)
-    }
-}
-
 /// Actual the parallel decompression
 ///
 /// `compressed_points` must contains only the bytes corresponding to the points
@@ -1153,7 +1135,7 @@ pub fn par_decompress(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
-    chunk_sizes: &Vec<u64>,
+    chunk_sizes: &[u64],
 ) -> Result<(), LasZipError> {
     use crate::byteslice::ChunksIrregular;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -1183,6 +1165,288 @@ pub fn par_decompress(
         })
         .collect::<Result<(), LasZipError>>()?;
     Ok(())
+}
+
+/// Decompress points from the file in parallel greedily
+///
+/// What is meant by 'greedy' here is that this function
+/// will read in memory all the compressed points in order to decompress them
+/// as opposed to reading a chunk of points when needed
+///
+/// This fn will decompress as many points as the `decompress_points` can hold.
+/// (But will still load the whole point data in memory even if the
+/// `decompress_points` cannot hold all the points)
+///
+/// Each chunk is sent for decompression in a thread.
+///
+///
+/// `src` must be at the start of the LAZ point data
+#[cfg(feature = "parallel")]
+pub fn par_decompress_all_from_file_greedy(
+    src: &mut std::io::BufReader<std::fs::File>,
+    points_out: &mut [u8],
+    laz_vlr: &LazVlr,
+) -> Result<(), LasZipError> {
+    let point_size = laz_vlr.items_size() as usize;
+    if points_out.len() % point_size != 0 {
+        Err(LasZipError::BufferLenNotMultipleOfPointSize {
+            buffer_len: points_out.len(),
+            point_size,
+        })
+    } else {
+        let chunk_table = read_chunk_table(src).ok_or(LasZipError::MissingChunkTable)??;
+
+        let point_data_size = chunk_table.iter().copied().sum::<u64>();
+
+        let mut compressed_points = vec![0u8; point_data_size as usize];
+        src.read_exact(&mut compressed_points)?;
+        par_decompress(&compressed_points, points_out, laz_vlr, &chunk_table)
+    }
+}
+
+/// LasZip compressor that compresses using multiple threads
+///
+/// This works by forming complete chunks of points with the points
+/// data passed when [`compress_many`] is called. These complete chunks are
+/// compressed & written right away and points that are 'leftovers' are kept until
+/// the next call to [`compress_many`] or [`done`].
+///
+/// [`compress_many`]: ./struct.ParLasZipCompressor.html#method.compress_many
+/// [`done`]: ./struct.ParLasZipCompressor.html#method.done
+#[cfg(feature = "parallel")]
+pub struct ParLasZipCompressor<W> {
+    vlr: LazVlr,
+    chunk_table: Vec<usize>,
+    table_offset: u64,
+    // Stores uncompressed points from the last call to compress_many
+    // that did not allow to make a full chunk of the requested vlr.chunk_size
+    // They are prepended to the points data passed to the compress_many fn.
+    // The rest is compressed when done is called, forming the last chunk
+    rest: Vec<u8>,
+    // Because our par_compress function expects a contiguous
+    // slice with the points to be compressed, we need an internal buffer to
+    // copy the rest + the points to be able to call that fn
+    internal_buffer: Vec<u8>,
+    dest: W,
+}
+
+#[cfg(feature = "parallel")]
+impl<W: Write + Seek> ParLasZipCompressor<W> {
+    /// Creates a new ParLasZipCompressor
+    pub fn new(dest: W, vlr: LazVlr) -> Result<Self, LasZipError> {
+        let mut myself = Self {
+            vlr,
+            chunk_table: vec![],
+            table_offset: 0,
+            rest: vec![],
+            internal_buffer: vec![],
+            dest,
+        };
+        myself.reserve_chunk_table_offset()?;
+        Ok(myself)
+    }
+
+    fn reserve_chunk_table_offset(&mut self) -> std::io::Result<()> {
+        self.table_offset = self.dest.seek(SeekFrom::Current(0))?;
+        self.dest
+            .write_i64::<LittleEndian>(self.table_offset as i64)
+    }
+
+    /// Compresses many points using multiple threads
+    ///
+    /// For this function to actually use multiple threads, the `points`
+    /// buffer shall hold more points that the vlr's `chunk_size`.
+    pub fn compress_many(&mut self, points: &[u8]) -> std::io::Result<()> {
+        let point_size = self.vlr.items_size() as usize;
+        debug_assert_eq!(self.rest.len() % point_size, 0);
+
+        let chunk_size_in_bytes = self.vlr.chunk_size() as usize * point_size;
+
+        let num_chunk = (self.rest.len() + points.len()) / chunk_size_in_bytes;
+        let num_bytes_not_fitting = (self.rest.len() + points.len()) % chunk_size_in_bytes;
+
+        self.internal_buffer
+            .resize(num_chunk * chunk_size_in_bytes, 0u8);
+
+        if num_chunk > 0 {
+            self.internal_buffer[..self.rest.len()].copy_from_slice(&self.rest);
+            self.internal_buffer[self.rest.len()..]
+                .copy_from_slice(&points[..points.len() - num_bytes_not_fitting]);
+
+            self.rest.resize(num_bytes_not_fitting, 0u8);
+            self.rest
+                .copy_from_slice(&points[points.len() - num_bytes_not_fitting..]);
+            let chunk_sizes =
+                par_compress(&mut self.dest, &self.internal_buffer, &self.vlr).unwrap();
+            chunk_sizes
+                .iter()
+                .copied()
+                .map(|size| size as usize)
+                .for_each(|size| self.chunk_table.push(size));
+        } else {
+            for b in points {
+                self.rest.push(*b);
+            }
+        }
+        Ok(())
+    }
+
+    /// Tells the compressor that no more points will be compressed
+    ///
+    /// - Compresses & writes the rest of the points to form the last chunk
+    /// - Writes the chunk table
+    /// - update the offset to the chunk_table
+    pub fn done(&mut self) -> Result<(), LasZipError> {
+        let chunk_sizes = par_compress(&mut self.dest, &self.rest, &self.vlr)?;
+        chunk_sizes
+            .iter()
+            .copied()
+            .map(|size| size as usize)
+            .for_each(|size| self.chunk_table.push(size));
+        update_chunk_table_offset(&mut self.dest, SeekFrom::Start(self.table_offset))?;
+        write_chunk_table(&mut self.dest, &self.chunk_table)?;
+        Ok(())
+    }
+
+    pub fn vlr(&self) -> &LazVlr {
+        &self.vlr
+    }
+}
+
+#[cfg(feature = "parallel")]
+/// Laszip decompressor, that can decompress data using multiple threads
+pub struct ParLasZipDecompressor<R> {
+    vlr: LazVlr,
+    chunk_table: Vec<u64>,
+    last_chunk_read: usize,
+    rest: std::io::Cursor<Vec<u8>>,
+    internal_buffer: Vec<u8>,
+    outernal_buffer: Vec<u8>,
+    source: R,
+}
+
+#[cfg(feature = "parallel")]
+impl<R: Read + Seek> ParLasZipDecompressor<R> {
+    /// Creates a new decompressor
+    ///
+    /// Fails if no chunk table could be found.
+    pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
+        let chunk_table = read_chunk_table(&mut source).ok_or(LasZipError::MissingChunkTable)??;
+
+        Ok(Self {
+            source,
+            vlr,
+            chunk_table,
+            rest: std::io::Cursor::<Vec<u8>>::new(vec![]),
+            internal_buffer: vec![],
+            outernal_buffer: vec![],
+            last_chunk_read: 0,
+        })
+    }
+
+    /// Decompresses many points using multiple threads
+    ///
+    /// For this function to actually use multiple threads, the `points`
+    /// buffer shall hold more points that the vlr's `chunk_size`.
+    pub fn decompress_many(&mut self, out: &mut [u8]) -> Result<(), LasZipError> {
+        let point_size = self.vlr.items_size() as usize;
+        assert_eq!(out.len() % point_size, 0);
+
+        let num_bytes_in_rest = self.rest.get_ref().len() - self.rest.position() as usize;
+        debug_assert!(num_bytes_in_rest % point_size == 0);
+
+        if num_bytes_in_rest >= out.len() {
+            self.rest.read(out)?;
+        } else {
+            let num_bytes_in_chunk =
+                self.vlr.chunk_size() as usize * self.vlr.items_size() as usize;
+            let num_chunks_to_decompress = ((out.len() - num_bytes_in_rest) as f32
+                / num_bytes_in_chunk as f32)
+                .ceil() as usize;
+
+            let chunk_sizes = &self.chunk_table
+                [self.last_chunk_read..self.last_chunk_read + num_chunks_to_decompress];
+            let bytes_to_read = chunk_sizes.iter().copied().sum::<u64>() as usize;
+
+            self.internal_buffer.resize(bytes_to_read, 0u8);
+            self.outernal_buffer
+                .resize(num_chunks_to_decompress * num_bytes_in_chunk, 0u8);
+            self.source.read(&mut self.internal_buffer)?;
+
+            if self.last_chunk_read + num_chunks_to_decompress < self.chunk_table.len() {
+                par_decompress(
+                    &self.internal_buffer,
+                    &mut self.outernal_buffer,
+                    &self.vlr,
+                    &chunk_sizes,
+                )?;
+            } else {
+                // The last chunk contains a number of points that is less or equal to the chunk_size
+                // the strategy is to decompress that particular chunk separately until a end of file error appears
+                par_decompress(
+                    &self.internal_buffer,
+                    &mut self.outernal_buffer,
+                    &self.vlr,
+                    &chunk_sizes[..chunk_sizes.len() - 1],
+                )?;
+
+                let last_chunk_start = bytes_to_read - (*chunk_sizes.last().unwrap() as usize);
+                let last_chunk_source =
+                    std::io::Cursor::new(&self.internal_buffer[last_chunk_start..]);
+                let mut decompressor =
+                    record_decompressor_from_laz_items(self.vlr.items(), last_chunk_source)?;
+                debug_assert_eq!(
+                    self.outernal_buffer[(num_chunks_to_decompress - 1) * num_bytes_in_chunk..]
+                        .len()
+                        % point_size,
+                    0
+                );
+                let mut num_decompressed_bytes_in_last_chunk = 0;
+                for point in self.outernal_buffer
+                    [(num_chunks_to_decompress - 1) * num_bytes_in_chunk..]
+                    .chunks_exact_mut(point_size)
+                {
+                    if let Err(error) = decompressor.decompress_next(point) {
+                        if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                            break;
+                        } else {
+                            return Err(error.into());
+                        }
+                    } else {
+                        num_decompressed_bytes_in_last_chunk += point_size;
+                    }
+                }
+                self.outernal_buffer.resize(
+                    (num_chunks_to_decompress - 1) * num_bytes_in_chunk
+                        + num_decompressed_bytes_in_last_chunk,
+                    0u8,
+                );
+            }
+
+            let num_bytes_not_fitting =
+                (self.outernal_buffer.len() + num_bytes_in_rest) - out.len();
+            self.rest.read(&mut out[..num_bytes_in_rest])?;
+            out[num_bytes_in_rest..].copy_from_slice(
+                &self.outernal_buffer[..self.outernal_buffer.len() - num_bytes_not_fitting],
+            );
+            debug_assert_eq!(
+                self.rest.position() as usize,
+                self.rest.get_ref().len(),
+                "The rest was not consumed"
+            );
+            {
+                let rest_vec = self.rest.get_mut();
+                rest_vec.resize(num_bytes_not_fitting, 0u8);
+                rest_vec.copy_from_slice(
+                    &self.outernal_buffer[self.outernal_buffer.len() - num_bytes_not_fitting..],
+                );
+                self.rest.set_position(0);
+            }
+
+            self.last_chunk_read += num_chunks_to_decompress;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

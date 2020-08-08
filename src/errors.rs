@@ -20,6 +20,9 @@ pub enum LasZipError {
         buffer_len: usize,
         point_size: usize,
     },
+    /// The chunk table could not be found in the file
+    /// and it is required for the operation.
+    MissingChunkTable,
 }
 
 impl From<std::io::Error> for LasZipError {
@@ -56,6 +59,7 @@ impl fmt::Display for LasZipError {
             LasZipError::UnsupportedPointFormat(id) => {
                 write!(f, "Point format {} is not supported", id)
             }
+            LasZipError::MissingChunkTable => write!(f, "The chunk table could not be found"),
         }
     }
 }

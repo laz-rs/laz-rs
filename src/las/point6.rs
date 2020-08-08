@@ -552,10 +552,10 @@ pub mod v3 {
     const LASZIP_GPS_TIME_MULTI: i32 = 500;
     const LASZIP_GPS_TIME_MULTI_MINUS: i32 = -10;
     const LASZIP_GPS_TIME_MULTI_CODE_FULL: i32 =
-        (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS + 1);
+        LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS + 1;
 
     const LASZIP_GPS_TIME_MULTI_TOTAL: i32 =
-        (LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS + 5);
+        LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS + 5;
 
     #[derive(Clone)]
     struct GpsTimeSequences {
@@ -1671,10 +1671,10 @@ pub mod v3 {
 
             // create the 7 bit mask that encodes various changes (its value ranges from 0 to 127)
             let mut changed_values = ((scanner_channel_changed as i32) << 6) | // scanner channel compared to last point (same = 0 / different = 1)
-                    ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
-                    (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
+                ((point_source_changed as i32) << 5) |                  // point source ID compared to last point from *same* scanner channel (same = 0 / different = 1)
+                ((gps_time_changed as i32) << 4) |                      // GPS time stamp compared to last point from *same* scanner channel (same = 0 / different = 1)
+                ((scan_angle_changed as i32) << 3) |                    // scan angle compared to last point from *same* scanner channel (same = 0 / different = 1)
+                (((n != last_n as u8) as i32) << 2); // number of returns compared to last point from *same* scanner channel (same = 0 / different = 1)
 
             // return number compared to last point of *same* scanner channel
             // (same = 0 / plus one mod 16 = 1 / minus one mod 16 = 2 / other difference = 3)

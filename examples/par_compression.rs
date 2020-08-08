@@ -2,11 +2,19 @@
 fn main() {
     use laz::las::file::QuickHeader;
     use laz::las::laszip::{par_compress_buffer, LasZipDecompressor, LazItemRecordBuilder, LazVlr};
+    use laz::ParLasZipCompressor;
     use std::fs::File;
     use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
 
-    if args.len() != 1 {
+    let greedy = if let Some(greedy_switch) = args.iter().position(|s| s == "--greedy") {
+        args.remove(greedy_switch);
+        true
+    } else {
+        false
+    };
+
+    if args.len() != 2 {
         println!("Usage: {} LAS_PATH", args[0]);
         std::process::exit(1);
     }
@@ -25,7 +33,19 @@ fn main() {
     let laz_vlr = LazVlr::from_laz_items(laz_items);
 
     let mut compression_out_put = Cursor::new(Vec::<u8>::new());
-    par_compress_buffer(&mut compression_out_put, &all_points, &laz_vlr).unwrap();
+
+    if greedy {
+        par_compress_buffer(&mut compression_out_put, &all_points, &laz_vlr).unwrap();
+    } else {
+        let points_per_iter = 1_158_989;
+        let mut compressor =
+            ParLasZipCompressor::new(&mut compression_out_put, laz_vlr.clone()).unwrap();
+        for chunk in all_points.chunks(points_per_iter) {
+            println!("ayaya");
+            compressor.compress_many(chunk).unwrap();
+        }
+        compressor.done().unwrap();
+    }
 
     compression_out_put.set_position(0);
     let mut decompressor = LasZipDecompressor::new(compression_out_put, laz_vlr).unwrap();
