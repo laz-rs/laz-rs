@@ -3,6 +3,7 @@ use std::fmt;
 
 /// Errors of this crate
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum LasZipError {
     /// The Laz item it not known
     UnknownLazItem(u16),

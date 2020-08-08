@@ -141,7 +141,7 @@ impl LazItem {
         self.version
     }
 
-    fn read_from<R: Read>(src: &mut R) -> Result<Self, LasZipError> {
+    fn read_from<R: Read>(src: &mut R) -> crate::Result<Self> {
         let item_type = src.read_u16::<LittleEndian>()?;
         let size = src.read_u16::<LittleEndian>()?;
         let item_type = match item_type {
@@ -211,7 +211,7 @@ impl LazItemRecordBuilder {
     pub fn default_for_point_format_id(
         point_format_id: u8,
         num_extra_bytes: u16,
-    ) -> Result<Vec<LazItem>, LasZipError> {
+    ) -> crate::Result<Vec<LazItem>> {
         use crate::las::{Point1, Point2, Point3, Point7, Point8};
         match point_format_id {
             0 => Ok(LazItemRecordBuilder::default_version_of::<Point0>(
@@ -273,7 +273,7 @@ impl LazItemRecordBuilder {
     }
 }
 
-fn read_laz_items_from<R: Read>(mut src: &mut R) -> Result<Vec<LazItem>, LasZipError> {
+fn read_laz_items_from<R: Read>(mut src: &mut R) -> crate::Result<Vec<LazItem>> {
     let num_items = src.read_u16::<LittleEndian>()?;
     let mut items = Vec::<LazItem>::with_capacity(num_items as usize);
     for _ in 0..num_items {
@@ -372,13 +372,13 @@ impl LazVlr {
     }
 
     /// Tries to read the Vlr information from the record_data buffer
-    pub fn from_buffer(record_data: &[u8]) -> Result<Self, LasZipError> {
+    pub fn from_buffer(record_data: &[u8]) -> crate::Result<Self> {
         let mut cursor = std::io::Cursor::new(record_data);
         Self::read_from(&mut cursor)
     }
 
     /// Tries to read the Vlr information from the record_data source
-    pub fn read_from<R: Read>(mut src: &mut R) -> Result<Self, LasZipError> {
+    pub fn read_from<R: Read>(mut src: &mut R) -> crate::Result<Self> {
         let compressor_type = src.read_u16::<LittleEndian>()?;
         let compressor = match CompressorType::from_u16(compressor_type) {
             Some(c) => c,
@@ -475,7 +475,7 @@ impl LazVlrBuilder {
 fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
     items: &Vec<LazItem>,
     input: R,
-) -> Result<Box<dyn RecordDecompressor<R> + 'a>, LasZipError> {
+) -> crate::Result<Box<dyn RecordDecompressor<R> + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordDecompressor");
@@ -504,7 +504,7 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
 fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     items: &Vec<LazItem>,
     output: W,
-) -> Result<Box<dyn RecordCompressor<W> + 'a>, LasZipError> {
+) -> crate::Result<Box<dyn RecordCompressor<W> + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordCompressor");
@@ -605,17 +605,14 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the `record data` of the laszip vlr
-    pub fn new_with_record_data(
-        source: R,
-        laszip_vlr_record_data: &[u8],
-    ) -> Result<Self, LasZipError> {
+    pub fn new_with_record_data(source: R, laszip_vlr_record_data: &[u8]) -> crate::Result<Self> {
         let vlr = LazVlr::from_buffer(laszip_vlr_record_data)?;
         Self::new(source, vlr)
     }
 
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
-    pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
+    pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
         if vlr.compressor != CompressorType::PointWiseChunked
             && vlr.compressor != CompressorType::LayeredChunked
         {
@@ -834,13 +831,13 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     /// If you wish to use a different `chunk size` see [`from_laz_vlr`]
     ///
     /// [`from_laz_vlr`]: #method.from_laz_vlr
-    pub fn from_laz_items(output: W, items: Vec<LazItem>) -> Result<Self, LasZipError> {
+    pub fn from_laz_items(output: W, items: Vec<LazItem>) -> crate::Result<Self> {
         let vlr = LazVlr::from_laz_items(items);
         Self::from_laz_vlr(output, vlr)
     }
 
     /// Creates a compressor using the provided vlr.
-    pub fn from_laz_vlr(output: W, vlr: LazVlr) -> Result<Self, LasZipError> {
+    pub fn from_laz_vlr(output: W, vlr: LazVlr) -> crate::Result<Self> {
         let record_compressor = record_compressor_from_laz_items(&vlr.items, output)?;
         Ok(Self {
             vlr,
@@ -946,7 +943,7 @@ pub fn compress_buffer<W: Write + Seek>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: LazVlr,
-) -> Result<(), LasZipError> {
+) -> crate::Result<()> {
     let mut compressor = LasZipCompressor::from_laz_vlr(dst, laz_vlr)?;
     let point_size = compressor.vlr().items_size() as usize;
     if uncompressed_points.len() % point_size != 0 {
@@ -985,7 +982,7 @@ pub fn decompress_buffer(
     compressed_points_data: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: LazVlr,
-) -> Result<(), LasZipError> {
+) -> crate::Result<()> {
     let point_size = laz_vlr.items_size() as usize;
     if decompressed_points.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
@@ -1015,7 +1012,7 @@ pub fn par_compress_buffer<W: Write + Seek>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: &LazVlr,
-) -> Result<(), LasZipError> {
+) -> crate::Result<()> {
     let start_pos = dst.seek(SeekFrom::Current(0))?;
     // Reserve the bytes for the chunk table offset that will be updated later
     dst.write_i64::<LittleEndian>(start_pos as i64)?;
@@ -1039,7 +1036,7 @@ pub fn par_compress<W: Write>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: &LazVlr,
-) -> Result<Vec<usize>, LasZipError> {
+) -> crate::Result<Vec<usize>> {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use std::io::Cursor;
 
@@ -1074,7 +1071,7 @@ pub fn par_compress<W: Write>(
 
                 Ok(record_compressor.box_into_stream())
             })
-            .collect::<Vec<Result<Cursor<Vec<u8>>, LasZipError>>>();
+            .collect::<Vec<crate::Result<Cursor<Vec<u8>>>>>();
 
         let mut chunk_sizes = Vec::<usize>::with_capacity(chunks.len());
         for chunk_result in chunks {
@@ -1103,7 +1100,7 @@ pub fn par_decompress_buffer(
     compressed_points_data: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
-) -> Result<(), LasZipError> {
+) -> crate::Result<()> {
     let point_size = laz_vlr.items_size() as usize;
     if decompressed_points.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
@@ -1136,7 +1133,7 @@ pub fn par_decompress(
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
     chunk_sizes: &[u64],
-) -> Result<(), LasZipError> {
+) -> crate::Result<()> {
     use crate::byteslice::ChunksIrregular;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -1163,7 +1160,7 @@ pub fn par_decompress(
             }
             Ok(())
         })
-        .collect::<Result<(), LasZipError>>()?;
+        .collect::<crate::Result<()>>()?;
     Ok(())
 }
 
@@ -1186,7 +1183,7 @@ pub fn par_decompress_all_from_file_greedy(
     src: &mut std::io::BufReader<std::fs::File>,
     points_out: &mut [u8],
     laz_vlr: &LazVlr,
-) -> Result<(), LasZipError> {
+) -> crate::Result<()> {
     let point_size = laz_vlr.items_size() as usize;
     if points_out.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {
@@ -1233,7 +1230,7 @@ pub struct ParLasZipCompressor<W> {
 #[cfg(feature = "parallel")]
 impl<W: Write + Seek> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
-    pub fn new(dest: W, vlr: LazVlr) -> Result<Self, LasZipError> {
+    pub fn new(dest: W, vlr: LazVlr) -> crate::Result<Self> {
         let mut myself = Self {
             vlr,
             chunk_table: vec![],
@@ -1296,7 +1293,7 @@ impl<W: Write + Seek> ParLasZipCompressor<W> {
     /// - Compresses & writes the rest of the points to form the last chunk
     /// - Writes the chunk table
     /// - update the offset to the chunk_table
-    pub fn done(&mut self) -> Result<(), LasZipError> {
+    pub fn done(&mut self) -> crate::Result<()> {
         let chunk_sizes = par_compress(&mut self.dest, &self.rest, &self.vlr)?;
         chunk_sizes
             .iter()
@@ -1330,7 +1327,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     /// Creates a new decompressor
     ///
     /// Fails if no chunk table could be found.
-    pub fn new(mut source: R, vlr: LazVlr) -> Result<Self, LasZipError> {
+    pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
         let chunk_table = read_chunk_table(&mut source).ok_or(LasZipError::MissingChunkTable)??;
 
         Ok(Self {
@@ -1348,7 +1345,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     ///
     /// For this function to actually use multiple threads, the `points`
     /// buffer shall hold more points that the vlr's `chunk_size`.
-    pub fn decompress_many(&mut self, out: &mut [u8]) -> Result<(), LasZipError> {
+    pub fn decompress_many(&mut self, out: &mut [u8]) -> crate::Result<()> {
         let point_size = self.vlr.items_size() as usize;
         assert_eq!(out.len() % point_size, 0);
 

@@ -75,7 +75,7 @@ pub trait LayeredFieldDecompressor<R: Read> {
 /// Trait describing the interface needed to _decompress_ a point record
 pub trait RecordDecompressor<R> {
     /// Sets the field decompressors that matches the `laz_items`
-    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError>;
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()>;
     /// Returns the size of a decompressed point record (total size of all fields)
     fn record_size(&self) -> usize;
 
@@ -144,7 +144,7 @@ impl<'a, R: Read> SequentialPointRecordDecompressor<'a, R> {
 }
 
 impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a, R> {
-    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()> {
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
@@ -295,7 +295,7 @@ impl<'a, R: Read + Seek> LayeredPointRecordDecompressor<'a, R> {
 }
 
 impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompressor<'a, R> {
-    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()> {
         for record_item in laz_items {
             match record_item.version {
                 3 => match record_item.item_type {
@@ -441,7 +441,7 @@ pub trait LayeredFieldCompressor<W: Write> {
 /// Trait describing the interface needed to _compress_ a point record
 pub trait RecordCompressor<W> {
     /// Sets the field decompressors that matches the `laz_items`
-    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError>;
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()>;
     /// Returns the size of an uncompressed point record (total size of all fields)
     fn record_size(&self) -> usize;
 
@@ -500,7 +500,7 @@ impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
 }
 
 impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W> {
-    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()> {
         for record_item in laz_items {
             match record_item.version {
                 1 => match record_item.item_type {
@@ -635,7 +635,7 @@ impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
 }
 
 impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
-    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> Result<(), LasZipError> {
+    fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()> {
         for item in laz_items {
             match item.version {
                 3 => match item.item_type {

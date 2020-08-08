@@ -8,7 +8,7 @@
 //! ```
 //! use laz::{LasZipError, LasZipCompressor, LazItemType, LazItemRecordBuilder};
 //!
-//! # fn main() -> Result<(), LasZipError> {
+//! # fn main() -> laz::Result<()> {
 //! // Here we use a Cursor but a std::fs::File will work just fine
 //! let mut compressed_output = std::io::Cursor::new(vec![]);
 //!
@@ -34,7 +34,7 @@
 //! ```
 //! use laz::{LasZipError, LasZipCompressor, LazItemType, LazItemRecordBuilder, LazVlrBuilder};
 //!
-//! # fn main() -> Result<(), LasZipError> {
+//! # fn main() -> laz::Result<()> {
 //!
 //! let mut compressed_output = std::io::Cursor::new(vec![]);
 //! let items = LazItemRecordBuilder::new()
@@ -78,7 +78,7 @@
 //! #    file.seek(SeekFrom::Start(OFFSET_TO_LASZIP_VLR_DATA))?;
 //! #    Ok(())
 //! # }
-//! # fn main() -> Result<(), LasZipError> {
+//! # fn main() -> laz::Result<()> {
 //! let mut laz_file = File::open("tests/data/point10.laz")?;
 //! seek_to_start_of_laszip_record_data(&mut laz_file)?;
 //!
@@ -128,11 +128,15 @@ pub mod record;
 
 pub use errors::LasZipError;
 pub use las::laszip::{compress_buffer, decompress_buffer};
+
 #[cfg(feature = "parallel")]
 pub use las::laszip::{
     par_compress_buffer, par_decompress_buffer, ParLasZipCompressor, ParLasZipDecompressor,
 };
+
 pub use las::laszip::{
     LasZipCompressor, LasZipDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr,
     LazVlrBuilder,
 };
+
+pub type Result<T> = std::result::Result<T, LasZipError>;

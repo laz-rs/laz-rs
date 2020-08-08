@@ -13,3 +13,6 @@ Original Implementations:
  - [LASzip](https://github.com/LASzip/LASzip)
  - [LAStools](https://github.com/LAStools/LAStools)
  - [laz-perf](https://github.com/hobu/laz-perf)
+ 
+ 
+Minimal Rust version: 1.40.0
