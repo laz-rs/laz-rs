@@ -1,6 +1,7 @@
 use crate::las::file::SimpleReader;
 use crate::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItem, LazVlr};
-use std::io::{Cursor, Read, Seek};
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek};
 
 pub fn check_decompression<R1: Read + Seek, R2: Read + Seek>(laz_src: R1, las_src: R2) {
     let mut laz_reader = SimpleReader::new(laz_src).unwrap();
@@ -17,6 +18,32 @@ pub fn check_decompression<R1: Read + Seek, R2: Read + Seek>(laz_src: R1, las_sr
         let las_pts = las_pts.unwrap();
 
         assert_eq!(laz_pts, las_pts);
+    }
+}
+
+pub struct LasChecker<'a> {
+    reader: crate::las::file::SimpleReader<'a>,
+}
+
+impl<'a> LasChecker<'a> {
+    pub fn new<R: Read + Seek + 'a>(src: R) -> crate::Result<Self> {
+        Ok(Self {
+            reader: crate::las::file::SimpleReader::new(src)?,
+        })
+    }
+
+    pub fn from_path(las_path: &str) -> crate::Result<Self> {
+        Ok(Self {
+            reader: crate::las::file::SimpleReader::new(BufReader::new(File::open(las_path)?))?,
+        })
+    }
+
+    pub fn check(&mut self, points: &[u8]) {
+        assert_eq!(points.len() % self.reader.header.point_size as usize, 0);
+
+        for point in points.chunks_exact(self.reader.header.point_size as usize) {
+            assert_eq!(point, self.reader.read_next().unwrap().unwrap());
+        }
     }
 }
 

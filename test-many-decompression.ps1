@@ -20,7 +20,7 @@ For ($i = 0; $i -lt $laz_files.Length; $i++) {
     } else {
         $command = "cargo run $Mode --example check_decompression -- " + $laz_files[$i] + " " + $las_files[$i] + " 2>&1"
     }
-
+    Write-Host $command
     Write-Host ($i + 1)  " / "  $laz_files.Length ": " $laz_files[$i] " vs " $las_files[$i]
     $output = Invoke-Expression -Command $command
     if ($lastexitcode -ne 0) {
