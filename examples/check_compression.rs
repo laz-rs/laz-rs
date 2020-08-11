@@ -1,30 +1,21 @@
+use laz::checking::LasChecker;
+use std::fs::File;
+use std::io::Seek;
+use std::io::{BufReader, Cursor, Read, SeekFrom};
+use std::path::Path;
+
+use laz::las::file::QuickHeader;
+use laz::las::laszip::{LasZipDecompressor, LazItemRecordBuilder};
+
+#[cfg(not(feature = "parallel"))]
+use laz::las::laszip::LasZipCompressor;
+
 #[cfg(feature = "parallel")]
-fn main() {
-    use laz::las::file::QuickHeader;
-    use laz::las::laszip::{par_compress_buffer, LasZipDecompressor, LazItemRecordBuilder, LazVlr};
-    use laz::ParLasZipCompressor;
-    use std::fs::File;
-    use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+use laz::las::laszip::{par_compress_buffer, LazVlr, ParLasZipCompressor};
 
-    use laz::checking::LasChecker;
-    use std::fs::File;
-    use std::io::{BufReader, Read, Seek};
-
-    let mut args: Vec<String> = std::env::args().collect();
-
-    let greedy = if let Some(greedy_switch) = args.iter().position(|s| s == "--greedy") {
-        args.remove(greedy_switch);
-        true
-    } else {
-        false
-    };
-
-    if args.len() != 2 {
-        println!("Usage: {} LAS_PATH", args[0]);
-        std::process::exit(1);
-    }
-
-    let mut las_file = BufReader::new(File::open(&args[1]).unwrap());
+#[cfg(feature = "parallel")]
+fn par_check_compression<T: AsRef<Path>>(las_path: T, greedy: bool) {
+    let mut las_file = BufReader::new(File::open(las_path).unwrap());
     let las_header = QuickHeader::read_from(&mut las_file).unwrap();
 
     las_file
@@ -45,7 +36,7 @@ fn main() {
         let points_per_iter = 1_158_989;
         let mut compressor =
             ParLasZipCompressor::new(&mut compression_out_put, laz_vlr.clone()).unwrap();
-        for chunk in all_points.chunks(points_per_iter) {
+        for chunk in all_points.chunks(points_per_iter * laz_vlr.items_size() as usize) {
             compressor.compress_many(chunk).unwrap();
         }
         compressor.done().unwrap();
@@ -58,33 +49,47 @@ fn main() {
     let mut checker = LasChecker::new(&mut las_file).unwrap();
 
     let mut decompressed_point = vec![0u8; las_header.point_size as usize];
-    for i in 0..las_header.num_points as usize {
+    for _ in 0..las_header.num_points as usize {
         decompressor
             .decompress_one(&mut decompressed_point)
             .unwrap();
-        checker.check(&decompressed_point).unwrap();
+        checker.check(&decompressed_point);
+    }
+}
+
+#[cfg(feature = "parallel")]
+fn main() {
+    let mut args: Vec<String> = std::env::args().collect();
+
+    let greedy = if let Some(greedy_switch) = args.iter().position(|s| s == "--greedy") {
+        args.remove(greedy_switch);
+        true
+    } else {
+        false
+    };
+
+    if args.len() != 2 {
+        println!("Usage: {} LAS_PATH", args[0]);
+        std::process::exit(1);
+    }
+
+    if Path::new(&args[1]).is_dir() {
+        let las_globber = glob::glob(&format!("{}/**/*.las", &args[1])).unwrap();
+
+        for las_entry in las_globber {
+            let las_path = las_entry.unwrap();
+            println!("Checking {}", las_path.display());
+            par_check_compression(las_path, greedy);
+        }
+    } else {
+        par_check_compression(&args[1], greedy);
     }
 }
 
 #[cfg(not(feature = "parallel"))]
-fn main() {
-    use std::fs::File;
-    use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
-
-    use laz::las::file::QuickHeader;
-    use laz::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItemRecordBuilder};
-
-    let args: Vec<String> = std::env::args().collect();
-    let las_path = if let Some(path) = args.get(1) {
-        path
-    } else {
-        println!("Usage: {} LAS_PATH", args[0]);
-        std::process::exit(1);
-    };
-
+fn check_compression<T: AsRef<Path>>(las_path: T) {
     let mut las_file = BufReader::new(File::open(las_path).unwrap());
     let las_header = QuickHeader::read_from(&mut las_file).unwrap();
-    println!("{:?}", las_header);
     las_file
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))
         .unwrap();
@@ -112,18 +117,36 @@ fn main() {
     out.set_position(0);
     let mut decompressor = LasZipDecompressor::new(out, vlr).unwrap();
 
-    las_file
-        .seek(SeekFrom::Start(las_header.offset_to_points as u64))
-        .unwrap();
-
+    las_file.seek(SeekFrom::Start(0)).unwrap();
+    let mut checker = LasChecker::new(&mut las_file).unwrap();
     println!("Decompression");
     let mut decompress_buf = vec![0u8; las_header.point_size as usize];
     for _ in 0..las_header.num_points {
-        las_file.read_exact(&mut point_buf).unwrap();
         decompressor
             .decompress_one(&mut decompress_buf)
             .expect("Failed to decompress point");
-        assert_eq!(&decompress_buf, &point_buf);
+        checker.check(&decompress_buf);
     }
 }
 
+#[cfg(not(feature = "parallel"))]
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() != 2 {
+        println!("Usage: {} LAS_PATH", args[0]);
+        std::process::exit(1);
+    };
+
+    if Path::new(&args[1]).is_dir() {
+        let las_globber = glob::glob(&format!("{}/**/*.las", &args[1])).unwrap();
+
+        for las_entry in las_globber {
+            let las_path = las_entry.unwrap();
+            println!("Checking {}", las_path.display());
+            check_compression(&las_path);
+        }
+    } else {
+        check_compression(&args[1]);
+    }
+}
