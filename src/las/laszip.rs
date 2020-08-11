@@ -1172,7 +1172,8 @@ pub fn par_decompress(
 ///
 /// This fn will decompress as many points as the `decompress_points` can hold.
 /// (But will still load the whole point data in memory even if the
-/// `decompress_points` cannot hold all the points)
+/// `decompress_points` cannot hold all the points), meaning that points that could
+/// not fit in the `points_out` buffer will be lost.
 ///
 /// Each chunk is sent for decompression in a thread.
 ///
