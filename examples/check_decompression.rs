@@ -1,12 +1,16 @@
 use glob;
 use std::path::Path;
 
+use std::io::BufReader;
+
+#[cfg(feature = "parallel")]
 use laz::checking::LasChecker;
+#[cfg(feature = "parallel")]
 use laz::las::file::read_header_and_vlrs;
 #[cfg(feature = "parallel")]
 use laz::las::laszip::par_decompress_all_from_file_greedy;
+
 use std::fs::File;
-use std::io::BufReader;
 
 #[cfg(feature = "parallel")]
 #[derive(Copy, Clone)]
@@ -156,7 +160,6 @@ fn main() {
 #[cfg(not(feature = "parallel"))]
 fn main() {
     use laz::checking::check_decompression;
-    use std::fs::File;
 
     let args: Vec<String> = std::env::args().collect();
 
@@ -176,15 +179,15 @@ fn main() {
             println!("{:?} - {:?}", las_path, laz_path);
 
             if las_path.file_stem().unwrap() == las_path.file_stem().unwrap() {
-                let laz_file = std::io::BufReader::new(File::open(laz_path).unwrap());
-                let las_file = std::io::BufReader::new(File::open(las_path).unwrap());
+                let laz_file = BufReader::new(File::open(laz_path).unwrap());
+                let las_file = BufReader::new(File::open(las_path).unwrap());
 
                 check_decompression(laz_file, las_file);
             }
         }
     } else if Path::new(&args[1]).is_file() && Path::new(&args[2]).is_file() {
-        let laz_file = std::io::BufReader::new(File::open(&args[1]).unwrap());
-        let las_file = std::io::BufReader::new(File::open(&args[2]).unwrap());
+        let laz_file = BufReader::new(File::open(&args[1]).unwrap());
+        let las_file = BufReader::new(File::open(&args[2]).unwrap());
 
         check_decompression(laz_file, las_file);
     } else {
