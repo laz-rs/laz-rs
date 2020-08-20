@@ -131,9 +131,19 @@ fn main() {
     let args = std::env::args().collect::<Vec<String>>();
     let program_args = ProgramArgs::new(&args);
 
-    if Path::new(&args[1]).is_dir() && Path::new(&args[2]).is_dir() {
-        let laz_globber = glob::glob(&format!("{}/**/*.laz", &args[1])).unwrap();
-        let las_globber = glob::glob(&format!("{}/**/*.las", &args[2])).unwrap();
+    let (laz_path, las_path) = if args.len() == 3 {
+        (&args[1], &args[2])
+    } else if args.len() == 2 {
+        (&args[1], &args[1])
+    } else {
+        println!("Usage: check_decompression LAZ_PATH LAS_PATH");
+        println!("OR   : check_decompression PATH");
+        std::process::exit(1);
+    };
+
+    if Path::new(laz_path).is_dir() && Path::new(las_path).is_dir() {
+        let laz_globber = glob::glob(&format!("{}/**/*.laz", laz_path)).unwrap();
+        let las_globber = glob::glob(&format!("{}/**/*.las", las_path)).unwrap();
 
         for (las_entry, laz_entry) in las_globber.zip(laz_globber) {
             let laz_path = laz_entry.unwrap();
@@ -150,7 +160,7 @@ fn main() {
                 run_check(&args);
             }
         }
-    } else if Path::new(&args[1]).is_file() & &Path::new(&args[2]).is_file() {
+    } else if Path::new(laz_path).is_file() & &Path::new(las_path).is_file() {
         run_check(&program_args);
     } else {
         println!("Arguments must both be either path to file or path to directory");
@@ -163,14 +173,19 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    if args.len() != 3 {
-        println!("Usage: {} LAZ_PATH LAS_PATH", args[0]);
+    let (laz_path, las_path) = if args.len() == 3 {
+        (&args[1], &args[2])
+    } else if args.len() == 2 {
+        (&args[1], &args[1])
+    } else {
+        println!("Usage: check_decompression LAZ_PATH LAS_PATH");
+        println!("OR   : check_decompression PATH");
         std::process::exit(1);
-    }
+    };
 
-    if Path::new(&args[1]).is_dir() && Path::new(&args[2]).is_dir() {
-        let laz_globber = glob::glob(&format!("{}/**/*.laz", &args[1])).unwrap();
-        let las_globber = glob::glob(&format!("{}/**/*.las", &args[2])).unwrap();
+    if Path::new(laz_path).is_dir() && Path::new(las_path).is_dir() {
+        let laz_globber = glob::glob(&format!("{}/**/*.laz", laz_path)).unwrap();
+        let las_globber = glob::glob(&format!("{}/**/*.las", las_path)).unwrap();
 
         for (las_entry, laz_entry) in las_globber.zip(laz_globber) {
             let laz_path = laz_entry.unwrap();
@@ -185,7 +200,7 @@ fn main() {
                 check_decompression(laz_file, las_file);
             }
         }
-    } else if Path::new(&args[1]).is_file() && Path::new(&args[2]).is_file() {
+    } else if Path::new(laz_path).is_file() && Path::new(las_path).is_file() {
         let laz_file = BufReader::new(File::open(&args[1]).unwrap());
         let las_file = BufReader::new(File::open(&args[2]).unwrap());
 

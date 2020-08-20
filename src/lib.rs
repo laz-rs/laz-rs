@@ -141,8 +141,8 @@ pub use las::laszip::{
 };
 
 pub use las::laszip::{
-    LasZipCompressor, LasZipDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr,
-    LazVlrBuilder,
+    read_chunk_table, LasZipCompressor, LasZipDecompressor, LazItem, LazItemRecordBuilder,
+    LazItemType, LazVlr, LazVlrBuilder,
 };
 
 pub type Result<T> = std::result::Result<T, LasZipError>;

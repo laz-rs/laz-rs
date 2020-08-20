@@ -533,8 +533,8 @@ fn record_compressor_from_laz_items<'a, W: Write + 'a>(
 ///
 /// The source position is expected to be at the start of the point data
 ///
-/// The position of the `src` is at where the points actually starts
-/// (ie after the chunk table offset).
+/// This functions set position of the `src` where the points actually starts
+/// (that is, after the chunk table offset).
 pub fn read_chunk_table<R: Read + Seek>(src: &mut R) -> Option<std::io::Result<Vec<u64>>> {
     let current_pos = match src.seek(SeekFrom::Current(0)) {
         Ok(p) => p,
@@ -1128,7 +1128,7 @@ pub fn par_decompress_buffer(
 /// `compressed_points` must contains only the bytes corresponding to the points
 /// (so no offset, no chunk_table)
 #[cfg(feature = "parallel")]
-pub fn par_decompress(
+fn par_decompress(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
