@@ -554,12 +554,12 @@ pub mod v2 {
                         encoder.encode_symbol(&mut self.common.gps_time_0_diff, 0)?;
                     } else {
                         // calculate the difference between the two doubles as an integer
-                        let curr_gps_time_diff_64 = this_val.value
-                            - self
-                                .common
+                        let curr_gps_time_diff_64 = this_val.value.wrapping_sub(
+                            self.common
                                 .last_gps_times
                                 .get_unchecked(self.common.last)
-                                .value;
+                                .value,
+                        );
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         if curr_gps_time_diff_64 == i64::from(curr_gps_time_diff_32) {

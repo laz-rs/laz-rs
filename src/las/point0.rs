@@ -893,7 +893,9 @@ pub mod v2 {
                             .scan_angle_rank
                             .get_unchecked_mut(current_point.scan_direction_flag() as usize)
                     },
-                    (current_point.scan_angle_rank() - self.last_point.scan_angle_rank) as u8
+                    (current_point
+                        .scan_angle_rank
+                        .wrapping_sub(self.last_point.scan_angle_rank)) as u8
                         as u32,
                 )?;
             }
@@ -920,7 +922,7 @@ pub mod v2 {
 
             //compress x coordinates
             let median = unsafe { self.common.last_x_diff_median.get_unchecked(m as usize) }.get();
-            let diff = current_point.x() - self.last_point.x;
+            let diff = current_point.x.wrapping_sub(self.last_point.x);
             self.ic_dx
                 .compress(&mut encoder, median, diff, (n == 1) as u32)?;
             unsafe { self.common.last_x_diff_median.get_unchecked_mut(m as usize) }.add(diff);
@@ -933,7 +935,7 @@ pub mod v2 {
                     .get_unchecked(m as usize)
                     .get()
             };
-            let diff = current_point.y() - self.last_point.y;
+            let diff = current_point.y.wrapping_sub(self.last_point.y);
             let context = (n == 1) as u32
                 + if k_bits < 20 {
                     utils::u32_zero_bit(k_bits)
@@ -1119,7 +1121,7 @@ pub mod v2 {
                 let diff = self
                     .ic_dx
                     .decompress(&mut decoder, median, (n == 1) as u32)?;
-                self.last_point.x += diff;
+                self.last_point.x = self.last_point.x.wrapping_add(diff);
                 self.common
                     .last_x_diff_median
                     .get_unchecked_mut(m as usize)
@@ -1139,7 +1141,7 @@ pub mod v2 {
                         20
                     };
                 let diff = self.ic_dy.decompress(&mut decoder, median, context)?;
-                self.last_point.y += diff;
+                self.last_point.y = self.last_point.y.wrapping_add(diff);
                 self.common
                     .last_y_diff_median
                     .get_unchecked_mut(m as usize)

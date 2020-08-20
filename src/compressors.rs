@@ -165,7 +165,7 @@ impl IntegerCompressor {
         self.k = 0;
 
         // do this by checking the absolute value of c (adjusted for the case that c is 2^k)
-        c1 = if c <= 0 { -c } else { c - 1 } as u32;
+        c1 = if c <= 0 { c.wrapping_neg() } else { c - 1 } as u32;
 
         // this loop could be replaced with more efficient code
         while c1 != 0 {

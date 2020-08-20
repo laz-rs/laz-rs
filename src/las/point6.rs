@@ -844,9 +844,10 @@ pub mod v3 {
                         } else {
                             gps_time_diff = the_context.decompressors.gps_time.decompress(
                                 &mut self.decoders.gps_time,
-                                LASZIP_GPS_TIME_MULTI_MINUS
-                                    * the_context.gps_sequences.last_gps_diffs
+                                LASZIP_GPS_TIME_MULTI_MINUS.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
                                         [the_context.gps_sequences.last],
+                                ),
                                 6,
                             )?;
                             the_context.gps_sequences.multi_extreme_counter
@@ -1368,10 +1369,9 @@ pub mod v3 {
             if the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] == 0 {
                 // if the last integer difference was zero
                 // calculate the difference between the two doubles as an integer
-                let curr_gps_time_diff_64 = i64::from(gps_time)
-                    - i64::from(
-                        the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
-                    );
+                let curr_gps_time_diff_64 = i64::from(gps_time).wrapping_sub(i64::from(
+                    the_context.gps_sequences.last_gps_times[the_context.gps_sequences.last],
+                ));
                 let curr_gps_time_diff = curr_gps_time_diff_64 as i32;
                 if i64::from(curr_gps_time_diff) == curr_gps_time_diff_64 {
                     // the difference can be represented with 32 bits
@@ -1394,8 +1394,8 @@ pub mod v3 {
                     let mut other_sequence = None;
                     for i in 1..4 {
                         let idx = (the_context.gps_sequences.last + i) & 3;
-                        let other_gps_time_diff_64 = i64::from(gps_time)
-                            - i64::from(the_context.gps_sequences.last_gps_times[idx]);
+                        let other_gps_time_diff_64 = i64::from(gps_time).wrapping_sub(
+                                i64::from(the_context.gps_sequences.last_gps_times[idx]));
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if i64::from(other_gps_time_diff) == other_gps_time_diff_64 {
                             other_sequence = Some(i);
@@ -1530,9 +1530,10 @@ pub mod v3 {
                             )?;
                             the_context.compressors.gps_time.compress(
                                 &mut self.encoders.gps_time,
-                                LASZIP_GPS_TIME_MULTI_MINUS
-                                    * the_context.gps_sequences.last_gps_diffs
+                                LASZIP_GPS_TIME_MULTI_MINUS.wrapping_mul(
+                                    the_context.gps_sequences.last_gps_diffs
                                         [the_context.gps_sequences.last],
+                                ),
                                 curr_gps_time_diff,
                                 6,
                             )?;
@@ -1566,14 +1567,13 @@ pub mod v3 {
                         }
                     }
                 } else {
-                    //TODO this fucking looks so much fucking like the code a few lines above
                     // the difference is huge
                     for i in 1..4 {
-                        let other_gps_time_diff_64 = i64::from(gps_time)
-                            - i64::from(
+                        let other_gps_time_diff_64 = i64::from(gps_time).wrapping_sub(
+                            i64::from(
                                 the_context.gps_sequences.last_gps_times
                                     [(the_context.gps_sequences.last + i) & 3],
-                            );
+                            ));
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if other_gps_time_diff_64 == i64::from(other_gps_time_diff) {
                             // it belongs to this sequence
