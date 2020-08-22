@@ -1394,8 +1394,8 @@ pub mod v3 {
                     let mut other_sequence = None;
                     for i in 1..4 {
                         let idx = (the_context.gps_sequences.last + i) & 3;
-                        let other_gps_time_diff_64 = i64::from(gps_time).wrapping_sub(
-                                i64::from(the_context.gps_sequences.last_gps_times[idx]));
+                        let other_gps_time_diff_64 = i64::from(gps_time)
+                            .wrapping_sub(i64::from(the_context.gps_sequences.last_gps_times[idx]));
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if i64::from(other_gps_time_diff) == other_gps_time_diff_64 {
                             other_sequence = Some(i);
@@ -1569,11 +1569,10 @@ pub mod v3 {
                 } else {
                     // the difference is huge
                     for i in 1..4 {
-                        let other_gps_time_diff_64 = i64::from(gps_time).wrapping_sub(
-                            i64::from(
-                                the_context.gps_sequences.last_gps_times
-                                    [(the_context.gps_sequences.last + i) & 3],
-                            ));
+                        let other_gps_time_diff_64 = i64::from(gps_time).wrapping_sub(i64::from(
+                            the_context.gps_sequences.last_gps_times
+                                [(the_context.gps_sequences.last + i) & 3],
+                        ));
                         let other_gps_time_diff = other_gps_time_diff_64 as i32;
                         if other_gps_time_diff_64 == i64::from(other_gps_time_diff) {
                             // it belongs to this sequence
