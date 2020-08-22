@@ -1,12 +1,12 @@
-# Unreleased
+# 0.4.0
 
  - Added LICENSE exception inherited from LASzip that allows static linking
  - Added a `std::result::Result<T, LasZipError>` 'typedef'
- - Added `ParLasZipCompressor` and `ParLasZipDecompressor` to the `parallel`feature.
+ - Added `ParLasZipCompressor` and `ParLasZipDecompressor` to the `parallel` feature.
    They can compress/decompress using multiple threads 'little by little' 
    (as opposed to existing previous functions that required the whole points 
    data to be read beforehand)
- - Changed LasZipError enum to be `#[non_exhaustive]`
+ - Changed `LasZipError` enum to be `#[non_exhaustive]`
 
 # 0.3.0
  - Added UnsupportedPointFormat error variant
