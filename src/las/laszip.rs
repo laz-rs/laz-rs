@@ -761,14 +761,16 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         for i in 1..number_of_chunks {
             chunk_starts[i as usize] =
                 chunk_sizes[(i - 1) as usize] + chunk_starts[(i - 1) as usize];
-
         }
         self.chunk_table = Some(chunk_starts);
         Ok(())
     }
 }
 
-fn write_chunk_table<W: Write>(
+/// Write the chunk table
+///
+/// This function encodes and write the chunk table in the stream
+pub fn write_chunk_table<W: Write>(
     mut stream: &mut W,
     chunk_table: &Vec<usize>,
 ) -> std::io::Result<()> {
