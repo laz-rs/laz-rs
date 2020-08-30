@@ -761,9 +761,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         for i in 1..number_of_chunks {
             chunk_starts[i as usize] =
                 chunk_sizes[(i - 1) as usize] + chunk_starts[(i - 1) as usize];
-            /*if (chunk_starts[i] <= chunk_starts[i-1]) {
-                //err
-            }*/
+
         }
         self.chunk_table = Some(chunk_starts);
         Ok(())
