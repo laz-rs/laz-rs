@@ -660,6 +660,10 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         Ok(())
     }
 
+    pub fn vlr(&self) -> &LazVlr {
+        &self.vlr
+    }
+
     pub fn into_stream(self) -> R {
         self.record_decompressor.box_into_stream()
     }
