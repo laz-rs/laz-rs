@@ -546,7 +546,7 @@ pub fn read_chunk_table<R: Read + Seek>(src: &mut R) -> Option<std::io::Result<V
         Err(e) => return Some(Err(e)),
     };
 
-    if offset_to_chunk_table >= 0 && offset_to_chunk_table as u64 == current_pos {
+    if offset_to_chunk_table >= 0 && offset_to_chunk_table as u64 <= current_pos {
         // In that case the compressor was probably stopped
         // before being able to write the chunk table
         None
