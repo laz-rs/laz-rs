@@ -109,7 +109,7 @@ pub trait RecordDecompressor<R> {
 ///
 /// [`RecordDecompressor`]: trait.RecordDecompressor.html
 pub struct SequentialPointRecordDecompressor<'a, R: Read> {
-    field_decompressors: Vec<Box<dyn FieldDecompressor<R> + 'a>>,
+    field_decompressors: Vec<Box<dyn FieldDecompressor<R> + 'a + Send>>,
     decoder: decoders::ArithmeticDecoder<R>,
     is_first_decompression: bool,
     record_size: usize,
@@ -130,7 +130,7 @@ impl<'a, R: Read> SequentialPointRecordDecompressor<'a, R> {
     }
 
     /// Add a field decompressor that will be used to decompress points record
-    pub fn add_field_decompressor<T: FieldDecompressor<R> + 'a>(&mut self, field: T) {
+    pub fn add_field_decompressor<T: FieldDecompressor<R> + 'a + Send>(&mut self, field: T) {
         let field_size = field.size_of_field();
         self.record_size += field_size;
         self.fields_sizes.push(field_size);
@@ -138,7 +138,7 @@ impl<'a, R: Read> SequentialPointRecordDecompressor<'a, R> {
     }
 
     /// Add a field decompressor that will be used to decompress points record
-    pub fn add_boxed_decompressor(&mut self, d: Box<dyn FieldDecompressor<R>>) {
+    pub fn add_boxed_decompressor(&mut self, d: Box<dyn FieldDecompressor<R> + Send>) {
         let field_size = d.size_of_field();
         self.record_size += field_size;
         self.fields_sizes.push(field_size);
@@ -266,7 +266,7 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
 /// [`LayeredFieldDecompressor`]: trait.LayeredFieldDecompressor.html
 /// [`LasPoint6Decompressor`]: ../las/point6/v3/struct.LasPoint6Decompressor.html
 pub struct LayeredPointRecordDecompressor<'a, R: Read + Seek> {
-    field_decompressors: Vec<Box<dyn LayeredFieldDecompressor<R> + 'a>>,
+    field_decompressors: Vec<Box<dyn LayeredFieldDecompressor<R> + 'a + Send>>,
     input: R,
     is_first_decompression: bool,
     fields_sizes: Vec<usize>,
@@ -289,7 +289,7 @@ impl<'a, R: Read + Seek> LayeredPointRecordDecompressor<'a, R> {
     }
 
     /// Add a field decompressor to be used
-    pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R>>(&mut self, field: T) {
+    pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R> + Send>(&mut self, field: T) {
         let size = field.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);

@@ -153,7 +153,7 @@ impl<R: Read> LasPointReader for RawPointReader<R> {
     }
 }
 
-impl<'a, R: Read + Seek> LasPointReader for LasZipDecompressor<'a, R> {
+impl<'a, R: Read + Seek + Send> LasPointReader for LasZipDecompressor<'a, R> {
     fn read_next_into(&mut self, buffer: &mut [u8]) -> std::io::Result<()> {
         self.decompress_one(buffer)
     }
@@ -168,7 +168,7 @@ pub struct SimpleReader<'a> {
 }
 
 impl<'a> SimpleReader<'a> {
-    pub fn new<R: Read + Seek + 'a>(mut src: R) -> std::io::Result<Self> {
+    pub fn new<R: Read + Seek + Send + 'a>(mut src: R) -> std::io::Result<Self> {
         let mut header = QuickHeader::read_from(&mut src)?;
         src.seek(SeekFrom::Start(header.header_size as u64))?;
         let laszip_vlr = read_vlrs_and_get_laszip_vlr(&mut src, &header);

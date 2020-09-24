@@ -472,10 +472,10 @@ impl LazVlrBuilder {
     }
 }
 
-fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
+fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>(
     items: &Vec<LazItem>,
     input: R,
-) -> crate::Result<Box<dyn RecordDecompressor<R> + 'a>> {
+) -> crate::Result<Box<dyn RecordDecompressor<R> + Send + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordDecompressor");
@@ -483,11 +483,11 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + 'a>(
     let mut decompressor = match first_item.version {
         1 | 2 => {
             let decompressor = SequentialPointRecordDecompressor::new(input);
-            Box::new(decompressor) as Box<dyn RecordDecompressor<R>>
+            Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send>
         }
         3 | 4 => {
             let decompressor = LayeredPointRecordDecompressor::new(input);
-            Box::new(decompressor) as Box<dyn RecordDecompressor<R>>
+            Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send>
         }
         _ => {
             return Err(LasZipError::UnsupportedLazItemVersion(
@@ -595,14 +595,20 @@ fn read_chunk_table_at_offset<R: Read + Seek>(
 /// Struct that handles the decompression of the points written in a LAZ file
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
-    record_decompressor: Box<dyn RecordDecompressor<R> + 'a>,
+    record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
     chunk_points_read: u32,
     offset_to_chunk_table: i64,
     data_start: u64,
     chunk_table: Option<Vec<u64>>,
 }
 
-impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
+// unsafe impl<'a, R: Send + Read + Seek + 'a> Send for LasZipDecompressor<'a, R> {}
+//
+// unsafe impl<'a, R> Send for LasZipDecompressor<'a, R>
+//     where R: Send + Read + Seek + 'a,
+//           dyn RecordDecompressor<R> + 'a: Send {}
+
+impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
@@ -621,9 +627,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
             record_decompressor,
             chunk_points_read: 0,
             offset_to_chunk_table,
-            data_start,
-            chunk_table: None,
-        })
+            data_start, chunk_table: None, })
     }
 
     /// Creates a new instance from a data source of compressed points
