@@ -46,7 +46,7 @@
 //!           .with_chunk_size(5_000)
 //!           .build();
 //!
-//! let mut compressor = LasZipCompressor::from_laz_vlr(&mut compressed_output, vlr)?;
+//! let mut compressor = LasZipCompressor::new(&mut compressed_output, vlr)?;
 //!
 //! let point = vec![0u8; 26];
 //! compressor.compress_one(&point)?;

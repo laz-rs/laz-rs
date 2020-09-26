@@ -604,13 +604,6 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 
 impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
-    /// and the `record data` of the laszip vlr
-    pub fn new_with_record_data(source: R, laszip_vlr_record_data: &[u8]) -> crate::Result<Self> {
-        let vlr = LazVlr::from_buffer(laszip_vlr_record_data)?;
-        Self::new(source, vlr)
-    }
-
-    /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
         if vlr.compressor != CompressorType::PointWiseChunked
@@ -631,6 +624,13 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
             data_start,
             chunk_table: None,
         })
+    }
+
+    /// Creates a new instance from a data source of compressed points
+    /// and the `record data` of the laszip vlr
+    pub fn new_with_record_data(source: R, laszip_vlr_record_data: &[u8]) -> crate::Result<Self> {
+        let vlr = LazVlr::from_buffer(laszip_vlr_record_data)?;
+        Self::new(source, vlr)
     }
 
     /// Decompress the next point and write the uncompressed data to the out buffer.
@@ -826,18 +826,8 @@ pub struct LasZipCompressor<'a, W: Write + 'a> {
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
 impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
-    /// Creates a new LasZipCompressor using the items provided,
-    ///
-    /// If you wish to use a different `chunk size` see [`from_laz_vlr`]
-    ///
-    /// [`from_laz_vlr`]: #method.from_laz_vlr
-    pub fn from_laz_items(output: W, items: Vec<LazItem>) -> crate::Result<Self> {
-        let vlr = LazVlr::from_laz_items(items);
-        Self::from_laz_vlr(output, vlr)
-    }
-
     /// Creates a compressor using the provided vlr.
-    pub fn from_laz_vlr(output: W, vlr: LazVlr) -> crate::Result<Self> {
+    pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
         let record_compressor = record_compressor_from_laz_items(&vlr.items, output)?;
         Ok(Self {
             vlr,
@@ -848,6 +838,16 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
             last_chunk_pos: 0,
             start_pos: 0,
         })
+    }
+
+    /// Creates a new LasZipCompressor using the items provided,
+    ///
+    /// If you wish to use a different `chunk size` see [`from_laz_vlr`]
+    ///
+    /// [`from_laz_vlr`]: #method.from_laz_vlr
+    pub fn from_laz_items(output: W, items: Vec<LazItem>) -> crate::Result<Self> {
+        let vlr = LazVlr::from_laz_items(items);
+        Self::new(output, vlr)
     }
 
     /// Compress the point and write the compressed data to the destination given when
@@ -944,7 +944,7 @@ pub fn compress_buffer<W: Write + Seek>(
     uncompressed_points: &[u8],
     laz_vlr: LazVlr,
 ) -> crate::Result<()> {
-    let mut compressor = LasZipCompressor::from_laz_vlr(dst, laz_vlr)?;
+    let mut compressor = LasZipCompressor::new(dst, laz_vlr)?;
     let point_size = compressor.vlr().items_size() as usize;
     if uncompressed_points.len() % point_size != 0 {
         Err(LasZipError::BufferLenNotMultipleOfPointSize {

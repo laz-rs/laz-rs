@@ -58,7 +58,7 @@ pub fn check_that_we_can_decompress_what_we_compressed<R: Read + Seek>(
         las_reader.header.point_size as usize
     );
     let mut compressor =
-        LasZipCompressor::from_laz_vlr(Cursor::new(Vec::<u8>::new()), laz_vlr).unwrap();
+        LasZipCompressor::new(Cursor::new(Vec::<u8>::new()), laz_vlr).unwrap();
 
     while let Some(point_buf) = las_reader.read_next() {
         let point_buf = point_buf.unwrap();
