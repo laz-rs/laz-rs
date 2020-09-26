@@ -160,7 +160,7 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     decoder: &mut ArithmeticDecoder<Cursor<Vec<u8>>>,
     src: &mut R,
 ) -> std::io::Result<bool> {
-    let inner_vec = decoder.in_stream().get_mut();
+    let inner_vec = decoder.get_mut().get_mut();
     if is_requested {
         if num_bytes > 0 {
             inner_vec.resize(num_bytes, 0);
@@ -188,7 +188,7 @@ pub(crate) fn copy_encoder_content_to<W: Write>(
     encoder: &mut ArithmeticEncoder<Cursor<Vec<u8>>>,
     dst: &mut W,
 ) -> std::io::Result<()> {
-    dst.write_all(encoder.out_stream().get_ref())
+    dst.write_all(encoder.get_mut().get_ref())
 }
 
 #[inline(always)]

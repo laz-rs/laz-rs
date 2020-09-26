@@ -33,7 +33,7 @@ macro_rules! loop_test_on_buffer {
             }
             compressor.done().unwrap();
 
-            let mut compression_output = compressor.into_stream();
+            let mut compression_output = compressor.into_inner();
             compression_output.set_position(0);
 
             let mut decompressor = SequentialPointRecordDecompressor::new(compression_output);

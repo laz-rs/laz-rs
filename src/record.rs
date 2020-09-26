@@ -76,21 +76,24 @@ pub trait LayeredFieldDecompressor<R: Read> {
 pub trait RecordDecompressor<R> {
     /// Sets the field decompressors that matches the `laz_items`
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()>;
+
     /// Returns the size of a decompressed point record (total size of all fields)
     fn record_size(&self) -> usize;
 
     /// Decompress the next point and pack the result in the `out` slice
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()>;
+
     /// Resets the `RecordDecompressor` to its initial state
     fn reset(&mut self);
 
     /// Returns a mutable reference to the owned stream
-    fn borrow_stream_mut(&mut self) -> &mut R;
+    fn get_mut(&mut self) -> &mut R;
 
     /// moves self to return ownership of the input stream
-    fn into_stream(self) -> R;
-    /// Boxed version of `into_stream`
-    fn box_into_stream(self: Box<Self>) -> R;
+    fn into_inner(self) -> R;
+
+    /// Boxed version of `into_inner`
+    fn box_into_inner(self: Box<Self>) -> R;
 }
 
 /***************************************************************************************************
@@ -211,7 +214,7 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
         if self.is_first_decompression {
             for (fields_decompressor, out_field_data) in decompressors_and_data {
                 fields_decompressor
-                    .decompress_first(&mut self.decoder.in_stream(), out_field_data)?;
+                    .decompress_first(&mut self.decoder.get_mut(), out_field_data)?;
             }
             self.is_first_decompression = false;
             // the decoder needs to be told that it should read the
@@ -233,16 +236,16 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
         self.fields_sizes.clear();
     }
 
-    fn borrow_stream_mut(&mut self) -> &mut R {
-        self.decoder.in_stream()
+    fn get_mut(&mut self) -> &mut R {
+        self.decoder.get_mut()
     }
 
-    fn into_stream(self) -> R {
-        self.decoder.into_stream()
+    fn into_inner(self) -> R {
+        self.decoder.into_inner()
     }
 
-    fn box_into_stream(self: Box<Self>) -> R {
-        self.decoder.into_stream()
+    fn box_into_inner(self: Box<Self>) -> R {
+        self.decoder.into_inner()
     }
 }
 
@@ -373,15 +376,15 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
         self.fields_sizes.clear();
     }
 
-    fn borrow_stream_mut(&mut self) -> &mut R {
+    fn get_mut(&mut self) -> &mut R {
         &mut self.input
     }
 
-    fn into_stream(self) -> R {
+    fn into_inner(self) -> R {
         self.input
     }
 
-    fn box_into_stream(self: Box<Self>) -> R {
+    fn box_into_inner(self: Box<Self>) -> R {
         self.input
     }
 }
@@ -453,12 +456,12 @@ pub trait RecordCompressor<W> {
     fn reset(&mut self);
 
     /// Returns a mutable reference to the owned stream
-    fn borrow_stream_mut(&mut self) -> &mut W;
+    fn get_mut(&mut self) -> &mut W;
 
     /// moves self to return ownership of the input stream
-    fn into_stream(self) -> W;
-    /// Boxed version of `into_stream`
-    fn box_into_stream(self: Box<Self>) -> W;
+    fn into_inner(self) -> W;
+    /// Boxed version of `into_inner`
+    fn box_into_inner(self: Box<Self>) -> W;
 }
 
 /***************************************************************************************************
@@ -566,7 +569,7 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
 
         if self.is_first_compression {
             for (field_compressor, field_data) in field_compressors_and_data {
-                field_compressor.compress_first(self.encoder.out_stream(), field_data)?;
+                field_compressor.compress_first(self.encoder.get_mut(), field_data)?;
             }
             self.is_first_compression = false;
         } else {
@@ -589,16 +592,16 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
         self.record_size = 0;
     }
 
-    fn borrow_stream_mut(&mut self) -> &mut W {
-        self.encoder.out_stream()
+    fn get_mut(&mut self) -> &mut W {
+        self.encoder.get_mut()
     }
 
-    fn into_stream(self) -> W {
-        self.encoder.into_stream()
+    fn into_inner(self) -> W {
+        self.encoder.into_inner()
     }
 
-    fn box_into_stream(self: Box<Self>) -> W {
-        self.encoder.into_stream()
+    fn box_into_inner(self: Box<Self>) -> W {
+        self.encoder.into_inner()
     }
 }
 
@@ -714,15 +717,15 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
         self.field_compressors.clear();
     }
 
-    fn borrow_stream_mut(&mut self) -> &mut W {
+    fn get_mut(&mut self) -> &mut W {
         &mut self.dst
     }
 
-    fn into_stream(self) -> W {
+    fn into_inner(self) -> W {
         self.dst
     }
 
-    fn box_into_stream(self: Box<Self>) -> W {
+    fn box_into_inner(self: Box<Self>) -> W {
         self.dst
     }
 }

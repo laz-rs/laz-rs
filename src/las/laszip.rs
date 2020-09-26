@@ -664,10 +664,6 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         &self.vlr
     }
 
-    pub fn into_stream(self) -> R {
-        self.record_decompressor.box_into_stream()
-    }
-
     // FIXME Seeking in Layered Compressed data is untested, make sure it works
     /// Seeks to the point designed by the index
     ///
@@ -697,7 +693,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
                 }
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
                 self.record_decompressor
-                    .borrow_stream_mut()
+                    .get_mut()
                     .seek(SeekFrom::Start(chunk_table[chunk_of_point as usize] as u64))?;
 
                 self.reset_for_new_chunk();
@@ -706,19 +702,17 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
                     self.decompress_one(&mut tmp_out)?;
                     let current_pos = self
                         .record_decompressor
-                        .borrow_stream_mut()
+                        .get_mut()
                         .seek(SeekFrom::Current(0))?;
 
                     if current_pos >= self.offset_to_chunk_table as u64 {
-                        self.record_decompressor
-                            .borrow_stream_mut()
-                            .seek(SeekFrom::End(0))?;
+                        self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
                         return Ok(());
                     }
                 }
             } else if let Some(start_of_chunk) = chunk_table.get(chunk_of_point as usize) {
                 self.record_decompressor
-                    .borrow_stream_mut()
+                    .get_mut()
                     .seek(SeekFrom::Start(*start_of_chunk as u64))?;
                 self.reset_for_new_chunk();
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
@@ -732,9 +726,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
 
                 // Seek to the end so that the next call to decompress causes en error
                 // like "Failed to fill whole buffer (seeking past end is allowed by the Seek Trait)
-                self.record_decompressor
-                    .borrow_stream_mut()
-                    .seek(SeekFrom::End(0))?;
+                self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
             }
             Ok(())
         } else {
@@ -753,7 +745,7 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
     }
 
     fn read_chunk_table(&mut self) -> std::io::Result<()> {
-        let stream = self.record_decompressor.borrow_stream_mut();
+        let stream = self.record_decompressor.get_mut();
         let chunk_sizes = read_chunk_table_at_offset(stream, self.offset_to_chunk_table)?;
         let number_of_chunks = chunk_sizes.len();
         let mut chunk_starts = vec![0u64; number_of_chunks as usize];
@@ -764,6 +756,10 @@ impl<'a, R: Read + Seek + 'a> LasZipDecompressor<'a, R> {
         }
         self.chunk_table = Some(chunk_starts);
         Ok(())
+    }
+
+    pub fn into_inner(self) -> R {
+        self.record_decompressor.box_into_inner()
     }
 }
 
@@ -864,7 +860,7 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     /// - The data in the buffer is in Little Endian order
     pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
         if self.first_point {
-            let stream = self.record_compressor.borrow_stream_mut();
+            let stream = self.record_compressor.get_mut();
             self.start_pos = stream.seek(SeekFrom::Current(0))?;
             stream.write_i64::<LittleEndian>(-1)?;
             self.last_chunk_pos = self.start_pos + std::mem::size_of::<i64>() as u64;
@@ -901,7 +897,7 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
     pub fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
         self.update_chunk_table()?;
-        let stream = self.record_compressor.borrow_stream_mut();
+        let stream = self.record_compressor.get_mut();
         update_chunk_table_offset(stream, SeekFrom::Start(self.start_pos))?;
         write_chunk_table(stream, &self.chunk_sizes)?;
         Ok(())
@@ -912,18 +908,18 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
         &self.vlr
     }
 
-    pub fn into_stream(self) -> W {
-        self.record_compressor.box_into_stream()
+    pub fn into_inner(self) -> W {
+        self.record_compressor.box_into_inner()
     }
 
     pub fn get_mut(&mut self) -> &mut W {
-        self.record_compressor.borrow_stream_mut()
+        self.record_compressor.get_mut()
     }
 
     fn update_chunk_table(&mut self) -> std::io::Result<()> {
         let current_pos = self
             .record_compressor
-            .borrow_stream_mut()
+            .get_mut()
             .seek(SeekFrom::Current(0))?;
         self.chunk_sizes
             .push((current_pos - self.last_chunk_pos) as usize);
@@ -1073,7 +1069,7 @@ pub fn par_compress<W: Write>(
                 }
                 record_compressor.done()?;
 
-                Ok(record_compressor.box_into_stream())
+                Ok(record_compressor.box_into_inner())
             })
             .collect::<Vec<crate::Result<Cursor<Vec<u8>>>>>();
 

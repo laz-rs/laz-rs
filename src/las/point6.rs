@@ -1910,12 +1910,7 @@ pub mod v3 {
             call_done_if_has_changed!(gps_time);
 
             let sizes = LayerSizes {
-                channel_returns_xy: self
-                    .encoders
-                    .channel_returns_xy
-                    .out_stream()
-                    .get_ref()
-                    .len(),
+                channel_returns_xy: self.encoders.channel_returns_xy.get_mut().get_ref().len(),
                 z: inner_buffer_len_of(&self.encoders.z),
                 classification: return_len_if_has_changed_else_0!(classification),
                 flags: return_len_if_has_changed_else_0!(flags),

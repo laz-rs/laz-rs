@@ -112,7 +112,7 @@ fn check_compression<T: AsRef<Path>>(las_path: T) {
     compressor.done().expect("Error calling done on compressor");
     let vlr = compressor.vlr().clone();
 
-    let mut out = compressor.into_stream();
+    let mut out = compressor.into_inner();
     println!("Compressed to {} bytes", out.get_ref().len());
     out.set_position(0);
     let mut decompressor = LasZipDecompressor::new(out, vlr).unwrap();

@@ -350,11 +350,11 @@ impl<T: Write> ArithmeticEncoder<T> {
         &self.out_stream
     }
 
-    pub fn out_stream(&mut self) -> &mut T {
+    pub fn get_mut(&mut self) -> &mut T {
         &mut self.out_stream
     }
 
-    pub fn into_stream(self) -> T {
+    pub fn into_inner(self) -> T {
         self.out_stream
     }
 
