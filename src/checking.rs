@@ -3,7 +3,10 @@ use crate::las::laszip::{LasZipCompressor, LasZipDecompressor, LazItem, LazVlr};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
 
-pub fn check_decompression<R1: Read + Seek + Send, R2: Read + Seek + Send>(laz_src: R1, las_src: R2) {
+pub fn check_decompression<R1: Read + Seek + Send, R2: Read + Seek + Send>(
+    laz_src: R1,
+    las_src: R2,
+) {
     let mut laz_reader = SimpleReader::new(laz_src).unwrap();
     let mut las_reader = SimpleReader::new(las_src).unwrap();
 

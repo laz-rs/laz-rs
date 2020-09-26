@@ -501,10 +501,10 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>(
     Ok(decompressor)
 }
 
-fn record_compressor_from_laz_items<'a, W: Write + 'a>(
+fn record_compressor_from_laz_items<'a, W: Write + Send + 'a>(
     items: &Vec<LazItem>,
     output: W,
-) -> crate::Result<Box<dyn RecordCompressor<W> + 'a>> {
+) -> crate::Result<Box<dyn RecordCompressor<W> + Send + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordCompressor");
@@ -512,11 +512,11 @@ fn record_compressor_from_laz_items<'a, W: Write + 'a>(
     let mut compressor = match first_item.version {
         1 | 2 => {
             let compressor = SequentialPointRecordCompressor::new(output);
-            Box::new(compressor) as Box<dyn RecordCompressor<W>>
+            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send>
         }
         3 | 4 => {
             let compressor = LayeredPointRecordCompressor::new(output);
-            Box::new(compressor) as Box<dyn RecordCompressor<W>>
+            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send>
         }
         _ => {
             return Err(LasZipError::UnsupportedLazItemVersion(
@@ -627,7 +627,9 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             record_decompressor,
             chunk_points_read: 0,
             offset_to_chunk_table,
-            data_start, chunk_table: None, })
+            data_start,
+            chunk_table: None,
+        })
     }
 
     /// Creates a new instance from a data source of compressed points
@@ -816,9 +818,9 @@ fn update_chunk_table_offset<W: Write + Seek>(
 }
 
 /// Struct that handles the compression of the points into the given destination
-pub struct LasZipCompressor<'a, W: Write + 'a> {
+pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
     vlr: LazVlr,
-    record_compressor: Box<dyn RecordCompressor<W> + 'a>,
+    record_compressor: Box<dyn RecordCompressor<W> + Send + 'a>,
     first_point: bool,
     chunk_point_written: u32,
     chunk_sizes: Vec<usize>,
@@ -829,7 +831,7 @@ pub struct LasZipCompressor<'a, W: Write + 'a> {
 // FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
-impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
+impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// Creates a compressor using the provided vlr.
     pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
         let record_compressor = record_compressor_from_laz_items(&vlr.items, output)?;
@@ -943,7 +945,7 @@ impl<'a, W: Write + Seek + 'a> LasZipCompressor<'a, W> {
 /// `dst`: Where the compressed data will be written
 ///
 /// `uncompressed_points`: byte slice of the uncompressed points to be compressed
-pub fn compress_buffer<W: Write + Seek>(
+pub fn compress_buffer<W: Write + Seek + Send>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: LazVlr,

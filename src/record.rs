@@ -289,7 +289,10 @@ impl<'a, R: Read + Seek> LayeredPointRecordDecompressor<'a, R> {
     }
 
     /// Add a field decompressor to be used
-    pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R> + Send>(&mut self, field: T) {
+    pub fn add_field_decompressor<T: 'static + LayeredFieldDecompressor<R> + Send>(
+        &mut self,
+        field: T,
+    ) {
         let size = field.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);
@@ -470,7 +473,7 @@ pub trait RecordCompressor<W> {
 /// Compress points and store them sequentially
 pub struct SequentialPointRecordCompressor<'a, W: Write> {
     is_first_compression: bool,
-    field_compressors: Vec<Box<dyn FieldCompressor<W> + 'a>>,
+    field_compressors: Vec<Box<dyn FieldCompressor<W> + Send + 'a>>,
     encoder: encoders::ArithmeticEncoder<W>,
     record_size: usize,
     fields_sizes: Vec<usize>,
@@ -487,14 +490,14 @@ impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
         }
     }
 
-    pub fn add_field_compressor<T: FieldCompressor<W> + 'a>(&mut self, field: T) {
+    pub fn add_field_compressor<T: FieldCompressor<W> + Send + 'a>(&mut self, field: T) {
         let size = field.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);
         self.field_compressors.push(Box::new(field));
     }
 
-    pub fn add_boxed_compressor(&mut self, c: Box<dyn FieldCompressor<W>>) {
+    pub fn add_boxed_compressor(&mut self, c: Box<dyn FieldCompressor<W> + Send>) {
         let size = c.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);
@@ -611,7 +614,7 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
 ///
 /// [`LayeredPointRecordDecompressor`]: struct.LayeredPointRecordDecompressor.html
 pub struct LayeredPointRecordCompressor<'a, W: Write> {
-    field_compressors: Vec<Box<dyn LayeredFieldCompressor<W> + 'a>>,
+    field_compressors: Vec<Box<dyn LayeredFieldCompressor<W> + Send + 'a>>,
     point_count: u32,
     dst: W,
     record_size: usize,
@@ -629,7 +632,7 @@ impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
         }
     }
 
-    pub fn add_field_compressor<T: LayeredFieldCompressor<W> + 'a>(&mut self, field: T) {
+    pub fn add_field_compressor<T: LayeredFieldCompressor<W> + Send + 'a>(&mut self, field: T) {
         let size = field.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);

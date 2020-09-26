@@ -425,3 +425,5 @@ impl<T: Write> ArithmeticEncoder<T> {
         Ok(())
     }
 }
+
+unsafe impl<T: Write + Send> Send for ArithmeticEncoder<T> {}
