@@ -602,12 +602,6 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     chunk_table: Option<Vec<u64>>,
 }
 
-// unsafe impl<'a, R: Send + Read + Seek + 'a> Send for LasZipDecompressor<'a, R> {}
-//
-// unsafe impl<'a, R> Send for LasZipDecompressor<'a, R>
-//     where R: Send + Read + Seek + 'a,
-//           dyn RecordDecompressor<R> + 'a: Send {}
-
 impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
