@@ -65,7 +65,7 @@ macro_rules! loop_test_on_buffer {
             }
             compressor.done().unwrap();
 
-            let mut compression_output = compressor.into_stream();
+            let mut compression_output = compressor.into_inner();
             compression_output.set_position(0);
             my_laz_vlr.set_position(0);
             let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
@@ -177,7 +177,7 @@ fn test_seek() {
     }
     compressor.done().unwrap();
 
-    let mut compressed_data_stream = compressor.into_stream();
+    let mut compressed_data_stream = compressor.into_inner();
     compressed_data_stream.seek(SeekFrom::Start(0)).unwrap();
 
     let mut decompressor = LasZipDecompressor::new(

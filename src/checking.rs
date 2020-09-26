@@ -67,7 +67,7 @@ pub fn check_that_we_can_decompress_what_we_compressed<R: Read + Seek>(
     compressor.done().unwrap();
 
     let vlr = compressor.vlr().clone();
-    let mut compression_output = compressor.into_stream();
+    let mut compression_output = compressor.into_inner();
     compression_output.set_position(0);
 
     let mut decompressor = LasZipDecompressor::new(compression_output, vlr).unwrap();

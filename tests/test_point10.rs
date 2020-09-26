@@ -38,7 +38,7 @@ fn test_compression_decompression_of_point_10() {
     }
     compressor.done().unwrap();
 
-    let compressed_data = compressor.into_stream().into_inner();
+    let compressed_data = compressor.into_inner().into_inner();
 
     let mut decompressor =
         SequentialPointRecordDecompressor::new(std::io::Cursor::new(compressed_data));
@@ -87,7 +87,7 @@ fn test_rgb() {
         compressor.compress_next(&buf).unwrap();
     }
     compressor.done().unwrap();
-    let compressed_data = compressor.into_stream().into_inner();
+    let compressed_data = compressor.into_inner().into_inner();
 
     let mut decompressor =
         SequentialPointRecordDecompressor::new(std::io::Cursor::new(compressed_data));
@@ -125,7 +125,7 @@ fn test_gps_time() {
     }
     compressor.done().unwrap();
 
-    let compressed_data = compressor.into_stream().into_inner();
+    let compressed_data = compressor.into_inner().into_inner();
 
     let mut decompressor = SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
     decompressor.add_field_decompressor(GpsTimeDecompressor::default());
