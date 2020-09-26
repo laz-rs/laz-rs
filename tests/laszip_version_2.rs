@@ -167,8 +167,7 @@ fn test_seek() {
     vlr.write_to(&mut vlr_data).unwrap();
     vlr_data.seek(SeekFrom::Start(0)).unwrap();
 
-    let mut compressor =
-        LasZipCompressor::new(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
+    let mut compressor = LasZipCompressor::new(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
 
     let mut buf = [0u8; POINT_SIZE];
     for _ in 0..NUM_POINTS {
