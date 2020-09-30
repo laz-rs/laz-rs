@@ -72,7 +72,7 @@ macro_rules! loop_test_on_buffer {
 macro_rules! vec_of_boxed_buffer_compressors {
     ($($x: expr),*) => {{
         let mut vector = Vec::new();
-        $(vector.push(Box::new($x) as Box<dyn FieldCompressor<_>>);)*
+        $(vector.push(Box::new($x) as Box<dyn FieldCompressor<_> + Send>);)*
         vector
     }}
 }
@@ -80,7 +80,7 @@ macro_rules! vec_of_boxed_buffer_compressors {
 macro_rules! vec_of_boxed_buffer_decompressors {
     ($($x: expr),*) => {{
         let mut vector = Vec::new();
-        $(vector.push(Box::new($x) as Box<dyn FieldDecompressor<_>>);)*
+        $(vector.push(Box::new($x) as Box<dyn FieldDecompressor<_> + Send>);)*
         vector
     }}
 }
