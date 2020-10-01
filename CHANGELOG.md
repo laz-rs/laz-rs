@@ -1,3 +1,18 @@
+# 0.5.0
+  - Added `laz::write_chunk_table` to the public API
+  - Fixed `read_chunk_table` to catch more cases of when the chunk table is not written
+    in the file
+  - Changed the `into_stream` fn of `LasZipDecompressor` and `LasZipCompressor` to `into_inner` to
+    match naming done in rust's std lib
+  - Changed `LasZipCompressor::new_with_record_data` to `LasZipCompressor::new`
+  - Changed `LasZipDecompressor` and `LasZipCompressor` to be `Send` which causes now
+    the source and destination of the compressor/decompressor to also be marked `Send`.
+    (Which is the case for `std::fs::File` and `std::io::Cursor<T>` if `T`is `Send`, which
+    both are the source and dest used in 99.99% of the time) 
+  
+  
+
+
 # 0.4.0
 
  - Added LICENSE exception inherited from LASzip that allows static linking
