@@ -80,7 +80,7 @@ pub trait LasPoint6 {
     fn edge_of_flight_line(&self) -> bool;
 
     fn classification(&self) -> u8;
-    fn scan_angle_rank(&self) -> u16;
+    fn scan_angle_rank(&self) -> i16;
     fn user_data(&self) -> u8;
     fn point_source_id(&self) -> u16;
     fn gps_time(&self) -> f64;
@@ -101,7 +101,7 @@ pub trait LasPoint6 {
     fn set_scanner_channel(&mut self, new_val: u8);
 
     fn set_classification(&mut self, new_val: u8);
-    fn set_scan_angle_rank(&mut self, new_val: u16);
+    fn set_scan_angle_rank(&mut self, new_val: i16);
     fn set_user_data(&mut self, new_val: u8);
     fn set_point_source_id(&mut self, new_val: u16);
     fn set_gps_time(&mut self, new_val: f64);
@@ -118,7 +118,7 @@ pub struct Point6 {
 
     intensity: u16,
     classification: u8,
-    scan_angle_rank: u16,
+    scan_angle_rank: i16,
     user_data: u8,
     point_source_id: u16,
     gps_time: f64,
@@ -181,7 +181,7 @@ impl LasPoint6 for Point6 {
         self.classification
     }
 
-    fn scan_angle_rank(&self) -> u16 {
+    fn scan_angle_rank(&self) -> i16 {
         self.scan_angle_rank
     }
 
@@ -240,7 +240,7 @@ impl LasPoint6 for Point6 {
         self.classification = new_val;
     }
 
-    fn set_scan_angle_rank(&mut self, new_val: u16) {
+    fn set_scan_angle_rank(&mut self, new_val: i16) {
         self.scan_angle_rank = new_val;
     }
 
@@ -310,7 +310,7 @@ impl Packable for Point6 {
             flags: u8::unpack_from_unchecked(&input[15..16]),
             intensity: u16::unpack_from_unchecked(&input[12..14]),
             classification: u8::unpack_from_unchecked(&input[16..17]),
-            scan_angle_rank: u16::unpack_from_unchecked(&input[18..20]),
+            scan_angle_rank: i16::unpack_from_unchecked(&input[18..20]),
             user_data: u8::unpack_from_unchecked(&input[17..18]),
             point_source_id: u16::unpack_from_unchecked(&input[20..22]),
             gps_time: f64::from(GpsTime::unpack_from_unchecked(&input[22..30])),
@@ -1120,7 +1120,7 @@ pub mod v3 {
                         &mut self.decoders.scan_angle,
                         i32::from(last_point.scan_angle_rank),
                         gps_time_changed as u32,
-                    )? as u16;
+                    )? as i16;
                 }
 
                 if self.should_decompress.user_data {
