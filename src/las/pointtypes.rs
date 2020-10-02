@@ -560,7 +560,7 @@ impl<T: Point6Based> LasPoint6 for T {
         self.point6().classification()
     }
 
-    fn scan_angle_rank(&self) -> u16 {
+    fn scan_angle_rank(&self) -> i16 {
         self.point6().scan_angle_rank()
     }
 
@@ -616,7 +616,7 @@ impl<T: Point6Based> LasPoint6 for T {
         self.point6_mut().set_classification(new_val)
     }
 
-    fn set_scan_angle_rank(&mut self, new_val: u16) {
+    fn set_scan_angle_rank(&mut self, new_val: i16) {
         self.point6_mut().set_scan_angle_rank(new_val)
     }
 
