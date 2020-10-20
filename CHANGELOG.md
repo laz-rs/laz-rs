@@ -1,3 +1,6 @@
+# 0.5.1
+  - Fixed Scan Angle in point 6, 7, 8. It was treated as u16 instead of i16.
+
 # 0.5.0
   - Added `laz::write_chunk_table` to the public API
   - Fixed `read_chunk_table` to catch more cases of when the chunk table is not written
