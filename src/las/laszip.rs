@@ -664,7 +664,6 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         &self.vlr
     }
 
-    // FIXME Seeking in Layered Compressed data is untested, make sure it works
     /// Seeks to the point designed by the index
     ///
     /// # Important
@@ -830,9 +829,6 @@ pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
     start_pos: u64,
 }
 
-// FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
-//  write the chunk table  as usual then after (so at the end of the stream write the chunk table
-//  that means also support non seekable stream this is waht we have to do
 impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// Creates a compressor using the provided vlr.
     pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
@@ -919,7 +915,6 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     pub fn into_inner(self) -> W {
         self.record_compressor.box_into_inner()
     }
-
 
     pub fn get_mut(&mut self) -> &mut W {
         self.record_compressor.get_mut()
