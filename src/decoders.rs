@@ -305,6 +305,10 @@ impl<T: Read> ArithmeticDecoder<T> {
         &mut self.in_stream
     }
 
+    pub fn get_ref(&self) -> &T {
+        &self.in_stream
+    }
+
     pub fn into_inner(self) -> T {
         self.in_stream
     }

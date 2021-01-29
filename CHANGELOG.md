@@ -1,3 +1,7 @@
+# 0.5.2
+  - Changed: Ensure LasZipCompressor, LasZipDecompressor, ParLasZipCompressor, ParLasZipDecompressor
+    all have `into_inner` `get` `get_mut`.
+
 # 0.5.1
   - Fixed Scan Angle in point 6, 7, 8. It was treated as u16 instead of i16.
 

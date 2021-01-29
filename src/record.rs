@@ -89,6 +89,9 @@ pub trait RecordDecompressor<R> {
     /// Returns a mutable reference to the owned stream
     fn get_mut(&mut self) -> &mut R;
 
+    /// Returns a non-mutable reference to the owned stream
+    fn get(&self) -> &R;
+
     /// moves self to return ownership of the input stream
     fn into_inner(self) -> R;
 
@@ -240,6 +243,10 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
         self.decoder.get_mut()
     }
 
+    fn get(&self) -> &R {
+        self.decoder.get_ref()
+    }
+
     fn into_inner(self) -> R {
         self.decoder.into_inner()
     }
@@ -383,6 +390,10 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
         &mut self.input
     }
 
+    fn get(&self) -> &R {
+        &self.input
+    }
+
     fn into_inner(self) -> R {
         self.input
     }
@@ -460,6 +471,9 @@ pub trait RecordCompressor<W> {
 
     /// Returns a mutable reference to the owned stream
     fn get_mut(&mut self) -> &mut W;
+
+    /// Returns a non-mutable reference to the owned stream
+    fn get(&self) -> &W;
 
     /// moves self to return ownership of the input stream
     fn into_inner(self) -> W;
@@ -599,6 +613,10 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
         self.encoder.get_mut()
     }
 
+    fn get(&self) -> &W {
+        self.encoder.get_ref()
+    }
+
     fn into_inner(self) -> W {
         self.encoder.into_inner()
     }
@@ -722,6 +740,10 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
 
     fn get_mut(&mut self) -> &mut W {
         &mut self.dst
+    }
+
+    fn get(&self) -> &W {
+        &self.dst
     }
 
     fn into_inner(self) -> W {

@@ -761,6 +761,14 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     pub fn into_inner(self) -> R {
         self.record_decompressor.box_into_inner()
     }
+
+    pub fn get_mut(&mut self) -> &mut R {
+        self.record_decompressor.get_mut()
+    }
+
+    pub fn get(&self) -> &R {
+        self.record_decompressor.get()
+    }
 }
 
 /// Write the chunk table
@@ -912,8 +920,13 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
         self.record_compressor.box_into_inner()
     }
 
+
     pub fn get_mut(&mut self) -> &mut W {
         self.record_compressor.get_mut()
+    }
+
+    pub fn get(&self) -> &W {
+        self.record_compressor.get()
     }
 
     fn update_chunk_table(&mut self) -> std::io::Result<()> {
@@ -1309,6 +1322,18 @@ impl<W: Write + Seek> ParLasZipCompressor<W> {
     pub fn vlr(&self) -> &LazVlr {
         &self.vlr
     }
+
+    pub fn into_inner(self) -> W {
+        self.dest
+    }
+
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.dest
+    }
+
+    pub fn get(&self) -> &W {
+        &self.dest
+    }
 }
 
 #[cfg(feature = "parallel")]
@@ -1444,6 +1469,18 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             self.last_chunk_read += num_chunks_to_decompress;
         }
         Ok(())
+    }
+
+    pub fn into_inner(self) -> R {
+        self.source
+    }
+
+    pub fn get_mut(&mut self) -> &mut R {
+        &mut self.source
+    }
+
+    pub fn get(&self) -> &R {
+        &self.source
     }
 }
 
