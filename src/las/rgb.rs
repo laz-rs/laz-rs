@@ -51,6 +51,10 @@ pub struct RGB {
 
 impl RGB {
     pub const SIZE: usize = 6;
+
+    fn copy_from<P: LasRGB + ?Sized>(&mut self, point: &P) {
+        todo!()
+    }
 }
 
 impl LasRGB for RGB {
@@ -77,6 +81,7 @@ impl LasRGB for RGB {
     fn set_blue(&mut self, new_val: u16) {
         self.blue = new_val;
     }
+
 }
 
 struct ColorDiff(u8);
@@ -311,22 +316,25 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for LasRGBCompressor {
+    impl<P: ?Sized + LasRGB, W: Write> FieldCompressor<P, W> for LasRGBCompressor {
         fn size_of_field(&self) -> usize {
             6
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last = RGB::unpack_from(buf);
-            dst.write_all(buf)
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            self.last.copy_from(point);
+            let mut buf = [0u8; RGB::SIZE];
+            self.last.pack_into(&mut buf);
+            dst.write_all(&buf)
         }
 
         fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let current_point = RGB::unpack_from(buf);
+            let mut current_point = RGB::default();
+            current_point.copy_from(point);
             let sym = ((lower_byte(self.last.red()) != lower_byte(current_point.red())) as u8) << 0
                 | ((upper_byte(self.last.red()) != upper_byte(current_point.red())) as u8) << 1
                 | ((lower_byte(self.last.green()) != lower_byte(current_point.green())) as u8) << 2
@@ -505,22 +513,25 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for LasRGBCompressor {
+    impl<P: ?Sized + LasRGB, W: Write> FieldCompressor<P, W> for LasRGBCompressor {
         fn size_of_field(&self) -> usize {
             3 * std::mem::size_of::<u16>()
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last = super::RGB::unpack_from(&buf);
-            dst.write_all(buf)
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            self.last.copy_from(point);
+            let mut buf = [0u8; RGB::SIZE];
+            self.last.pack_into(&mut buf);
+            dst.write_all(&buf)
         }
 
         fn compress_with(
             &mut self,
             encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let current_point = super::RGB::unpack_from(&buf);
+            let mut current_point = RGB::default();
+            current_point.copy_from(point);
             compress_rgb_using(encoder, &mut self.models, &current_point, &self.last)?;
             self.last = current_point;
             Ok(())
@@ -656,7 +667,7 @@ pub mod v3 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::rgb::RGB;
+    use crate::las::rgb::{RGB, LasRGB};
     use crate::las::utils::{
         copy_bytes_into_decoder, copy_encoder_content_to, inner_buffer_len_of, read_and_unpack,
     };
@@ -803,26 +814,34 @@ pub mod v3 {
         }
     }
 
-    impl<R: Write> LayeredFieldCompressor<R> for LasRGBCompressor {
+    impl<P: ?Sized + LasRGB, W: Write> LayeredFieldCompressor<P, W> for LasRGBCompressor {
         fn size_of_field(&self) -> usize {
             RGB::SIZE
         }
 
         fn init_first_point(
             &mut self,
-            dst: &mut R,
-            first_point: &[u8],
+            dst: &mut W,
+            first_point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
-            dst.write_all(first_point)?;
+            let mut point = RGB::default();
+            point.copy_from(first_point);
+
+            let mut buf = [0u8; RGB::SIZE];
+            point.pack_into(&mut buf);
+
+            dst.write_all(&buf)?;
             self.contexts[*context] = Some(v2::RGBModels::default());
-            self.last_rgbs[*context] = Some(RGB::unpack_from(first_point));
+            self.last_rgbs[*context] = Some(point);
             self.last_context_used = *context;
             Ok(())
         }
 
-        fn compress_field_with(&mut self, buf: &[u8], context: &mut usize) -> std::io::Result<()> {
-            let current_point = RGB::unpack_from(buf);
+        fn compress_field_with(&mut self, point: &P, context: &mut usize) -> std::io::Result<()> {
+            let mut current_point= RGB::default();
+            current_point.copy_from(point);
+
             let mut last_rgb = self.last_rgbs[self.last_context_used]
                 .as_mut()
                 .expect("internal error: last value is not initialized");
@@ -847,7 +866,7 @@ pub mod v3 {
             Ok(())
         }
 
-        fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
+        fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
             if self.rgb_has_changed {
                 self.encoder.done()?;
                 dst.write_u32::<LittleEndian>(inner_buffer_len_of(&self.encoder) as u32)?;
@@ -855,7 +874,7 @@ pub mod v3 {
             Ok(())
         }
 
-        fn write_layers(&mut self, dst: &mut R) -> std::io::Result<()> {
+        fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
             if self.rgb_has_changed {
                 copy_encoder_content_to(&mut self.encoder, dst)?;
             }

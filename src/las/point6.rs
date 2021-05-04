@@ -278,6 +278,10 @@ impl Default for Point6 {
 
 impl Point6 {
     pub const SIZE: usize = 30;
+
+    fn copy_from<P: LasPoint6 + ?Sized>(&mut self, point: &P) {
+        todo!()
+    }
 }
 
 impl Packable for Point6 {
@@ -1616,7 +1620,7 @@ pub mod v3 {
         }
     }
 
-    impl<W: Write> LayeredFieldCompressor<W> for LasPoint6Compressor {
+    impl<P: ?Sized + LasPoint6, W: Write> LayeredFieldCompressor<P, W> for LasPoint6Compressor {
         fn size_of_field(&self) -> usize {
             Point6::SIZE
         }
@@ -1624,15 +1628,19 @@ pub mod v3 {
         fn init_first_point(
             &mut self,
             dst: &mut W,
-            first_point: &[u8],
+            point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
             for context in &mut self.contexts {
                 context.unused = true;
             }
-            dst.write_all(first_point)?;
 
-            let first_point = Point6::unpack_from(first_point);
+            let mut first_point = Point6::default();
+            first_point.copy_from(point);
+            let mut buf = [0u8; Point6::SIZE];
+            first_point.pack_into(&mut buf);
+            dst.write_all(&buf)?;
+
             self.current_context = first_point.scanner_channel() as usize;
             *context = self.current_context;
 
@@ -1643,11 +1651,13 @@ pub mod v3 {
 
         fn compress_field_with(
             &mut self,
-            current_point: &[u8],
+            point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
             let mut last_point = &mut self.last_values[self.current_context];
-            let current_point = Point6::unpack_from(current_point);
+            let mut current_point = Point6::default();
+            current_point.copy_from(point);
+
 
             let lpr = compute_last_point_return(last_point);
             let scanner_channel = current_point.scanner_channel();

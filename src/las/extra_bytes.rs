@@ -67,6 +67,7 @@ pub mod v1 {
     use crate::encoders::ArithmeticEncoder;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::record::{FieldCompressor, FieldDecompressor};
+    use crate::las::extra_bytes::LasExtraBytes;
 
     pub struct LasExtraByteCompressor {
         last_bytes: Vec<u8>,
@@ -89,22 +90,23 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for LasExtraByteCompressor {
+    impl<P: ?Sized + LasExtraBytes, W: Write> FieldCompressor<P, W> for LasExtraByteCompressor {
         fn size_of_field(&self) -> usize {
             self.count
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_bytes.copy_from_slice(buf);
-            dst.write_all(buf)
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            let eb = point.extra_bytes();
+            self.last_bytes.copy_from_slice(eb);
+            dst.write_all(eb)
         }
 
         fn compress_with(
             &mut self,
             encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let current_bytes = buf;
+            let current_bytes = point.extra_bytes();
             for i in 0..self.count {
                 self.diffs[i] = (current_bytes[i]).wrapping_sub(self.last_bytes[i]);
                 self.last_bytes[i] = current_bytes[i];
@@ -175,7 +177,7 @@ pub mod v3 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::extra_bytes::ExtraBytes;
+    use crate::las::extra_bytes::{ExtraBytes, LasExtraBytes};
     use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
@@ -320,7 +322,7 @@ pub mod v3 {
         }
     }
 
-    impl<W: Write> LayeredFieldCompressor<W> for LasExtraByteCompressor {
+    impl<P: ?Sized + LasExtraBytes, W: Write> LayeredFieldCompressor<P, W> for LasExtraByteCompressor {
         fn size_of_field(&self) -> usize {
             self.num_extra_bytes
         }
@@ -328,49 +330,52 @@ pub mod v3 {
         fn init_first_point(
             &mut self,
             dst: &mut W,
-            first_point: &[u8],
+            first_point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
-            for eb_context in &mut self.contexts {
-                eb_context.unused = true;
-            }
-
-            dst.write_all(first_point)?;
-            let the_context = &mut self.contexts[*context];
-            the_context.last_bytes.bytes.copy_from_slice(first_point);
-            self.last_context_used = *context;
-            the_context.unused = false;
-            Ok(())
+            // for eb_context in &mut self.contexts {
+            //     eb_context.unused = true;
+            // }
+            //
+            // dst.write_all(first_point)?;
+            // let the_context = &mut self.contexts[*context];
+            // the_context.last_bytes.bytes.copy_from_slice(first_point);
+            // self.last_context_used = *context;
+            // the_context.unused = false;
+            // Ok(())
+            todo!()
         }
 
         fn compress_field_with(
             &mut self,
-            current_point: &[u8],
+            current_point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
-            if self.last_context_used != *context {
-                if self.contexts[*context].unused {
-                    let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
-                    new_context
-                        .last_bytes
-                        .bytes
-                        .copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
-                    self.contexts[*context] = new_context;
-                }
-            }
-            let the_context = &mut self.contexts[*context];
-
-            for i in 0..self.num_extra_bytes {
-                let diff = current_point[i] - the_context.last_bytes.bytes[i];
-                self.encoders[i].encode_symbol(&mut the_context.models[i], u32::from(diff))?;
-                if diff != 0 {
-                    self.has_byte_changed[i] = true;
-                    the_context.last_bytes.bytes[i] = current_point[i];
-                }
-            }
-
-            self.last_context_used = *context;
-            Ok(())
+            todo!()
+            // if self.last_context_used != *context {
+            //     if self.contexts[*context].unused {
+            //         let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
+            //         new_context
+            //             .last_bytes
+            //             .bytes
+            //             .copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+            //         self.contexts[*context] = new_context;
+            //     }
+            // }
+            // let the_context = &mut self.contexts[*context];
+            // current_point.
+            //
+            // for i in 0..self.num_extra_bytes {
+            //     let diff = current_point[i] - the_context.last_bytes.bytes[i];
+            //     self.encoders[i].encode_symbol(&mut the_context.models[i], u32::from(diff))?;
+            //     if diff != 0 {
+            //         self.has_byte_changed[i] = true;
+            //         the_context.last_bytes.bytes[i] = current_point[i];
+            //     }
+            // }
+            //
+            // self.last_context_used = *context;
+            // Ok(())
         }
 
         fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {

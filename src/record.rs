@@ -9,6 +9,8 @@ use crate::decoders;
 use crate::encoders;
 use crate::las;
 use crate::las::laszip::{LasZipError, LazItem, LazItemType};
+use crate::las::LasPoint;
+
 
 /***************************************************************************************************
                     Decompression Related Traits
@@ -396,14 +398,14 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
                     Compression related Traits
 ***************************************************************************************************/
 /// Trait to be implemented by FieldCompressors
-pub trait FieldCompressor<W: Write> {
+pub trait FieldCompressor<P: ?Sized, W: Write> {
     /// size in bytes of the uncompressed field data
     fn size_of_field(&self) -> usize;
 
     /// Compress the field data from the `buf` to the `dst`.
     ///
     /// The `buf` slice will have a len of exactly `self_of_field()` bytes.
-    fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()>;
+    fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()>;
 
     /// Compress the field data from the `buf` to the `encoder`.
     ///
@@ -411,12 +413,12 @@ pub trait FieldCompressor<W: Write> {
     fn compress_with(
         &mut self,
         encoder: &mut encoders::ArithmeticEncoder<W>,
-        buf: &[u8],
+        point: &P,
     ) -> std::io::Result<()>;
 }
 
 /// Trait to be implemented by FieldCompressors that works with layers.
-pub trait LayeredFieldCompressor<W: Write> {
+pub trait LayeredFieldCompressor<P: ?Sized, W: Write> {
     /// size in bytes of the uncompressed field data
     fn size_of_field(&self) -> usize;
 
@@ -425,14 +427,14 @@ pub trait LayeredFieldCompressor<W: Write> {
     fn init_first_point(
         &mut self,
         dst: &mut W,
-        first_point: &[u8],
+        first_point: &P,
         context: &mut usize,
     ) -> std::io::Result<()>;
 
     /// Compress the next point
     fn compress_field_with(
         &mut self,
-        current_point: &[u8],
+        current_point: &P,
         context: &mut usize,
     ) -> std::io::Result<()>;
 
@@ -445,14 +447,14 @@ pub trait LayeredFieldCompressor<W: Write> {
 }
 
 /// Trait describing the interface needed to _compress_ a point record
-pub trait RecordCompressor<W> {
+pub trait RecordCompressor<P: ?Sized, W> {
     /// Sets the field decompressors that matches the `laz_items`
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()>;
     /// Returns the size of an uncompressed point record (total size of all fields)
     fn record_size(&self) -> usize;
 
     /// Compress the next point
-    fn compress_next(&mut self, input: &[u8]) -> std::io::Result<()>;
+    fn compress_next(&mut self, input: &P) -> std::io::Result<()>;
     /// Tells the compressor that no more points will be compressed
     fn done(&mut self) -> std::io::Result<()>;
     /// Resets the compressor to its initial state
@@ -467,19 +469,77 @@ pub trait RecordCompressor<W> {
     fn box_into_inner(self: Box<Self>) -> W;
 }
 
+mod private {
+    pub(crate) trait Final {}
+}
+
+pub trait LegacyCompressible<'a, W: Write> {
+    fn compress_first(&self,
+                      field_compressors: &[Box<dyn FieldCompressor<Self, W> + Send + 'a>],
+                      field_sizes: &[usize],
+                      encoder: & mut encoders::ArithmeticEncoder<W>
+    ) -> std::io::Result<()>;
+    fn compress_next(&self,
+                     field_compressors: &[Box<dyn FieldCompressor<Self, W> + Send + 'a>],
+                     field_sizes: &[usize],
+                     encoder: &mut encoders::ArithmeticEncoder<W>
+    ) -> std::io::Result<()>;
+}
+
+pub trait ExtendedCompressible<'a, W: Write> {
+    fn compress_first(&self,
+                      field_compressors: &mut [Box<dyn LayeredFieldCompressor<Self, W> + Send + 'a>],
+                      field_sizes: &[usize],
+                      context: &mut usize,
+    ) -> std::io::Result<()>;
+
+    fn compress_next(&self,
+                     field_compressors: &mut [Box<dyn LayeredFieldCompressor<Self, W> + Send + 'a>],
+                     field_sizes: &[usize],
+                     context: &mut usize,
+    ) -> std::io::Result<()>;
+}
+
+pub trait Compressible<'a, W: Write> : LegacyCompressible<'a, W> + ExtendedCompressible<'a, W> {}
+
+
+impl<'a, W: Write> LegacyCompressible<'a, W> for [u8] {
+    fn compress_first(&self, field_compressors: & mut [Box<dyn FieldCompressor<Self, W> + Send>], field_sizes: &[usize]) -> Result<()> {
+        let field_compressors_and_data = self
+            .field_compressors
+            .iter_mut()
+            .zip(ChunksIrregular::new(self, field_sizes));
+        for (field_compressor, field_data) in field_compressors_and_data {
+            field_compressor.compress_first(self.encoder.get_mut(), &field_data)?;
+        }
+        Ok(())
+    }
+
+    fn compress_next(&self, field_compressors: &mut [Box<dyn FieldCompressor<Self, W> + Send>], field_sizes: &[usize]) -> Result<()> {
+        let field_compressors_and_data = field_compressors
+            .iter_mut()
+            .zip(ChunksIrregular::new(self, field_sizes));
+        for (field_compressor, field_data) in field_compressors_and_data {
+            field_compressor.compress_with(self.encoder.get_mut(), &field_data)?;
+        }
+        Ok(())
+    }
+}
+
+
 /***************************************************************************************************
                     Record Compressors implementations
 ***************************************************************************************************/
 /// Compress points and store them sequentially
-pub struct SequentialPointRecordCompressor<'a, W: Write> {
+pub struct SequentialPointRecordCompressor<'a, P: ?Sized, W: Write> {
     is_first_compression: bool,
-    field_compressors: Vec<Box<dyn FieldCompressor<W> + Send + 'a>>,
+    field_compressors: Vec<Box<dyn FieldCompressor<P, W> + Send + 'a>>,
     encoder: encoders::ArithmeticEncoder<W>,
     record_size: usize,
     fields_sizes: Vec<usize>,
 }
 
-impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
+impl<'a, P: ?Sized, W: Write> SequentialPointRecordCompressor<'a, P, W> {
     pub fn new(output: W) -> Self {
         Self {
             is_first_compression: true,
@@ -490,14 +550,14 @@ impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
         }
     }
 
-    pub fn add_field_compressor<T: FieldCompressor<W> + Send + 'a>(&mut self, field: T) {
+    pub fn add_field_compressor<T: FieldCompressor<P, W> + Send + 'a>(&mut self, field: T) {
         let size = field.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);
         self.field_compressors.push(Box::new(field));
     }
 
-    pub fn add_boxed_compressor(&mut self, c: Box<dyn FieldCompressor<W> + Send>) {
+    pub fn add_boxed_compressor(&mut self, c: Box<dyn FieldCompressor<P, W> + Send>) {
         let size = c.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);
@@ -505,7 +565,7 @@ impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
     }
 }
 
-impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W> {
+impl<'a, 'b, P: ?Sized + LegacyCompressible<'a, W> + LasPoint, W: Write> RecordCompressor<P, W> for SequentialPointRecordCompressor<'a, P, W> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()> {
         for record_item in laz_items {
             match record_item.version {
@@ -564,23 +624,29 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
         self.record_size
     }
 
-    fn compress_next(&mut self, input: &[u8]) -> std::io::Result<()> {
-        let field_compressors_and_data = self
-            .field_compressors
-            .iter_mut()
-            .zip(ChunksIrregular::new(input, &self.fields_sizes));
-
+    fn compress_next(&mut self, input: &P) -> std::io::Result<()> {
+        // let field_compressors_and_data = self
+        //     .field_compressors
+        //     .iter_mut()
+        //     .zip(input.iter_fields(&self.fields_sizes));
+        //
+        // if self.is_first_compression {
+        //     for (field_compressor, field_data) in field_compressors_and_data {
+        //         field_compressor.compress_first(self.encoder.get_mut(), &field_data)?;
+        //     }
+        //     self.is_first_compression = false;
+        // } else {
+        //     for (field_compressor, field_data) in field_compressors_and_data {
+        //         field_compressor.compress_with(&mut self.encoder, &field_data)?;
+        //     }
+        // }
+        // Ok(())
         if self.is_first_compression {
-            for (field_compressor, field_data) in field_compressors_and_data {
-                field_compressor.compress_first(self.encoder.get_mut(), field_data)?;
-            }
             self.is_first_compression = false;
+            input.compress_first(self.field_compressors.as_slice(), &self.fields_sizes)
         } else {
-            for (field_compressor, field_data) in field_compressors_and_data {
-                field_compressor.compress_with(&mut self.encoder, field_data)?;
-            }
+            input.compress_next(self.field_compressors.as_slice(), &self.fields_sizes)
         }
-        Ok(())
     }
 
     fn done(&mut self) -> std::io::Result<()> {
@@ -613,15 +679,15 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
 /// See [`LayeredPointRecordDecompressor`] for more info in the data organisation.
 ///
 /// [`LayeredPointRecordDecompressor`]: struct.LayeredPointRecordDecompressor.html
-pub struct LayeredPointRecordCompressor<'a, W: Write> {
-    field_compressors: Vec<Box<dyn LayeredFieldCompressor<W> + Send + 'a>>,
+pub struct LayeredPointRecordCompressor<'a, P: ?Sized, W: Write> {
+    field_compressors: Vec<Box<dyn LayeredFieldCompressor<P, W> + Send + 'a>>,
     point_count: u32,
     dst: W,
     record_size: usize,
     fields_sizes: Vec<usize>,
 }
 
-impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
+impl<'a, P: ?Sized, W: Write> LayeredPointRecordCompressor<'a, P, W> {
     pub fn new(dst: W) -> Self {
         Self {
             field_compressors: vec![],
@@ -632,7 +698,7 @@ impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
         }
     }
 
-    pub fn add_field_compressor<T: LayeredFieldCompressor<W> + Send + 'a>(&mut self, field: T) {
+    pub fn add_field_compressor<T: LayeredFieldCompressor<P, W> + Send + 'a>(&mut self, field: T) {
         let size = field.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);
@@ -640,7 +706,7 @@ impl<'a, W: Write> LayeredPointRecordCompressor<'a, W> {
     }
 }
 
-impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
+impl<'a, 'b, P: ?Sized + las::LasPoint + ExtendedCompressible<'a, W>, W: Write> RecordCompressor<P, W> for LayeredPointRecordCompressor<'a, P, W> {
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()> {
         for item in laz_items {
             match item.version {
@@ -680,21 +746,26 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
         self.record_size
     }
 
-    fn compress_next(&mut self, point: &[u8]) -> std::io::Result<()> {
+    fn compress_next(&mut self, point: &P) -> std::io::Result<()> {
         let mut context = 0usize;
-        let compressors_and_data = self
-            .field_compressors
-            .iter_mut()
-            .zip(ChunksIrregular::new(point, &self.fields_sizes));
-
+        // let compressors_and_data = self
+        //     .field_compressors
+        //     .iter_mut()
+        //     .zip(point.iter_fields(&self.fields_sizes));
+        //
+        // if self.point_count == 0 {
+        //     for (field_compressor, field_data) in compressors_and_data {
+        //         field_compressor.init_first_point(&mut self.dst, &field_data, &mut context)?;
+        //     }
+        // } else {
+        //     for (field_compressor, field_data) in compressors_and_data {
+        //         field_compressor.compress_field_with(&field_data, &mut context)?;
+        //     }
+        // }
         if self.point_count == 0 {
-            for (field_compressor, field_data) in compressors_and_data {
-                field_compressor.init_first_point(&mut self.dst, field_data, &mut context)?;
-            }
+            point.compress_first(self.field_compressors.as_slice(), &self.fields_sizes, &mut context);
         } else {
-            for (field_compressor, field_data) in compressors_and_data {
-                field_compressor.compress_field_with(field_data, &mut context)?;
-            }
+            point.compress_next(self.field_compressors.as_slice(), &self.fields_sizes, &mut context);
         }
         self.point_count += 1;
         Ok(())

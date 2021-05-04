@@ -1,9 +1,15 @@
 pub use crate::las::gps::LasGpsTime;
 use crate::las::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
-use crate::las::nir::Nir;
+use crate::las::nir::{Nir, LasNIR};
 pub use crate::las::point0::{LasPoint0, Point0};
 pub use crate::las::point6::{LasPoint6, Point6};
 pub use crate::las::rgb::{LasRGB, RGB};
+use crate::las::extra_bytes::LasExtraBytes;
+
+
+pub trait LegacyLasPoint: LasPoint0 + LasRGB + LasGpsTime + LasExtraBytes {}
+pub trait ExtendedLasPoint: LasPoint6 + LasRGB + LasNIR + LasExtraBytes {}
+pub trait LasPoint: LegacyLasPoint + ExtendedLasPoint {}
 
 pub trait Point0Based {
     fn point0(&self) -> &Point0;

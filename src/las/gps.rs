@@ -188,6 +188,7 @@ pub mod v1 {
     use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::GpsTime;
+    use byteorder::{WriteBytesExt, LittleEndian};
 
     const LASZIP_GPS_TIME_MULTI_MAX: u32 = 512;
 
@@ -243,22 +244,22 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for LasGpsTimeCompressor {
+    impl<P: ?Sized + LasGpsTime, W: Write> FieldCompressor<P, W> for LasGpsTimeCompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<f64>()
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_gps = GpsTime::unpack_from(buf).into();
-            dst.write_all(buf)
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            self.last_gps = GpsTime::from(point.gps_time()).into();
+            dst.write_f64::<LittleEndian>(point.gps_time())
         }
 
         fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let current_point = GpsTime::unpack_from(buf);
+            let current_point = GpsTime::from(point.gps_time());
             let current_gps_time_value = current_point.gps_time().to_bits() as i64;
 
             if self.last_gps_time_diff == 0 {
@@ -476,6 +477,8 @@ pub mod v2 {
         GpsTime, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
         LASZIP_GPS_TIME_MULTI_MINUS, LASZIP_GPS_TIME_MULTI_TOTAL, LASZIP_GPS_TIME_MULTI_UNCHANGED,
     };
+    use crate::las::gps::LasGpsTime;
+    use byteorder::{WriteBytesExt, LittleEndian};
 
     // Common parts for both a compressor and decompressor go here
     struct Common {
@@ -520,22 +523,22 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for GpsTimeCompressor {
+    impl<P: ?Sized + LasGpsTime, W: Write> FieldCompressor<P, W> for GpsTimeCompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<i64>()
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.common.last_gps_times[0] = GpsTime::unpack_from(buf);
-            dst.write_all(buf)
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            self.common.last_gps_times[0] = point.gps_time().into();
+            dst.write_f64::<LittleEndian>(point.gps_time())
         }
 
         fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let this_val = GpsTime::unpack_from(&buf);
+            let this_val = GpsTime::from(point.gps_time());
             debug_assert!(self.common.last < 4);
             unsafe {
                 if *self
@@ -594,7 +597,7 @@ pub mod v2 {
                                         (i + 2) as u32,
                                     )?;
                                     self.common.last = (self.common.last + i) & 3;
-                                    return self.compress_with(&mut encoder, buf);
+                                    return self.compress_with(&mut encoder, point);
                                 }
                             }
                             // no other sequence found. start new sequence.
@@ -797,7 +800,7 @@ pub mod v2 {
                                         (LASZIP_GPS_TIME_MULTI_CODE_FULL + i as i32) as u32,
                                     )?;
                                     self.common.last = (self.common.last + i) & 3;
-                                    return self.compress_with(&mut encoder, buf);
+                                    return self.compress_with(&mut encoder, point);
                                 }
                             }
 

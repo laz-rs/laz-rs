@@ -37,6 +37,7 @@ pub mod v3 {
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
+    use crate::las::nir::LasNIR;
 
     struct NirContext {
         bytes_used_model: ArithmeticModel,
@@ -195,31 +196,32 @@ pub mod v3 {
         }
     }
 
-    impl<R: std::io::Write> LayeredFieldCompressor<R> for LasNIRCompressor {
+    impl<P: ?Sized + LasNIR, W: std::io::Write> LayeredFieldCompressor<P, W> for LasNIRCompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<u16>()
         }
 
         fn init_first_point(
             &mut self,
-            dst: &mut R,
-            first_point: &[u8],
+            dst: &mut W,
+            first_point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
-            for ctx in &mut self.contexts {
-                ctx.unused = true;
-            }
-
-            dst.write_all(first_point)?;
-            self.last_nirs[*context] = u16::unpack_from(first_point);
-            self.contexts[*context].unused = false;
-            self.last_context_used = *context;
-            Ok(())
+            todo!()
+            // for ctx in &mut self.contexts {
+            //     ctx.unused = true;
+            // }
+            //
+            // dst.write_all(first_point)?;
+            // self.last_nirs[*context] = u16::unpack_from(first_point);
+            // self.contexts[*context].unused = false;
+            // self.last_context_used = *context;
+            // Ok(())
         }
 
         fn compress_field_with(
             &mut self,
-            current_point: &[u8],
+            current_point: &P,
             context: &mut usize,
         ) -> std::io::Result<()> {
             let mut last_nir = &mut self.last_nirs[self.last_context_used];
@@ -233,7 +235,7 @@ pub mod v3 {
             };
             let the_context = &mut self.contexts[self.last_context_used];
 
-            let current_nir = u16::unpack_from(current_point);
+            let current_nir = current_point.nir();
             if current_nir != *last_nir {
                 self.has_nir_changed = true;
             }
@@ -257,7 +259,7 @@ pub mod v3 {
             Ok(())
         }
 
-        fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
+        fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
             if self.has_nir_changed {
                 self.encoder.done()?;
                 dst.write_u32::<LittleEndian>(self.encoder.get_mut().get_ref().len() as u32)?;
@@ -265,7 +267,7 @@ pub mod v3 {
             Ok(())
         }
 
-        fn write_layers(&mut self, dst: &mut R) -> std::io::Result<()> {
+        fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
             if self.has_nir_changed {
                 copy_encoder_content_to(&mut self.encoder, dst)?;
             }

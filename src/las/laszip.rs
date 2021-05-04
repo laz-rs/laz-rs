@@ -16,11 +16,8 @@ pub use crate::errors::LasZipError;
 use crate::las::nir::Nir;
 use crate::las::point6::Point6;
 use crate::las::rgb::RGB;
-use crate::las::Point0;
-use crate::record::{
-    LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor,
-    RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
-};
+use crate::las::{Point0, LasPoint};
+use crate::record::{LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor, RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor, Compressible};
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
@@ -501,10 +498,10 @@ fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>(
     Ok(decompressor)
 }
 
-fn record_compressor_from_laz_items<'a, W: Write + Send + 'a>(
+fn record_compressor_from_laz_items<'a, 'b, P: ?Sized + LasPoint + 'a + Compressible<'a, W>, W: Write + Send + 'a>(
     items: &Vec<LazItem>,
     output: W,
-) -> crate::Result<Box<dyn RecordCompressor<W> + Send + 'a>> {
+) -> crate::Result<Box<dyn RecordCompressor<P, W> + Send + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordCompressor");
@@ -512,11 +509,11 @@ fn record_compressor_from_laz_items<'a, W: Write + Send + 'a>(
     let mut compressor = match first_item.version {
         1 | 2 => {
             let compressor = SequentialPointRecordCompressor::new(output);
-            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send>
+            Box::new(compressor) as Box<dyn RecordCompressor<P, W> + Send>
         }
         3 | 4 => {
             let compressor = LayeredPointRecordCompressor::new(output);
-            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send>
+            Box::new(compressor) as Box<dyn RecordCompressor<P, W> + Send>
         }
         _ => {
             return Err(LasZipError::UnsupportedLazItemVersion(
@@ -812,9 +809,9 @@ fn update_chunk_table_offset<W: Write + Seek>(
 }
 
 /// Struct that handles the compression of the points into the given destination
-pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
+pub struct LasZipCompressor<'a, P: ?Sized, W: Write + Send + 'a> {
     vlr: LazVlr,
-    record_compressor: Box<dyn RecordCompressor<W> + Send + 'a>,
+    record_compressor: Box<dyn RecordCompressor<P, W> + Send + 'a>,
     first_point: bool,
     chunk_point_written: u32,
     chunk_sizes: Vec<usize>,
@@ -825,7 +822,7 @@ pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
 // FIXME What laszip does for the chunk table is: if stream is not seekable: chunk table offset is -1
 //  write the chunk table  as usual then after (so at the end of the stream write the chunk table
 //  that means also support non seekable stream this is waht we have to do
-impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
+impl<'a, P: ?Sized + Compressible<'a, W> + LasPoint + 'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, P, W> {
     /// Creates a compressor using the provided vlr.
     pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
         let record_compressor = record_compressor_from_laz_items(&vlr.items, output)?;
@@ -858,7 +855,7 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     ///
     /// - The fields/dimensions are in the same order than the LAS spec says
     /// - The data in the buffer is in Little Endian order
-    pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
+    pub fn compress_one(&mut self, input: &P) -> std::io::Result<()> {
         if self.first_point {
             let stream = self.record_compressor.get_mut();
             self.start_pos = stream.seek(SeekFrom::Current(0))?;
@@ -877,17 +874,18 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
             self.chunk_point_written = 0;
         }
 
-        self.record_compressor.compress_next(&input)?;
+        self.record_compressor.compress_next(input)?;
         self.chunk_point_written += 1;
         Ok(())
     }
 
     /// Compress all the points contained in the `input` slice
-    pub fn compress_many(&mut self, input: &[u8]) -> std::io::Result<()> {
-        for point in input.chunks_exact(self.vlr.items_size() as usize) {
-            self.compress_one(point)?;
-        }
-        Ok(())
+    pub fn compress_many(&mut self, input: &P) -> std::io::Result<()> {
+        // for point in input.chunks_exact(self.vlr.items_size() as usize) {
+        //     self.compress_one(point)?;
+        // }
+        // Ok(())
+        todo!()
     }
 
     /// Must be called when you have compressed all your points

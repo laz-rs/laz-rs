@@ -103,6 +103,10 @@ impl Point0 {
 
         ((d & 0x1) << 7) | (c & 0x1) << 6 | (b & 0x7) << 3 | (a & 0x7)
     }
+
+    pub fn copy_from<P: LasPoint0 + ?Sized>(&mut self, point: &P) {
+        todo!()
+    }
 }
 
 impl LasPoint0 for Point0 {
@@ -411,23 +415,26 @@ pub mod v1 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for LasPoint0Compressor {
+    impl<P: ?Sized + LasPoint0, W: Write> FieldCompressor<P, W> for LasPoint0Compressor {
         fn size_of_field(&self) -> usize {
             20
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            dst.write_all(buf)?;
-            self.last_point = Point0::unpack_from(buf);
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            self.last_point.copy_from(point);
+            let mut buf = [0u8; Point0::SIZE];
+            self.last_point.pack_into(&mut buf);
+            dst.write_all(&buf)?;
             Ok(())
         }
 
         fn compress_with(
             &mut self,
             encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let current_point = Point0::unpack_from(buf);
+            let mut current_point = Point0::default();
+            current_point.copy_from(point);
             let median_x = median_diff(&self.last_x_diffs);
             let median_y = median_diff(&self.last_y_diffs);
 
@@ -823,22 +830,25 @@ pub mod v2 {
         }
     }
 
-    impl<W: Write> FieldCompressor<W> for LasPoint0Compressor {
+    impl<P: ?Sized + LasPoint0, W: Write> FieldCompressor<P, W> for LasPoint0Compressor {
         fn size_of_field(&self) -> usize {
             20
         }
 
-        fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_point = Point0::unpack_from(buf);
-            dst.write_all(buf)
+        fn compress_first(&mut self, dst: &mut W, point: &P) -> std::io::Result<()> {
+            self.last_point.copy_from(point);
+            let mut buf = [0u8; Point0::SIZE];
+            self.last_point.pack_into(&mut buf);
+            dst.write_all(&buf)
         }
 
         fn compress_with(
             &mut self,
             mut encoder: &mut ArithmeticEncoder<W>,
-            buf: &[u8],
+            point: &P,
         ) -> std::io::Result<()> {
-            let current_point = Point0::unpack_from(&buf);
+            let mut current_point = Point0::default();
+            current_point.copy_from(point);
             let r = current_point.return_number();
             let n = current_point.number_of_returns_of_given_pulse();
             // According to table  m is in range 0..16
