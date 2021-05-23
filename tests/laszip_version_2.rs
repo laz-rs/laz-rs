@@ -27,7 +27,7 @@ macro_rules! loop_test_on_buffer {
             let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
             assert_eq!(laz_vlr.items_size(), $point_size);
 
-            let mut compressor = LasZipCompressor::from_laz_items(
+            let mut compressor = LasZipCompressor::<[u8], _>::from_laz_items(
                 Cursor::new(Vec::<u8>::new()),
                 laz_vlr.items().clone(),
             )
@@ -167,7 +167,7 @@ fn test_seek() {
     vlr.write_to(&mut vlr_data).unwrap();
     vlr_data.seek(SeekFrom::Start(0)).unwrap();
 
-    let mut compressor = LasZipCompressor::new(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
+    let mut compressor = LasZipCompressor::<[u8], _>::new(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
 
     let mut buf = [0u8; POINT_SIZE];
     for _ in 0..NUM_POINTS {

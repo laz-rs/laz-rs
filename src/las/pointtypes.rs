@@ -11,6 +11,288 @@ pub trait LegacyLasPoint: LasPoint0 + LasRGB + LasGpsTime + LasExtraBytes {}
 pub trait ExtendedLasPoint: LasPoint6 + LasRGB + LasNIR + LasExtraBytes {}
 pub trait LasPoint: LegacyLasPoint + ExtendedLasPoint {}
 
+impl LasNIR for [u8] {
+    fn nir(&self) -> u16 {
+        todo!()
+    }
+
+    fn set_nir(&mut self, new_val: u16) {
+        todo!()
+    }
+}
+
+impl LasPoint6 for [u8] {
+    fn x(&self) -> i32 {
+        todo!()
+    }
+
+    fn y(&self) -> i32 {
+        todo!()
+    }
+
+    fn z(&self) -> i32 {
+        todo!()
+    }
+
+    fn intensity(&self) -> u16 {
+        todo!()
+    }
+
+    fn bit_fields(&self) -> u8 {
+        todo!()
+    }
+
+    fn return_number(&self) -> u8 {
+        todo!()
+    }
+
+    fn number_of_returns_of_given_pulse(&self) -> u8 {
+        todo!()
+    }
+
+    fn flags(&self) -> u8 {
+        todo!()
+    }
+
+    fn classification_flags(&self) -> u8 {
+        todo!()
+    }
+
+    fn scanner_channel(&self) -> u8 {
+        todo!()
+    }
+
+    fn scan_direction_flag(&self) -> bool {
+        todo!()
+    }
+
+    fn edge_of_flight_line(&self) -> bool {
+        todo!()
+    }
+
+    fn classification(&self) -> u8 {
+        todo!()
+    }
+
+    fn scan_angle_rank(&self) -> i16 {
+        todo!()
+    }
+
+    fn user_data(&self) -> u8 {
+        todo!()
+    }
+
+    fn point_source_id(&self) -> u16 {
+        todo!()
+    }
+
+    fn gps_time(&self) -> f64 {
+        todo!()
+    }
+
+    fn set_x(&mut self, new_val: i32) {
+        todo!()
+    }
+
+    fn set_y(&mut self, new_val: i32) {
+        todo!()
+    }
+
+    fn set_z(&mut self, new_val: i32) {
+        todo!()
+    }
+
+    fn set_intensity(&mut self, new_val: u16) {
+        todo!()
+    }
+
+    fn set_bit_fields(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_flags(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_number_of_returns(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_return_number(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_scanner_channel(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_classification(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_scan_angle_rank(&mut self, new_val: i16) {
+        todo!()
+    }
+
+    fn set_user_data(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_point_source_id(&mut self, new_val: u16) {
+        todo!()
+    }
+
+    fn set_gps_time(&mut self, new_val: f64) {
+        todo!()
+    }
+}
+
+impl ExtendedLasPoint for [u8] {
+    
+}
+
+impl LasExtraBytes for [u8] {
+    fn extra_bytes(&self) -> &[u8] {
+        todo!()
+    }
+
+    fn set_extra_bytes(&mut self, extra_bytes: &[u8]) {
+        todo!()
+    }
+}
+
+impl LasGpsTime for [u8] {
+    fn gps_time(&self) -> f64 {
+        todo!()
+    }
+
+    fn set_gps_time(&mut self, new_value: f64) {
+        todo!()
+    }
+}
+
+impl LasRGB for [u8] {
+    fn red(&self) -> u16 {
+        todo!()
+    }
+
+    fn green(&self) -> u16 {
+        todo!()
+    }
+
+    fn blue(&self) -> u16 {
+        todo!()
+    }
+
+    fn set_red(&mut self, new_val: u16) {
+        todo!()
+    }
+
+    fn set_green(&mut self, new_val: u16) {
+        todo!()
+    }
+
+    fn set_blue(&mut self, new_val: u16) {
+        todo!()
+    }
+}
+
+impl LasPoint0 for [u8] {
+    fn x(&self) -> i32 {
+        todo!()
+    }
+
+    fn y(&self) -> i32 {
+        todo!()
+    }
+
+    fn z(&self) -> i32 {
+        todo!()
+    }
+
+    fn intensity(&self) -> u16 {
+        todo!()
+    }
+
+    fn bit_fields(&self) -> u8 {
+        todo!()
+    }
+
+    fn number_of_returns_of_given_pulse(&self) -> u8 {
+        todo!()
+    }
+
+    fn scan_direction_flag(&self) -> bool {
+        todo!()
+    }
+
+    fn edge_of_flight_line(&self) -> bool {
+        todo!()
+    }
+
+    fn return_number(&self) -> u8 {
+        todo!()
+    }
+
+    fn classification(&self) -> u8 {
+        todo!()
+    }
+
+    fn scan_angle_rank(&self) -> i8 {
+        todo!()
+    }
+
+    fn user_data(&self) -> u8 {
+        todo!()
+    }
+
+    fn point_source_id(&self) -> u16 {
+        todo!()
+    }
+
+    fn set_x(&mut self, new_val: i32) {
+        todo!()
+    }
+
+    fn set_y(&mut self, new_val: i32) {
+        todo!()
+    }
+
+    fn set_z(&mut self, new_val: i32) {
+        todo!()
+    }
+
+    fn set_intensity(&mut self, new_val: u16) {
+        todo!()
+    }
+
+    fn set_bit_fields(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_classification(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_scan_angle_rank(&mut self, new_val: i8) {
+        todo!()
+    }
+
+    fn set_user_data(&mut self, new_val: u8) {
+        todo!()
+    }
+
+    fn set_point_source_id(&mut self, new_val: u16) {
+        todo!()
+    }
+}
+
+impl LegacyLasPoint for [u8] {}
+
+impl LasPoint for [u8] {
+
+}
+
 pub trait Point0Based {
     fn point0(&self) -> &Point0;
     fn point0_mut(&mut self) -> &mut Point0;

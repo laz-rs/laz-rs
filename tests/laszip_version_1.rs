@@ -22,7 +22,7 @@ macro_rules! loop_test_on_buffer {
             let mut expected_buf = [0u8; $point_size];
 
             let mut compressor =
-                SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+                SequentialPointRecordCompressor::<[u8], _>::new(Cursor::new(Vec::<u8>::new()));
             for c in $field_compressors {
                 compressor.add_boxed_compressor(c);
             }
@@ -72,7 +72,7 @@ macro_rules! loop_test_on_buffer {
 macro_rules! vec_of_boxed_buffer_compressors {
     ($($x: expr),*) => {{
         let mut vector = Vec::new();
-        $(vector.push(Box::new($x) as Box<dyn FieldCompressor<_> + Send>);)*
+        $(vector.push(Box::new($x) as Box<dyn FieldCompressor<[u8], _> + Send>);)*
         vector
     }}
 }

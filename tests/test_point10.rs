@@ -12,7 +12,7 @@ use laz::record::{
 #[test]
 fn test_compression_decompression_of_point_10() {
     let mut compressor =
-        SequentialPointRecordCompressor::new(std::io::Cursor::new(Vec::<u8>::new()));
+        SequentialPointRecordCompressor::<[u8], _>::new(std::io::Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(LasPoint0Compressor::default());
 
     let n: i32 = 10000;
@@ -69,7 +69,7 @@ fn test_compression_decompression_of_point_10() {
 
 #[test]
 fn test_rgb() {
-    let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    let mut compressor = SequentialPointRecordCompressor::<[u8], _>::new(Cursor::new(Vec::<u8>::new()));
 
     compressor.add_field_compressor(LasRGBCompressor::default());
 
@@ -109,7 +109,7 @@ fn test_rgb() {
 
 #[test]
 fn test_gps_time() {
-    let mut compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    let mut compressor = SequentialPointRecordCompressor::<[u8], _>::new(Cursor::new(Vec::<u8>::new()));
     compressor.add_field_compressor(GpsTimeCompressor::default());
 
     let n = 10000;

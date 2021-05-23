@@ -475,12 +475,12 @@ mod private {
 
 pub trait LegacyCompressible<'a, W: Write> {
     fn compress_first(&self,
-                      field_compressors: &[Box<dyn FieldCompressor<Self, W> + Send + 'a>],
+                      field_compressors: &mut [Box<dyn FieldCompressor<Self, W> + Send + 'a>],
                       field_sizes: &[usize],
                       encoder: & mut encoders::ArithmeticEncoder<W>
     ) -> std::io::Result<()>;
     fn compress_next(&self,
-                     field_compressors: &[Box<dyn FieldCompressor<Self, W> + Send + 'a>],
+                     field_compressors: &mut [Box<dyn FieldCompressor<Self, W> + Send + 'a>],
                      field_sizes: &[usize],
                      encoder: &mut encoders::ArithmeticEncoder<W>
     ) -> std::io::Result<()>;
@@ -504,26 +504,56 @@ pub trait Compressible<'a, W: Write> : LegacyCompressible<'a, W> + ExtendedCompr
 
 
 impl<'a, W: Write> LegacyCompressible<'a, W> for [u8] {
-    fn compress_first(&self, field_compressors: & mut [Box<dyn FieldCompressor<Self, W> + Send>], field_sizes: &[usize]) -> Result<()> {
-        let field_compressors_and_data = self
-            .field_compressors
+    fn compress_first(&self,
+                      field_compressors: &mut [Box<dyn FieldCompressor<Self, W> + 'a + Send>],
+                      field_sizes: &[usize],
+                      encoder: &mut encoders::ArithmeticEncoder<W>
+    ) -> std::io::Result<()> {
+        let field_compressors_and_data =
+            field_compressors
             .iter_mut()
             .zip(ChunksIrregular::new(self, field_sizes));
         for (field_compressor, field_data) in field_compressors_and_data {
-            field_compressor.compress_first(self.encoder.get_mut(), &field_data)?;
+            field_compressor.compress_first(encoder.get_mut(), &field_data)?;
         }
         Ok(())
     }
 
-    fn compress_next(&self, field_compressors: &mut [Box<dyn FieldCompressor<Self, W> + Send>], field_sizes: &[usize]) -> Result<()> {
+    fn compress_next(&self,
+                     field_compressors: &mut [Box<dyn FieldCompressor<Self, W> + 'a + Send>],
+                     field_sizes: &[usize],
+                    encoder: &mut encoders::ArithmeticEncoder<W>
+    ) -> std::io::Result<()> {
         let field_compressors_and_data = field_compressors
             .iter_mut()
             .zip(ChunksIrregular::new(self, field_sizes));
         for (field_compressor, field_data) in field_compressors_and_data {
-            field_compressor.compress_with(self.encoder.get_mut(), &field_data)?;
+            field_compressor.compress_with(encoder, &field_data)?;
         }
         Ok(())
     }
+}
+
+impl<'a, W: Write> ExtendedCompressible<'a, W> for [u8] {
+    fn compress_first(&self,
+                      field_compressors: &mut [Box<dyn LayeredFieldCompressor<Self, W> + Send + 'a>],
+                      field_sizes: &[usize],
+                      context: &mut usize,
+    ) -> std::io::Result<()> {
+        todo!()
+    }
+
+    fn compress_next(&self,
+                     field_compressors: &mut [Box<dyn LayeredFieldCompressor<Self, W> + Send + 'a>],
+                     field_sizes: &[usize],
+                     context: &mut usize,
+    ) -> std::io::Result<()> {
+        todo!()
+    }
+}
+
+impl<'a, W: Write> Compressible<'a, W> for [u8] {
+    
 }
 
 
@@ -643,9 +673,11 @@ impl<'a, 'b, P: ?Sized + LegacyCompressible<'a, W> + LasPoint, W: Write> RecordC
         // Ok(())
         if self.is_first_compression {
             self.is_first_compression = false;
-            input.compress_first(self.field_compressors.as_slice(), &self.fields_sizes)
+            input.compress_first(
+                self.field_compressors.as_mut_slice(), &self.fields_sizes, &mut self.encoder)
         } else {
-            input.compress_next(self.field_compressors.as_slice(), &self.fields_sizes)
+            input.compress_next(
+                self.field_compressors.as_mut_slice(), &self.fields_sizes, &mut self.encoder)
         }
     }
 
@@ -763,9 +795,9 @@ impl<'a, 'b, P: ?Sized + las::LasPoint + ExtendedCompressible<'a, W>, W: Write> 
         //     }
         // }
         if self.point_count == 0 {
-            point.compress_first(self.field_compressors.as_slice(), &self.fields_sizes, &mut context);
+            point.compress_first(&mut self.field_compressors, &self.fields_sizes, &mut context)?;
         } else {
-            point.compress_next(self.field_compressors.as_slice(), &self.fields_sizes, &mut context);
+            point.compress_next(&mut self.field_compressors, &self.fields_sizes, &mut context)?;
         }
         self.point_count += 1;
         Ok(())
