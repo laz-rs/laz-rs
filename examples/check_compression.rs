@@ -100,7 +100,7 @@ fn check_compression<T: AsRef<Path>>(las_path: T) {
     )
     .unwrap();
     let mut compressor =
-        LasZipCompressor::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
+        LasZipCompressor::<[u8], _>::from_laz_items(Cursor::new(Vec::<u8>::new()), laz_items).unwrap();
 
     let mut point_buf = vec![0u8; las_header.point_size as usize];
     for _ in 0..las_header.num_points {

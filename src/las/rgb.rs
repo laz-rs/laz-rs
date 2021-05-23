@@ -53,7 +53,9 @@ impl RGB {
     pub const SIZE: usize = 6;
 
     fn copy_from<P: LasRGB + ?Sized>(&mut self, point: &P) {
-        todo!()
+        self.red = point.red();
+        self.green = point.green();
+        self.blue = point.blue();
     }
 }
 

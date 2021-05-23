@@ -18,7 +18,7 @@
 //!             .add_item(LazItemType::Point10)
 //!             .add_item(LazItemType::RGB12)
 //!             .build();
-//! let mut compressor = LasZipCompressor::from_laz_items(&mut compressed_output, items)?;
+//! let mut compressor = LasZipCompressor::<[u8], _>::from_laz_items(&mut compressed_output, items)?;
 //!
 //! let point = vec![0u8; 26];
 //! compressor.compress_one(&point)?;
@@ -46,7 +46,7 @@
 //!           .with_chunk_size(5_000)
 //!           .build();
 //!
-//! let mut compressor = LasZipCompressor::new(&mut compressed_output, vlr)?;
+//! let mut compressor = LasZipCompressor::<[u8], _>::new(&mut compressed_output, vlr)?;
 //!
 //! let point = vec![0u8; 26];
 //! compressor.compress_one(&point)?;

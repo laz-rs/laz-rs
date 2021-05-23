@@ -105,7 +105,15 @@ impl Point0 {
     }
 
     pub fn copy_from<P: LasPoint0 + ?Sized>(&mut self, point: &P) {
-        todo!()
+        self.x = point.x();
+        self.y = point.y();
+        self.z = point.z();
+        self.intensity = point.intensity();
+        self.populate_bit_fields_from(point.bit_fields());
+        self.classification = point.classification();
+        self.scan_angle_rank = point.scan_angle_rank();
+        self.user_data = point.user_data();
+        self.point_source_id = point.point_source_id();
     }
 }
 

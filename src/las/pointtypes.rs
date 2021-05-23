@@ -5,6 +5,7 @@ pub use crate::las::point0::{LasPoint0, Point0};
 pub use crate::las::point6::{LasPoint6, Point6};
 pub use crate::las::rgb::{LasRGB, RGB};
 use crate::las::extra_bytes::LasExtraBytes;
+use crate::packers::Packable;
 
 
 pub trait LegacyLasPoint: LasPoint0 + LasRGB + LasGpsTime + LasExtraBytes {}
@@ -153,137 +154,137 @@ impl ExtendedLasPoint for [u8] {
 
 impl LasExtraBytes for [u8] {
     fn extra_bytes(&self) -> &[u8] {
-        todo!()
+        self
     }
 
     fn set_extra_bytes(&mut self, extra_bytes: &[u8]) {
-        todo!()
+        self.copy_from_slice(extra_bytes)
     }
 }
 
 impl LasGpsTime for [u8] {
     fn gps_time(&self) -> f64 {
-        todo!()
+        crate::las::gps::GpsTime::unpack_from(&self).into()
     }
 
     fn set_gps_time(&mut self, new_value: f64) {
-        todo!()
+        crate::las::gps::GpsTime::from(new_value).pack_into(self)
     }
 }
 
 impl LasRGB for [u8] {
     fn red(&self) -> u16 {
-        todo!()
+        u16::unpack_from(&self[0..2])
     }
 
     fn green(&self) -> u16 {
-        todo!()
+        u16::unpack_from(&self[2..4])
     }
 
     fn blue(&self) -> u16 {
-        todo!()
+        u16::unpack_from(&self[4..6])
     }
 
     fn set_red(&mut self, new_val: u16) {
-        todo!()
+        new_val.pack_into(&mut self[0..2])
     }
 
     fn set_green(&mut self, new_val: u16) {
-        todo!()
+        new_val.pack_into(&mut self[0..4])
     }
 
     fn set_blue(&mut self, new_val: u16) {
-        todo!()
+        new_val.pack_into(&mut self[4..6])
     }
 }
 
 impl LasPoint0 for [u8] {
     fn x(&self) -> i32 {
-        todo!()
+        i32::unpack_from(&self[0..4])
     }
 
     fn y(&self) -> i32 {
-        todo!()
+        i32::unpack_from(&self[4..8])
     }
 
     fn z(&self) -> i32 {
-        todo!()
+        i32::unpack_from(&self[8..12])
     }
 
     fn intensity(&self) -> u16 {
-        todo!()
+        u16::unpack_from(&self[12..14])
     }
 
     fn bit_fields(&self) -> u8 {
-        todo!()
+        self[14]
     }
 
     fn number_of_returns_of_given_pulse(&self) -> u8 {
-        todo!()
+        (<Self as LasPoint0>::bit_fields(self) >> 3) & 0x7
     }
 
     fn scan_direction_flag(&self) -> bool {
-        todo!()
+        ((<Self as LasPoint0>::bit_fields(self) >> 6) & 0x1) != 0
     }
 
     fn edge_of_flight_line(&self) -> bool {
-        todo!()
+        ((<Self as LasPoint0>::bit_fields(self) >> 7) & 0x1) != 0
     }
 
     fn return_number(&self) -> u8 {
-        todo!()
+        <Self as LasPoint0>::bit_fields(self) & 0x7
     }
 
     fn classification(&self) -> u8 {
-        todo!()
+        self[15]
     }
 
     fn scan_angle_rank(&self) -> i8 {
-        todo!()
+        self[16] as i8
     }
 
     fn user_data(&self) -> u8 {
-        todo!()
+        self[17]
     }
 
     fn point_source_id(&self) -> u16 {
-        todo!()
+        u16::unpack_from(&self[18..20])
     }
 
     fn set_x(&mut self, new_val: i32) {
-        todo!()
+        new_val.pack_into(&mut self[0..4])
     }
 
     fn set_y(&mut self, new_val: i32) {
-        todo!()
+        new_val.pack_into(&mut self[4..8])
     }
 
     fn set_z(&mut self, new_val: i32) {
-        todo!()
+        new_val.pack_into(&mut self[8..12])
     }
 
     fn set_intensity(&mut self, new_val: u16) {
-        todo!()
+        new_val.pack_into(&mut self[12..14])
     }
 
     fn set_bit_fields(&mut self, new_val: u8) {
-        todo!()
+        self[14] = new_val
     }
 
     fn set_classification(&mut self, new_val: u8) {
-        todo!()
+        self[15] = new_val
     }
 
     fn set_scan_angle_rank(&mut self, new_val: i8) {
-        todo!()
+        self[16] = new_val as u8
     }
 
     fn set_user_data(&mut self, new_val: u8) {
-        todo!()
+        self[17] = new_val
     }
 
     fn set_point_source_id(&mut self, new_val: u16) {
-        todo!()
+        new_val.pack_into(&mut self[18..20])
     }
 }
 

@@ -121,7 +121,7 @@ fn point_0_unpack_checked_benchmark(c: &mut Criterion) {
 
 fn point_0_unpack_unchecked_benchmark(c: &mut Criterion) {
     let raw_points_data = get_raw_points_data("tests/data/point10.las");
-    c.bench_function("point_0_unpack_checked", move |b| {
+    c.bench_function("point_0_unpack_unchecked", move |b| {
         let mut raw_pts_iter = raw_points_data.cycling_iterator();
         b.iter(|| unsafe {
             let _point =
