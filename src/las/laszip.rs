@@ -21,7 +21,6 @@ use crate::record::{
     LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor,
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
-
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &str = "laszip encoded";
@@ -1337,8 +1336,16 @@ pub struct ParLasZipDecompressor<R> {
     vlr: LazVlr,
     chunk_table: Vec<u64>,
     last_chunk_read: usize,
+    start_of_data: u64,
+    // Same idea as in ParLasZipCompressor
     rest: std::io::Cursor<Vec<u8>>,
+    // internal_buffer is used to hold the chunks to be decompressed
+    // after copying data from the source, each thread will receive a chunk
+    // of this buffer to decompress it
     internal_buffer: Vec<u8>,
+    // We use this buffer to decompress the data from the internal buffer,
+    // then data will be moved around between the 'rest' and this buffer to
+    // give the user the data they asked
     outernal_buffer: Vec<u8>,
     source: R,
 }
@@ -1350,6 +1357,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     /// Fails if no chunk table could be found.
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
         let chunk_table = read_chunk_table(&mut source).ok_or(LasZipError::MissingChunkTable)??;
+        let start_of_data = source.seek(SeekFrom::Current(0))?;
 
         Ok(Self {
             source,
@@ -1359,6 +1367,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             internal_buffer: vec![],
             outernal_buffer: vec![],
             last_chunk_read: 0,
+            start_of_data,
         })
     }
 
@@ -1441,6 +1450,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 );
             }
 
+            // Copy data from rest + whats needed from the outernal buffer to the user's buffer
             let num_bytes_not_fitting =
                 (self.outernal_buffer.len() + num_bytes_in_rest) - out.len();
             self.rest.read(&mut out[..num_bytes_in_rest])?;
@@ -1452,6 +1462,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 self.rest.get_ref().len(),
                 "The rest was not consumed"
             );
+            // Now copy the leftovers to the rest
             {
                 let rest_vec = self.rest.get_mut();
                 rest_vec.resize(num_bytes_not_fitting, 0u8);
@@ -1462,6 +1473,43 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             }
 
             self.last_chunk_read += num_chunks_to_decompress;
+        }
+        Ok(())
+    }
+
+    /// Seeks to the position of the point at the given index
+    pub fn seek(&mut self, index: u64) -> crate::Result<()> {
+        let chunk_of_point = index / self.vlr.chunk_size as u64;
+
+        if chunk_of_point as usize >= self.chunk_table.len() {
+            let _ = self.source.seek(SeekFrom::End(0))?;
+            return Ok(());
+        }
+
+        let start_of_chunk_pos = self.start_of_data
+            + self.chunk_table[..chunk_of_point as usize]
+                .iter()
+                .sum::<u64>();
+        self.source.seek(SeekFrom::Start(start_of_chunk_pos))?;
+        if chunk_of_point != 0 {
+            self.last_chunk_read = (chunk_of_point - 1) as usize;
+        }
+
+        // Throw away what's in the rest buffer
+        self.rest.set_position(0);
+        self.rest.get_mut().clear();
+
+        // decompress until our point
+        let pos_in_chunk = index % self.vlr.chunk_size as u64;
+        let mut buf = vec![0u8; (pos_in_chunk * self.vlr.items_size()) as usize];
+        let result = self.decompress_many(&mut buf);
+
+        // Don't propagate OEF error when trying to seek past the end
+        // to match `LasZipDecompress`'s seek.
+        if let Err(LasZipError::IoError(error)) = &result {
+            if error.kind() != std::io::ErrorKind::UnexpectedEof {
+                return result;
+            }
         }
         Ok(())
     }
