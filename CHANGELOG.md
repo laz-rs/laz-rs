@@ -1,3 +1,6 @@
+# Unreleased
+  - Added a `seek` method to `ParLasZipDecompressor`.
+
 # 0.5.2
   - Changed: Ensure LasZipCompressor, LasZipDecompressor, ParLasZipCompressor, ParLasZipDecompressor
     all have `into_inner` `get` `get_mut`.
