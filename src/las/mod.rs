@@ -16,7 +16,7 @@ pub mod laszip;
 pub mod nir;
 pub mod rgb;
 
-pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8, LasPoint};
+pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8, LasPoint, LegacyLasPoint, ExtendedLasPoint};
 
 pub mod v1 {
     //! This module only contains re exports of compressors / decompressors

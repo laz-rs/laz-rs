@@ -10,6 +10,7 @@ use crate::encoders;
 use crate::las;
 use crate::las::laszip::{LasZipError, LazItem, LazItemType};
 use crate::las::LasPoint;
+use crate::encoders::ArithmeticEncoder;
 
 
 /***************************************************************************************************
@@ -556,6 +557,43 @@ impl<'a, W: Write> Compressible<'a, W> for [u8] {
     
 }
 
+// impl<'a, W: Write, T> LegacyCompressible<'a, W> for T {
+//     fn compress_first(&self,
+//                       field_compressors: &mut [Box<dyn FieldCompressor<Self, W> +'a + Send>],
+//                       field_sizes: &[usize], encoder: &mut ArithmeticEncoder<W>
+//     ) -> std::io::Result<()> {
+//         todo!()
+//     }
+//
+//     fn compress_next(&self,
+//                      field_compressors: &mut [Box<dyn FieldCompressor<Self, W> +'a + Send>],
+//                      field_sizes: &[usize],
+//                      encoder: &mut ArithmeticEncoder<W>
+//     ) -> std::io::Result<()> {
+//         todo!()
+//     }
+// }
+//
+//
+// impl<'a, W: Write, T> ExtendedCompressible<'a, W> for T {
+//     fn compress_first(&self,
+//                       field_compressors: &mut [Box<dyn LayeredFieldCompressor<Self, W> + Send + 'a>],
+//                       field_sizes: &[usize],
+//                       context: &mut usize,
+//     ) -> std::io::Result<()> {
+//         todo!()
+//     }
+//
+//     fn compress_next(&self,
+//                      field_compressors: &mut [Box<dyn LayeredFieldCompressor<Self, W> + Send + 'a>],
+//                      field_sizes: &[usize],
+//                      context: &mut usize,
+//     ) -> std::io::Result<()> {
+//         todo!()
+//     }
+// }
+//
+// impl<'a, W: Write, T> Compressible<'a, W> for T {}
 
 /***************************************************************************************************
                     Record Compressors implementations
