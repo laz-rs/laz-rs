@@ -21,6 +21,8 @@ use crate::record::{
     LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor,
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
+use std::io;
+
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
 pub const LASZIP_USER_ID: &str = "laszip encoded";
@@ -1335,7 +1337,7 @@ impl<W: Write + Seek> ParLasZipCompressor<W> {
 pub struct ParLasZipDecompressor<R> {
     vlr: LazVlr,
     chunk_table: Vec<u64>,
-    last_chunk_read: usize,
+    last_chunk_read: isize,
     start_of_data: u64,
     // Same idea as in ParLasZipCompressor
     rest: std::io::Cursor<Vec<u8>>,
@@ -1366,7 +1368,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             rest: std::io::Cursor::<Vec<u8>>::new(vec![]),
             internal_buffer: vec![],
             outernal_buffer: vec![],
-            last_chunk_read: 0,
+            last_chunk_read: -1,
             start_of_data,
         })
     }
@@ -1391,8 +1393,15 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 / num_bytes_in_chunk as f32)
                 .ceil() as usize;
 
-            let chunk_sizes = &self.chunk_table
-                [self.last_chunk_read..self.last_chunk_read + num_chunks_to_decompress];
+            let start_index = (self.last_chunk_read + 1) as usize;
+            let end_index = start_index + num_chunks_to_decompress;
+            let chunk_sizes =
+                self.chunk_table
+                    .get(start_index..end_index)
+                    .ok_or(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "Not that many points to decompress",
+                    ))?;
             let bytes_to_read = chunk_sizes.iter().copied().sum::<u64>() as usize;
 
             self.internal_buffer.resize(bytes_to_read, 0u8);
@@ -1400,7 +1409,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 .resize(num_chunks_to_decompress * num_bytes_in_chunk, 0u8);
             self.source.read(&mut self.internal_buffer)?;
 
-            if self.last_chunk_read + num_chunks_to_decompress < self.chunk_table.len() {
+            if end_index < self.chunk_table.len() {
                 par_decompress(
                     &self.internal_buffer,
                     &mut self.outernal_buffer,
@@ -1408,8 +1417,9 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                     &chunk_sizes,
                 )?;
             } else {
-                // The last chunk contains a number of points that is less or equal to the chunk_size
-                // the strategy is to decompress that particular chunk separately until a end of file error appears
+                // The last chunk contains a number of points
+                // that is less or equal to the chunk_size, we don't exactly know it.
+                // The strategy is to decompress all chunks but the last in parallel
                 par_decompress(
                     &self.internal_buffer,
                     &mut self.outernal_buffer,
@@ -1417,22 +1427,19 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                     &chunk_sizes[..chunk_sizes.len() - 1],
                 )?;
 
+                // Then decompress the last chunk separately until a end of file error appears
                 let last_chunk_start = bytes_to_read - (*chunk_sizes.last().unwrap() as usize);
-                let last_chunk_source =
-                    std::io::Cursor::new(&self.internal_buffer[last_chunk_start..]);
+                let last_chunk_source = io::Cursor::new(&self.internal_buffer[last_chunk_start..]);
+                let num_bytes_decompressed_until_now =
+                    (num_chunks_to_decompress - 1) * num_bytes_in_chunk;
+                let last_chunk_output =
+                    &mut self.outernal_buffer[num_bytes_decompressed_until_now..];
+                debug_assert_eq!(last_chunk_output.len() % point_size, 0);
+
                 let mut decompressor =
                     record_decompressor_from_laz_items(self.vlr.items(), last_chunk_source)?;
-                debug_assert_eq!(
-                    self.outernal_buffer[(num_chunks_to_decompress - 1) * num_bytes_in_chunk..]
-                        .len()
-                        % point_size,
-                    0
-                );
-                let mut num_decompressed_bytes_in_last_chunk = 0;
-                for point in self.outernal_buffer
-                    [(num_chunks_to_decompress - 1) * num_bytes_in_chunk..]
-                    .chunks_exact_mut(point_size)
-                {
+                let mut num_bytes_in_last_chunk = 0;
+                for point in last_chunk_output.chunks_exact_mut(point_size) {
                     if let Err(error) = decompressor.decompress_next(point) {
                         if error.kind() == std::io::ErrorKind::UnexpectedEof {
                             break;
@@ -1440,14 +1447,25 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                             return Err(error.into());
                         }
                     } else {
-                        num_decompressed_bytes_in_last_chunk += point_size;
+                        num_bytes_in_last_chunk += point_size;
                     }
                 }
-                self.outernal_buffer.resize(
-                    (num_chunks_to_decompress - 1) * num_bytes_in_chunk
-                        + num_decompressed_bytes_in_last_chunk,
-                    0u8,
+
+                let num_bytes_to_remove = num_bytes_in_chunk - num_bytes_in_last_chunk;
+                let actual_size = self.outernal_buffer.len() - num_bytes_to_remove;
+                self.outernal_buffer.resize(actual_size, 0u8);
+            }
+
+            if out.len() > self.outernal_buffer.len() + num_bytes_in_rest {
+                // We could truncate the out buffer, and return the number of bytes
+                // or points actually decompressed but,
+                // its easier (and more consistent with the rest of the function)
+                // to return a EOF error.
+                let error = io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "Not that many points to decompress",
                 );
+                return Err(LasZipError::IoError(error));
             }
 
             // Copy data from rest + whats needed from the outernal buffer to the user's buffer
@@ -1472,45 +1490,66 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 self.rest.set_position(0);
             }
 
-            self.last_chunk_read += num_chunks_to_decompress;
+            self.last_chunk_read += num_chunks_to_decompress as isize;
         }
         Ok(())
     }
 
     /// Seeks to the position of the point at the given index
     pub fn seek(&mut self, index: u64) -> crate::Result<()> {
-        let chunk_of_point = index / self.vlr.chunk_size as u64;
-
-        if chunk_of_point as usize >= self.chunk_table.len() {
-            let _ = self.source.seek(SeekFrom::End(0))?;
-            return Ok(());
-        }
-
-        let start_of_chunk_pos = self.start_of_data
-            + self.chunk_table[..chunk_of_point as usize]
-                .iter()
-                .sum::<u64>();
-        self.source.seek(SeekFrom::Start(start_of_chunk_pos))?;
-        if chunk_of_point != 0 {
-            self.last_chunk_read = (chunk_of_point - 1) as usize;
-        }
-
         // Throw away what's in the rest buffer
         self.rest.set_position(0);
         self.rest.get_mut().clear();
 
-        // decompress until our point
-        let pos_in_chunk = index % self.vlr.chunk_size as u64;
-        let mut buf = vec![0u8; (pos_in_chunk * self.vlr.items_size()) as usize];
-        let result = self.decompress_many(&mut buf);
+        // Seek to the start of the points chunk
+        // and read the chunk data
+        let chunk_of_point = (index / self.vlr.chunk_size as u64) as usize;
+        if chunk_of_point >= self.chunk_table.len() {
+            let _ = self.source.seek(SeekFrom::End(0))?;
+            return Ok(());
+        }
+        let start_of_chunk_pos =
+            self.start_of_data + self.chunk_table[..chunk_of_point].iter().sum::<u64>();
+        self.source.seek(SeekFrom::Start(start_of_chunk_pos))?;
+        self.internal_buffer
+            .resize(self.chunk_table[chunk_of_point] as usize, 0u8);
+        self.source.read(&mut self.internal_buffer)?;
 
-        // Don't propagate OEF error when trying to seek past the end
-        // to match `LasZipDecompress`'s seek.
-        if let Err(LasZipError::IoError(error)) = &result {
-            if error.kind() != std::io::ErrorKind::UnexpectedEof {
-                return result;
+        // Now we will decompress the whole chunk,
+        // discarding points before the one we seek to
+        // and storing the other points of the chunk in our 'rest'
+        if self.outernal_buffer.len() < self.vlr.items_size() as usize {
+            self.outernal_buffer.resize(
+                self.vlr.chunk_size as usize * self.vlr.items_size() as usize,
+                0u8,
+            );
+        }
+        let point_buf = &mut self.outernal_buffer[..self.vlr.items_size() as usize];
+        let is_last_chunk = chunk_of_point == self.chunk_table.len() - 1;
+        let pos_in_chunk = index % self.vlr.chunk_size as u64;
+
+        let mut decompressor = record_decompressor_from_laz_items(
+            self.vlr.items(),
+            std::io::Cursor::new(&self.internal_buffer),
+        )?;
+        // We don't exactly know how much point the last chunk has
+        for i in 0..self.vlr.chunk_size() {
+            let decompression_result = decompressor.decompress_next(point_buf);
+            if let Err(io_error) = decompression_result {
+                if is_last_chunk && io_error.kind() == std::io::ErrorKind::UnexpectedEof {
+                    // Don't propagate OEF error when trying to seek past the end
+                    // to match `LasZipDecompress`'s seek.
+                    break;
+                } else {
+                    return Err(io_error.into());
+                }
+            } else if i >= pos_in_chunk as u32 {
+                self.rest.write_all(point_buf)?;
             }
         }
+
+        self.rest.set_position(0);
+        self.last_chunk_read = chunk_of_point as isize;
         Ok(())
     }
 
