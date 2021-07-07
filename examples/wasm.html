@@ -20,7 +20,6 @@
         };
 
         const file = "../tests/data/point-color.laz";
-        // const lazrs = import("../pkg/laz.js");
         import init, { get_header, init_decompressor, decompress_many } from "../pkg/laz.js";
 
         init()
@@ -41,45 +40,12 @@
                                 for (var i = 0; i < 10; i++) {
                                     decompress_many(vlr, out);
                                     console.log(out)
-                                var dv = new DataView(out.buffer);
+                                    var dv = new DataView(out.buffer);
                                     console.log(pointFormatReaders[uncompressed_pointformat](dv));
                                 }
-                                // decompress_many(vlr, out);
-                                // console.log(out);
-                                // decompress_many(vlr, out);
-                                // console.log(out);
-                                // decompress_many(vlr, out);
-                                // console.log(out);
-                                // decompress_many(vlr, out);
-                                // console.log(out);
                             });
                     });
             });
-
-
-        // lazrs
-        //     .then((laz) => {
-        //         fetch(file)
-        //             .then(response => {
-        //                 response.arrayBuffer()
-        //                     .then((buf) => {
-        //                         var header = laz.get_header(buf);
-        //                     });
-        //             });
-        //         // let reader = new FileReader();
-
-        //         // reader.readAsArrayBuffer(file);
-
-        //         // reader.onload = function() {
-        //         // console.log(reader.result);
-        //         // };
-
-        //         // reader.onerror = function() {
-        //         // console.log(reader.error);
-        //         // };
-        //         //   laz.greet("WebAssembly")
-        //     })
-        //     .catch(console.error);
     </script>
 </body>
 
