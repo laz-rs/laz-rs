@@ -140,68 +140,42 @@ pub use las::laszip::{
     par_compress_buffer, par_decompress_buffer, ParLasZipCompressor, ParLasZipDecompressor,
 };
 
-// pub use las::laszip::{
-//     read_chunk_table, write_chunk_table, LasZipCompressor, LasZipDecompressor, LazItem,
-//     LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
-// };
+pub use las::laszip::{
+    read_chunk_table, write_chunk_table, LasZipCompressor, LasZipDecompressor, LazItem,
+    LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
+};
 
 pub type Result<T> = std::result::Result<T, LasZipError>;
 
 use las::file::read_vlrs_and_get_laszip_vlr;
 use las::file::QuickHeader;
 use wasm_bindgen::prelude::*;
+use std::io::Seek;
 extern crate console_error_panic_hook;
-
-// #[wasm_bindgen]
-// pub struct WasmVlrHeader {
-//     pub header: QuickHeader,
-//     pub vlr: Option<LazVlr>
-// }
 
 #[wasm_bindgen]
 pub fn get_header(buf: js_sys::Uint8Array)  -> std::result::Result<QuickHeader, JsValue> {
+    // initialize debugging
     console_error_panic_hook::set_once();
+
+    // copy header bytes into wasm memory
     let mut body = vec![0; buf.length() as usize];
     buf.copy_to(&mut body[..]);
+    // cursor to wrap the bytes
     let mut cursor = std::io::Cursor::new(body);
     let hdr = QuickHeader::read_from(&mut cursor).unwrap();
-    // let (header, vlr) = (read_header_and_vlrs(&mut cursor)).unwrap();
-    // let out = WasmVlrHeader {header, vlr};
     Ok(hdr)
 }
-use std::io::Seek;
-
-// #[wasm_bindgen]
-// pub struct WasmDecompressor {
-//     decompressor: las::file::SimpleReader<'static>
-// }
-
-// #[wasm_bindgen]
-// impl WasmDecompressor {
-//     pub fn new(buf: &[u8]) -> WasmDecompressor {
-//         let mut cursor = std::io::Cursor::new(buf);
-//         let mut decompressor = las::file::SimpleReader::new(&mut cursor).unwrap();
-//         WasmDecompressor { decompressor: decompressor }
-//     }
-
-//     // pub fn get(&self) -> i32 {
-//     //     self.decompressor
-//     // }
-
-//     // pub fn set(&mut self, val: i32) {
-//     //     self.decompressor = val;
-//     // }
-// }
 
 #[wasm_bindgen]
-pub struct LasZipDecompressor2 {
+pub struct WasmLasZipDecompressor {
     decompressor: las::laszip::LasZipDecompressor<'static, std::io::Cursor<Vec<u8>>>,
 }
 
-impl LasZipDecompressor2 {
+impl WasmLasZipDecompressor {
     pub fn new(source: Vec<u8>) -> Self {        
         let mut cursor = std::io::Cursor::new(source);
-        //let cursor = source;
+
         let hdr = QuickHeader::read_from(&mut cursor).unwrap();
         cursor.seek(std::io::SeekFrom::Start(hdr.header_size as u64));
         let laz_vlr = read_vlrs_and_get_laszip_vlr(&mut cursor, &hdr);
@@ -211,53 +185,19 @@ impl LasZipDecompressor2 {
         Self {
             decompressor: decomp,
         }
-        // let mut decompressor = LasZipDecompressor::new(&mut cursor, laz_vlr.expect("Compressed data, but no Laszip Vlr found")).unpack();
-    
-        // let gil = Python::acquire_gil();
-        // let py = gil.python();
-        // let vlr = laz::LazVlr::from_buffer(as_bytes(record_data)?).map_err(into_py_err)?;
-        // let source = BufReader::new(PyReadableFileObject::new(py, source)?);
-        // Ok(Self {
-        //     decompressor: laz::LasZipDecompressor::new(source, vlr).map_err(into_py_err)?,
-        // })
     }
 
     pub fn decompress_many(&mut self, out: &mut [u8]) -> std::io::Result<()> {
-        // let slc = as_mut_bytes(dest)?;
         Ok(self.decompressor.decompress_many(out)?)
-        //Ok(());
     }
-
-    // pub fn seek(&mut self, point_idx: u64) -> PyResult<()> {
-    //     self.decompressor.seek(point_idx).map_err(into_py_err)
-    // }
-
-    // pub fn vlr(&self) -> LazVlr {
-    //     return LazVlr {
-    //         vlr: self.decompressor.vlr().clone(),
-    //     };
-    // }
 }
 
 #[wasm_bindgen]
-pub fn init_decompressor(buf: js_sys::Uint8Array)  -> LasZipDecompressor2  {
-    // let mut cursor = std::io::Cursor::new(buf);
-    // let mut reader = las::file::SimpleReader::new(&mut cursor).unwrap();
-    // Ok(WasmDecompressor { decompressor: reader })
-    // let mut cursor = std::io::Cursor::new(buf);
-    // cursor.seek(std::io::SeekFrom::Start(hdr.header_size as u64));
-    // let laz_vlr = read_vlrs_and_get_laszip_vlr(&mut cursor, &hdr);
-    // cursor.seek(std::io::SeekFrom::Start(hdr.offset_to_points as u64));
-    // let mut body = vec![0; buf.length() as usize];
-    // buf.copy_to(&mut body[..]);
-    let mut decompressor = LasZipDecompressor2::new(buf.to_vec());
-    decompressor
-    // WasmDecompressor{decompressor}
+pub fn init_decompressor(buf: js_sys::Uint8Array)  -> WasmLasZipDecompressor  {
+    WasmLasZipDecompressor::new(buf.to_vec())
 }
 
 #[wasm_bindgen]
-pub fn decompress_many(decompressor: &mut LasZipDecompressor2, out: &mut [u8]) {
-    // let slc = as_mut_bytes(dest)?;
+pub fn decompress_many(decompressor: &mut WasmLasZipDecompressor, out: &mut [u8]) {
     decompressor.decompressor.decompress_many(out);
-    //Ok(());
 }
