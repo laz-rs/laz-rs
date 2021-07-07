@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>hello-wasm example</title>
+</head>
+
+<body>
+    <script type="module">
+        var pointFormatReaders = {
+            0: function(dv) {
+                return {
+                    "position": [ dv.getInt32(0, true), dv.getInt32(4, true), dv.getInt32(8, true)],
+                    "intensity": dv.getUint16(12, true),
+                    "classification": dv.getUint8(16, true)
+                };
+            },
+            1: function(dv) {
+                return {
+                    "position": [ dv.getInt32(0, true), dv.getInt32(4, true), dv.getInt32(8, true)],
+                    "intensity": dv.getUint16(12, true),
+                    "classification": dv.getUint8(16, true)
+                };
+            },
+            2: function(dv) {
+                return {
+                    "position": [ dv.getInt32(0, true), dv.getInt32(4, true), dv.getInt32(8, true)],
+                    "intensity": dv.getUint16(12, true),
+                    "classification": dv.getUint8(15, true),
+                    "color": [dv.getUint16(20, true), dv.getUint16(22, true), dv.getUint16(24, true)]
+                };
+            },
+            3: function(dv) {
+                return {
+                    "position": [ dv.getInt32(0, true), dv.getInt32(4, true), dv.getInt32(8, true)],
+                    "intensity": dv.getUint16(12, true),
+                    "classification": dv.getUint8(16, true),
+                    "color": [dv.getUint16(28, true), dv.getUint16(30, true), dv.getUint16(32, true)]
+                };
+            },
+            7: function(dv) {
+                return {
+                    "position": [ dv.getInt32(0, true), dv.getInt32(4, true), dv.getInt32(8, true)],
+                    "intensity": dv.getUint16(12, true),
+                    "classification": dv.getUint8(16, true),
+                    "color": [dv.getUint16(28, true), dv.getUint16(30, true), dv.getUint16(32, true)]
+                };
+            }
+        };
+
+        const file = "../tests/data/point-color.laz";
+        // const lazrs = import("../pkg/laz.js");
+        import init, { get_header, init_decompressor, decompress_many } from "../pkg/laz.js";
+
+        init()
+            .then(() => {
+                fetch(file)
+                    .then(response => {
+                        response.arrayBuffer()
+                            .then((buf) => {
+                                var abInt = new Uint8Array(buf);
+                                var header = get_header(abInt);
+                                console.log(header);
+                                var vlr = init_decompressor(abInt, header);
+                                console.log(vlr);
+
+                                var uncompressed_pointformat = header.point_format_id & 0x3f;
+
+                                var out = new Uint8Array(header.point_size);
+                                for (var i = 0; i < 10; i++) {
+                                    decompress_many(vlr, out);
+                                    console.log(out)
+                                var dv = new DataView(out.buffer);
+                                    console.log(pointFormatReaders[uncompressed_pointformat](dv));
+                                }
+                                // decompress_many(vlr, out);
+                                // console.log(out);
+                                // decompress_many(vlr, out);
+                                // console.log(out);
+                                // decompress_many(vlr, out);
+                                // console.log(out);
+                                // decompress_many(vlr, out);
+                                // console.log(out);
+                            });
+                    });
+            });
+
+
+        // lazrs
+        //     .then((laz) => {
+        //         fetch(file)
+        //             .then(response => {
+        //                 response.arrayBuffer()
+        //                     .then((buf) => {
+        //                         var header = laz.get_header(buf);
+        //                     });
+        //             });
+        //         // let reader = new FileReader();
+
+        //         // reader.readAsArrayBuffer(file);
+
+        //         // reader.onload = function() {
+        //         // console.log(reader.result);
+        //         // };
+
+        //         // reader.onerror = function() {
+        //         // console.log(reader.error);
+        //         // };
+        //         //   laz.greet("WebAssembly")
+        //     })
+        //     .catch(console.error);
+    </script>
+</body>
+
+</html>

@@ -6,9 +6,11 @@
 use crate::las::laszip::{LasZipDecompressor, LazVlr};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{Read, Seek, SeekFrom};
+use wasm_bindgen::prelude::*;
 
 /// LAS header with only the minimum information
 /// to be able to read points contained in a LAS file.
+#[wasm_bindgen]
 #[derive(Debug)]
 pub struct QuickHeader {
     pub major: u8,
