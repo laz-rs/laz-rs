@@ -83,6 +83,28 @@ pub trait RecordDecompressor<R> {
     /// Decompress the next point and pack the result in the `out` slice
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()>;
 
+    #[inline]
+    fn decompress_many(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        for point_buf in out.chunks_exact_mut(self.record_size()) {
+            self.decompress_next(point_buf)?;
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn decompress_until_end_of_file(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        for (i, point) in out.chunks_exact_mut(self.record_size()).enumerate() {
+            if let Err(error) = self.decompress_next(point) {
+                if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                    return Ok(i * self.record_size());
+                } else {
+                    return Err(error.into());
+                }
+            }
+        }
+        Ok(out.len())
+    }
+
     /// Resets the `RecordDecompressor` to its initial state
     fn reset(&mut self);
 

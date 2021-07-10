@@ -425,6 +425,11 @@ impl LazVlr {
     pub fn items_size(&self) -> u64 {
         u64::from(self.items.iter().map(|item| item.size).sum::<u16>())
     }
+
+    /// returns how many bytes a decompressed chunk contains
+    pub(crate) fn num_bytes_in_decompressed_chunk(&self) -> u64 {
+        self.chunk_size as u64 * self.items_size()
+    }
 }
 
 impl Default for LazVlr {
@@ -1345,10 +1350,6 @@ pub struct ParLasZipDecompressor<R> {
     // after copying data from the source, each thread will receive a chunk
     // of this buffer to decompress it
     internal_buffer: Vec<u8>,
-    // We use this buffer to decompress the data from the internal buffer,
-    // then data will be moved around between the 'rest' and this buffer to
-    // give the user the data they asked
-    outernal_buffer: Vec<u8>,
     source: R,
 }
 
@@ -1360,14 +1361,14 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
         let chunk_table = read_chunk_table(&mut source).ok_or(LasZipError::MissingChunkTable)??;
         let start_of_data = source.seek(SeekFrom::Current(0))?;
+        let rest = std::io::Cursor::new(vec![0u8; vlr.num_bytes_in_decompressed_chunk() as usize]);
 
         Ok(Self {
             source,
             vlr,
             chunk_table,
-            rest: std::io::Cursor::<Vec<u8>>::new(vec![]),
+            rest,
             internal_buffer: vec![],
-            outernal_buffer: vec![],
             last_chunk_read: -1,
             start_of_data,
         })
@@ -1386,112 +1387,100 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 
         if num_bytes_in_rest >= out.len() {
             self.rest.read(out)?;
-        } else {
-            let num_bytes_in_chunk =
-                self.vlr.chunk_size() as usize * self.vlr.items_size() as usize;
-            let num_chunks_to_decompress = ((out.len() - num_bytes_in_rest) as f32
-                / num_bytes_in_chunk as f32)
-                .ceil() as usize;
-
-            let start_index = (self.last_chunk_read + 1) as usize;
-            let end_index = start_index + num_chunks_to_decompress;
-            let chunk_sizes =
-                self.chunk_table
-                    .get(start_index..end_index)
-                    .ok_or(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "Not that many points to decompress",
-                    ))?;
-            let bytes_to_read = chunk_sizes.iter().copied().sum::<u64>() as usize;
-
-            self.internal_buffer.resize(bytes_to_read, 0u8);
-            self.outernal_buffer
-                .resize(num_chunks_to_decompress * num_bytes_in_chunk, 0u8);
-            self.source.read(&mut self.internal_buffer)?;
-
-            if end_index < self.chunk_table.len() {
-                par_decompress(
-                    &self.internal_buffer,
-                    &mut self.outernal_buffer,
-                    &self.vlr,
-                    &chunk_sizes,
-                )?;
-            } else {
-                // The last chunk contains a number of points
-                // that is less or equal to the chunk_size, we don't exactly know it.
-                // The strategy is to decompress all chunks but the last in parallel
-                par_decompress(
-                    &self.internal_buffer,
-                    &mut self.outernal_buffer,
-                    &self.vlr,
-                    &chunk_sizes[..chunk_sizes.len() - 1],
-                )?;
-
-                // Then decompress the last chunk separately until a end of file error appears
-                let last_chunk_start = bytes_to_read - (*chunk_sizes.last().unwrap() as usize);
-                let last_chunk_source = io::Cursor::new(&self.internal_buffer[last_chunk_start..]);
-                let num_bytes_decompressed_until_now =
-                    (num_chunks_to_decompress - 1) * num_bytes_in_chunk;
-                let last_chunk_output =
-                    &mut self.outernal_buffer[num_bytes_decompressed_until_now..];
-                debug_assert_eq!(last_chunk_output.len() % point_size, 0);
-
-                let mut decompressor =
-                    record_decompressor_from_laz_items(self.vlr.items(), last_chunk_source)?;
-                let mut num_bytes_in_last_chunk = 0;
-                for point in last_chunk_output.chunks_exact_mut(point_size) {
-                    if let Err(error) = decompressor.decompress_next(point) {
-                        if error.kind() == std::io::ErrorKind::UnexpectedEof {
-                            break;
-                        } else {
-                            return Err(error.into());
-                        }
-                    } else {
-                        num_bytes_in_last_chunk += point_size;
-                    }
-                }
-
-                let num_bytes_to_remove = num_bytes_in_chunk - num_bytes_in_last_chunk;
-                let actual_size = self.outernal_buffer.len() - num_bytes_to_remove;
-                self.outernal_buffer.resize(actual_size, 0u8);
-            }
-
-            if out.len() > self.outernal_buffer.len() + num_bytes_in_rest {
-                // We could truncate the out buffer, and return the number of bytes
-                // or points actually decompressed but,
-                // its easier (and more consistent with the rest of the function)
-                // to return a EOF error.
-                let error = io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "Not that many points to decompress",
-                );
-                return Err(LasZipError::IoError(error));
-            }
-
-            // Copy data from rest + whats needed from the outernal buffer to the user's buffer
-            let num_bytes_not_fitting =
-                (self.outernal_buffer.len() + num_bytes_in_rest) - out.len();
-            self.rest.read(&mut out[..num_bytes_in_rest])?;
-            out[num_bytes_in_rest..].copy_from_slice(
-                &self.outernal_buffer[..self.outernal_buffer.len() - num_bytes_not_fitting],
-            );
-            debug_assert_eq!(
-                self.rest.position() as usize,
-                self.rest.get_ref().len(),
-                "The rest was not consumed"
-            );
-            // Now copy the leftovers to the rest
-            {
-                let rest_vec = self.rest.get_mut();
-                rest_vec.resize(num_bytes_not_fitting, 0u8);
-                rest_vec.copy_from_slice(
-                    &self.outernal_buffer[self.outernal_buffer.len() - num_bytes_not_fitting..],
-                );
-                self.rest.set_position(0);
-            }
-
-            self.last_chunk_read += num_chunks_to_decompress as isize;
+            return Ok(());
         }
+
+        // 1. Copy the data from our rest into the caller's buffer
+        let (out_rest, out_decompress) = out.split_at_mut(num_bytes_in_rest);
+        self.rest.read(out_rest)?;
+
+        // 2. Find out how many chunks we have to decompress
+        // and load their compressed bytes in our internal buffer
+        let num_bytes_in_chunk = self.vlr.num_bytes_in_decompressed_chunk() as usize;
+        let num_chunks_to_decompress =
+            (out_decompress.len() as f32 / num_bytes_in_chunk as f32).ceil() as usize;
+
+        let start_index = (self.last_chunk_read + 1) as usize;
+        let end_index = start_index + num_chunks_to_decompress;
+        let chunk_sizes = self
+            .chunk_table
+            .get(start_index..end_index)
+            .ok_or(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Not that many points to decompress",
+            ))?;
+        let bytes_to_read = chunk_sizes.iter().copied().sum::<u64>() as usize;
+        self.internal_buffer.resize(bytes_to_read, 0u8);
+        self.source.read(&mut self.internal_buffer)?;
+
+        // 3. Decompress, we handle 3 scenarios
+        if (out_decompress.len() % num_bytes_in_chunk) == 0 {
+            par_decompress(
+                &self.internal_buffer,
+                out_decompress,
+                &self.vlr,
+                &chunk_sizes,
+            )?;
+        } else {
+            // Decompress all the chunks but the last one directly into the caller's output.
+            let size_of_all_chunks_but_last = chunk_sizes[..num_chunks_to_decompress - 1]
+                .iter()
+                .sum::<u64>() as usize;
+            let (ai, last_chunk_data) = self.internal_buffer.split_at(size_of_all_chunks_but_last);
+            let (ao, last_output) =
+                out_decompress.split_at_mut(num_bytes_in_chunk * (num_chunks_to_decompress - 1));
+            if end_index < self.chunk_table.len() {
+                // These are to make the borrow checker happy
+                // self is not `Send`.
+                let rest = &mut self.rest;
+                let vlr = &self.vlr;
+                let (res1, res2) = rayon::join(
+                    || -> crate::Result<()> {
+                        par_decompress(ai, ao, &vlr, &chunk_sizes[..num_chunks_to_decompress - 1])
+                    },
+                    || -> crate::Result<()> {
+                        let mut last_src = std::io::Cursor::new(last_chunk_data);
+                        let mut decompressor =
+                            record_decompressor_from_laz_items(&vlr.items, &mut last_src)?;
+                        // Decompress what we can in the caller's buffer
+                        // then, decompress what we did not, into our rest buffer
+                        decompressor.decompress_many(last_output)?;
+                        let bytes_left = num_bytes_in_chunk - last_output.len();
+                        rest.get_mut().resize(bytes_left, 0u8);
+                        decompressor.decompress_many(rest.get_mut())?;
+                        rest.set_position(0);
+                        Ok(())
+                    },
+                );
+                res1?;
+                res2?;
+            } else {
+                let vlr = &self.vlr;
+                let items = &vlr.items;
+                let (res1, res2) = rayon::join(
+                    || -> crate::Result<()> {
+                        par_decompress(ai, ao, vlr, &chunk_sizes[..num_chunks_to_decompress - 1])
+                    },
+                    || -> crate::Result<()> {
+                        // The last chunk contains a number of points
+                        // that is less or equal to the chunk_size, we don't exactly know it.
+                        // Decompress the last chunk separately until an end of file error appears
+                        let last_chunk_source = io::Cursor::new(last_chunk_data);
+                        debug_assert_eq!(last_output.len() % point_size, 0);
+
+                        let mut decompressor =
+                            record_decompressor_from_laz_items(items, last_chunk_source)?;
+                        decompressor.decompress_until_end_of_file(last_output)?;
+
+                        Ok(())
+                    },
+                );
+                res1?;
+                res2?;
+            }
+        }
+
+        self.last_chunk_read += num_chunks_to_decompress as isize;
         Ok(())
     }
 
@@ -1501,13 +1490,13 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         self.rest.set_position(0);
         self.rest.get_mut().clear();
 
-        // Seek to the start of the points chunk
-        // and read the chunk data
         let chunk_of_point = (index / self.vlr.chunk_size as u64) as usize;
         if chunk_of_point >= self.chunk_table.len() {
             let _ = self.source.seek(SeekFrom::End(0))?;
             return Ok(());
         }
+        // Seek to the start of the points chunk
+        // and read the chunk data
         let start_of_chunk_pos =
             self.start_of_data + self.chunk_table[..chunk_of_point].iter().sum::<u64>();
         self.source.seek(SeekFrom::Start(start_of_chunk_pos))?;
@@ -1515,40 +1504,27 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             .resize(self.chunk_table[chunk_of_point] as usize, 0u8);
         self.source.read(&mut self.internal_buffer)?;
 
-        // Now we will decompress the whole chunk,
-        // discarding points before the one we seek to
-        // and storing the other points of the chunk in our 'rest'
-        if self.outernal_buffer.len() < self.vlr.items_size() as usize {
-            self.outernal_buffer.resize(
-                self.vlr.chunk_size as usize * self.vlr.items_size() as usize,
-                0u8,
-            );
-        }
-        let point_buf = &mut self.outernal_buffer[..self.vlr.items_size() as usize];
-        let is_last_chunk = chunk_of_point == self.chunk_table.len() - 1;
-        let pos_in_chunk = index % self.vlr.chunk_size as u64;
-
+        // Completely decompress the chunk
+        self.rest
+            .get_mut()
+            .resize(self.vlr.num_bytes_in_decompressed_chunk() as usize, 0u8);
         let mut decompressor = record_decompressor_from_laz_items(
             self.vlr.items(),
             std::io::Cursor::new(&self.internal_buffer),
         )?;
-        // We don't exactly know how much point the last chunk has
-        for i in 0..self.vlr.chunk_size() {
-            let decompression_result = decompressor.decompress_next(point_buf);
-            if let Err(io_error) = decompression_result {
-                if is_last_chunk && io_error.kind() == std::io::ErrorKind::UnexpectedEof {
-                    // Don't propagate OEF error when trying to seek past the end
-                    // to match `LasZipDecompress`'s seek.
-                    break;
-                } else {
-                    return Err(io_error.into());
-                }
-            } else if i >= pos_in_chunk as u32 {
-                self.rest.write_all(point_buf)?;
-            }
+        let is_last_chunk = chunk_of_point == self.chunk_table.len() - 1;
+        if is_last_chunk {
+            decompressor.decompress_until_end_of_file(self.rest.get_mut())?;
+            // Make the rest appear as fully consumed to
+            // force EOF error on next decompression
+            self.rest.set_position(self.rest.get_ref().len() as u64);
+        } else {
+            decompressor.decompress_many(self.rest.get_mut())?;
+            // This effectively discard points that were
+            // before the one we just seeked to
+            let pos_in_chunk = index % self.vlr.chunk_size as u64;
+            self.rest.set_position(pos_in_chunk * self.vlr.items_size());
         }
-
-        self.rest.set_position(0);
         self.last_chunk_read = chunk_of_point as isize;
         Ok(())
     }
