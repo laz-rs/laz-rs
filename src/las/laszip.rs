@@ -598,6 +598,20 @@ fn read_chunk_table_at_offset<R: Read + Seek>(
     Ok(chunk_sizes)
 }
 
+fn compress_one_chunk<W: Write + Seek + Send>(
+    chunk_data: &[u8],
+    vlr: &LazVlr,
+    mut dest: &mut W,
+) -> std::io::Result<u64> {
+    let start = dest.seek(SeekFrom::Current(0))?;
+    {
+        let mut compressor = record_compressor_from_laz_items(&vlr.items(), &mut dest).unwrap();
+        compressor.compress_many(chunk_data)?;
+    }
+    let end = dest.seek(SeekFrom::Current(0))?;
+    Ok(end - start)
+}
+
 /// Struct that handles the decompression of the points written in a LAZ file
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
@@ -1235,23 +1249,19 @@ pub struct ParLasZipCompressor<W> {
     // They are prepended to the points data passed to the compress_many fn.
     // The rest is compressed when done is called, forming the last chunk
     rest: Vec<u8>,
-    // Because our par_compress function expects a contiguous
-    // slice with the points to be compressed, we need an internal buffer to
-    // copy the rest + the points to be able to call that fn
-    internal_buffer: Vec<u8>,
     dest: W,
 }
 
 #[cfg(feature = "parallel")]
-impl<W: Write + Seek> ParLasZipCompressor<W> {
+impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
     pub fn new(dest: W, vlr: LazVlr) -> crate::Result<Self> {
+        let rest = Vec::<u8>::with_capacity(vlr.num_bytes_in_decompressed_chunk() as usize);
         let mut myself = Self {
             vlr,
             chunk_table: vec![],
             table_offset: 0,
-            rest: vec![],
-            internal_buffer: vec![],
+            rest,
             dest,
         };
         myself.reserve_chunk_table_offset()?;
@@ -1273,33 +1283,46 @@ impl<W: Write + Seek> ParLasZipCompressor<W> {
         debug_assert_eq!(self.rest.len() % point_size, 0);
 
         let chunk_size_in_bytes = self.vlr.chunk_size() as usize * point_size;
+        let mut compressible_buf = points;
 
-        let num_chunk = (self.rest.len() + points.len()) / chunk_size_in_bytes;
-        let num_bytes_not_fitting = (self.rest.len() + points.len()) % chunk_size_in_bytes;
+        if self.rest.len() != 0 {
+            // Try to complete our rest buffer to form a complete chunk
+            let missing_bytes = chunk_size_in_bytes - self.rest.len();
+            let num_bytes_to_copy = missing_bytes.min(points.len());
+            self.rest.extend_from_slice(&points[..num_bytes_to_copy]);
 
-        self.internal_buffer
-            .resize(num_chunk * chunk_size_in_bytes, 0u8);
+            if self.rest.len() < chunk_size_in_bytes {
+                // rest + points did not form a complete chunk,
+                // no need to go further.
+                return Ok(());
+            }
 
-        if num_chunk > 0 {
-            self.internal_buffer[..self.rest.len()].copy_from_slice(&self.rest);
-            self.internal_buffer[self.rest.len()..]
-                .copy_from_slice(&points[..points.len() - num_bytes_not_fitting]);
+            debug_assert_eq!(self.rest.len(), chunk_size_in_bytes);
+            // We have a complete chunk, lets compress it now
+            let chunk_size = compress_one_chunk(&self.rest, &self.vlr, &mut self.dest)?;
+            self.chunk_table.push(chunk_size as usize);
 
-            self.rest.resize(num_bytes_not_fitting, 0u8);
-            self.rest
-                .copy_from_slice(&points[points.len() - num_bytes_not_fitting..]);
-            let chunk_sizes =
-                par_compress(&mut self.dest, &self.internal_buffer, &self.vlr).unwrap();
+            compressible_buf = &compressible_buf[missing_bytes..]
+        }
+        debug_assert_eq!(compressible_buf.len() % point_size, 0);
+
+        // Copy bytes which does not form a complete chunk into our rest.
+        let num_excess_bytes = compressible_buf.len() % chunk_size_in_bytes;
+        let (compressible_buf, excess_bytes) = compressible_buf.split_at(compressible_buf.len() - num_excess_bytes);
+        debug_assert_eq!(excess_bytes.len(), num_excess_bytes);
+        if !excess_bytes.is_empty() {
+            self.rest.extend_from_slice(excess_bytes);
+        }
+
+        if !compressible_buf.is_empty() {
+            let chunk_sizes = par_compress(&mut self.dest, compressible_buf, &self.vlr).unwrap();
             chunk_sizes
                 .iter()
                 .copied()
                 .map(|size| size as usize)
                 .for_each(|size| self.chunk_table.push(size));
-        } else {
-            for b in points {
-                self.rest.push(*b);
-            }
         }
+
         Ok(())
     }
 
@@ -1309,12 +1332,11 @@ impl<W: Write + Seek> ParLasZipCompressor<W> {
     /// - Writes the chunk table
     /// - update the offset to the chunk_table
     pub fn done(&mut self) -> crate::Result<()> {
-        let chunk_sizes = par_compress(&mut self.dest, &self.rest, &self.vlr)?;
-        chunk_sizes
-            .iter()
-            .copied()
-            .map(|size| size as usize)
-            .for_each(|size| self.chunk_table.push(size));
+        if self.rest.len() != 0 {
+            debug_assert!(self.rest.len() <= self.vlr.num_bytes_in_decompressed_chunk() as usize);
+            let last_chunk_size = compress_one_chunk(&self.rest, &self.vlr, &mut self.dest)?;
+            self.chunk_table.push(last_chunk_size as usize);
+        }
         update_chunk_table_offset(&mut self.dest, SeekFrom::Start(self.table_offset))?;
         write_chunk_table(&mut self.dest, &self.chunk_table)?;
         Ok(())

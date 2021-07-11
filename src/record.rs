@@ -486,6 +486,15 @@ pub trait RecordCompressor<W> {
 
     /// Compress the next point
     fn compress_next(&mut self, input: &[u8]) -> std::io::Result<()>;
+
+    #[inline]
+    fn compress_many(&mut self, input: &[u8]) -> std::io::Result<()> {
+        for point_buf in input.chunks_exact(self.record_size()) {
+            self.compress_next(point_buf)?;
+        }
+        Ok(())
+    }
+
     /// Tells the compressor that no more points will be compressed
     fn done(&mut self) -> std::io::Result<()>;
     /// Resets the compressor to its initial state
