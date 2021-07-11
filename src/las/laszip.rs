@@ -1308,7 +1308,8 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
 
         // Copy bytes which does not form a complete chunk into our rest.
         let num_excess_bytes = compressible_buf.len() % chunk_size_in_bytes;
-        let (compressible_buf, excess_bytes) = compressible_buf.split_at(compressible_buf.len() - num_excess_bytes);
+        let (compressible_buf, excess_bytes) =
+            compressible_buf.split_at(compressible_buf.len() - num_excess_bytes);
         debug_assert_eq!(excess_bytes.len(), num_excess_bytes);
         if !excess_bytes.is_empty() {
             self.rest.extend_from_slice(excess_bytes);
@@ -1368,9 +1369,12 @@ pub struct ParLasZipDecompressor<R> {
     start_of_data: u64,
     // Same idea as in ParLasZipCompressor
     rest: std::io::Cursor<Vec<u8>>,
-    // internal_buffer is used to hold the chunks to be decompressed
-    // after copying data from the source, each thread will receive a chunk
-    // of this buffer to decompress it
+    // `internal_buffer` is used to hold the chunks to be decompressed
+    // after copying them from the source.
+    // Each thread will receive a chunk of this buffer to decompress it.
+    // It makes the decompression io-free, which means no performance penalty.
+    // And it is ok to have such an internal buffer as
+    // the compressed data is much much smaller that uncompressed data.
     internal_buffer: Vec<u8>,
     source: R,
 }
@@ -1383,7 +1387,8 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
         let chunk_table = read_chunk_table(&mut source).ok_or(LasZipError::MissingChunkTable)??;
         let start_of_data = source.seek(SeekFrom::Current(0))?;
-        let rest = std::io::Cursor::new(vec![0u8; vlr.num_bytes_in_decompressed_chunk() as usize]);
+        let vec = Vec::<u8>::with_capacity(vlr.num_bytes_in_decompressed_chunk() as usize);
+        let rest = std::io::Cursor::new(vec);
 
         Ok(Self {
             source,
@@ -1407,14 +1412,22 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         let num_bytes_in_rest = self.rest.get_ref().len() - self.rest.position() as usize;
         debug_assert!(num_bytes_in_rest % point_size == 0);
 
-        if num_bytes_in_rest >= out.len() {
-            self.rest.read(out)?;
-            return Ok(());
-        }
+        let (out_rest, out_decompress) = if num_bytes_in_rest >= out.len() {
+            (out, &mut [] as &mut [u8])
+        } else {
+            out.split_at_mut(num_bytes_in_rest)
+        };
 
         // 1. Copy the data from our rest into the caller's buffer
-        let (out_rest, out_decompress) = out.split_at_mut(num_bytes_in_rest);
-        self.rest.read(out_rest)?;
+        if !out_rest.is_empty() {
+            self.rest.read(out_rest)?;
+            self.rest.get_mut().clear();
+            self.rest.set_position(0);
+        }
+
+        if out_decompress.is_empty() {
+            return Ok(());
+        }
 
         // 2. Find out how many chunks we have to decompress
         // and load their compressed bytes in our internal buffer
@@ -1431,7 +1444,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 io::ErrorKind::UnexpectedEof,
                 "Not that many points to decompress",
             ))?;
-        let bytes_to_read = chunk_sizes.iter().copied().sum::<u64>() as usize;
+        let bytes_to_read = chunk_sizes.iter().sum::<u64>() as usize;
         self.internal_buffer.resize(bytes_to_read, 0u8);
         self.source.read(&mut self.internal_buffer)?;
 
@@ -1445,11 +1458,11 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             )?;
         } else {
             // Decompress all the chunks but the last one directly into the caller's output.
-            let size_of_all_chunks_but_last = chunk_sizes[..num_chunks_to_decompress - 1]
-                .iter()
-                .sum::<u64>() as usize;
-            let (ai, last_chunk_data) = self.internal_buffer.split_at(size_of_all_chunks_but_last);
-            let (ao, last_output) =
+            let size_of_all_chunks_but_last =
+                bytes_to_read - chunk_sizes.last().copied().unwrap() as usize;
+            let (head_chunks, tail_chunk) =
+                self.internal_buffer.split_at(size_of_all_chunks_but_last);
+            let (head_output, tail_output) =
                 out_decompress.split_at_mut(num_bytes_in_chunk * (num_chunks_to_decompress - 1));
             if end_index < self.chunk_table.len() {
                 // These are to make the borrow checker happy
@@ -1458,16 +1471,21 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 let vlr = &self.vlr;
                 let (res1, res2) = rayon::join(
                     || -> crate::Result<()> {
-                        par_decompress(ai, ao, &vlr, &chunk_sizes[..num_chunks_to_decompress - 1])
+                        par_decompress(
+                            head_chunks,
+                            head_output,
+                            &vlr,
+                            &chunk_sizes[..num_chunks_to_decompress - 1],
+                        )
                     },
                     || -> crate::Result<()> {
-                        let mut last_src = std::io::Cursor::new(last_chunk_data);
+                        let mut last_src = std::io::Cursor::new(tail_chunk);
                         let mut decompressor =
                             record_decompressor_from_laz_items(&vlr.items, &mut last_src)?;
                         // Decompress what we can in the caller's buffer
                         // then, decompress what we did not, into our rest buffer
-                        decompressor.decompress_many(last_output)?;
-                        let bytes_left = num_bytes_in_chunk - last_output.len();
+                        decompressor.decompress_many(tail_output)?;
+                        let bytes_left = num_bytes_in_chunk - tail_output.len();
                         rest.get_mut().resize(bytes_left, 0u8);
                         decompressor.decompress_many(rest.get_mut())?;
                         rest.set_position(0);
@@ -1481,18 +1499,23 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 let items = &vlr.items;
                 let (res1, res2) = rayon::join(
                     || -> crate::Result<()> {
-                        par_decompress(ai, ao, vlr, &chunk_sizes[..num_chunks_to_decompress - 1])
+                        par_decompress(
+                            head_chunks,
+                            head_output,
+                            vlr,
+                            &chunk_sizes[..num_chunks_to_decompress - 1],
+                        )
                     },
                     || -> crate::Result<()> {
                         // The last chunk contains a number of points
                         // that is less or equal to the chunk_size, we don't exactly know it.
                         // Decompress the last chunk separately until an end of file error appears
-                        let last_chunk_source = io::Cursor::new(last_chunk_data);
-                        debug_assert_eq!(last_output.len() % point_size, 0);
+                        let last_chunk_source = io::Cursor::new(tail_chunk);
+                        debug_assert_eq!(tail_output.len() % point_size, 0);
 
                         let mut decompressor =
                             record_decompressor_from_laz_items(items, last_chunk_source)?;
-                        decompressor.decompress_until_end_of_file(last_output)?;
+                        decompressor.decompress_until_end_of_file(tail_output)?;
 
                         Ok(())
                     },
