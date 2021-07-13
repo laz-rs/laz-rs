@@ -21,7 +21,6 @@ use crate::record::{
     LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor,
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
-use std::io;
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
@@ -427,6 +426,7 @@ impl LazVlr {
     }
 
     /// returns how many bytes a decompressed chunk contains
+    #[cfg(feature = "parallel")]
     pub(crate) fn num_bytes_in_decompressed_chunk(&self) -> u64 {
         self.chunk_size as u64 * self.items_size()
     }
@@ -598,6 +598,7 @@ fn read_chunk_table_at_offset<R: Read + Seek>(
     Ok(chunk_sizes)
 }
 
+#[cfg(feature = "parallel")]
 fn compress_one_chunk<W: Write + Seek + Send>(
     chunk_data: &[u8],
     vlr: &LazVlr,
@@ -607,6 +608,7 @@ fn compress_one_chunk<W: Write + Seek + Send>(
     {
         let mut compressor = record_compressor_from_laz_items(&vlr.items(), &mut dest).unwrap();
         compressor.compress_many(chunk_data)?;
+        compressor.done()?;
     }
     let end = dest.seek(SeekFrom::Current(0))?;
     Ok(end - start)
@@ -1283,13 +1285,14 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
         debug_assert_eq!(self.rest.len() % point_size, 0);
 
         let chunk_size_in_bytes = self.vlr.chunk_size() as usize * point_size;
+        debug_assert!(self.rest.len() < chunk_size_in_bytes);
         let mut compressible_buf = points;
 
         if self.rest.len() != 0 {
             // Try to complete our rest buffer to form a complete chunk
             let missing_bytes = chunk_size_in_bytes - self.rest.len();
-            let num_bytes_to_copy = missing_bytes.min(points.len());
-            self.rest.extend_from_slice(&points[..num_bytes_to_copy]);
+            let num_bytes_to_copy = missing_bytes.min(compressible_buf.len());
+            self.rest.extend_from_slice(&compressible_buf[..num_bytes_to_copy]);
 
             if self.rest.len() < chunk_size_in_bytes {
                 // rest + points did not form a complete chunk,
@@ -1301,6 +1304,7 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
             // We have a complete chunk, lets compress it now
             let chunk_size = compress_one_chunk(&self.rest, &self.vlr, &mut self.dest)?;
             self.chunk_table.push(chunk_size as usize);
+            self.rest.clear();
 
             compressible_buf = &compressible_buf[missing_bytes..]
         }
@@ -1440,8 +1444,8 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         let chunk_sizes = self
             .chunk_table
             .get(start_index..end_index)
-            .ok_or(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
                 "Not that many points to decompress",
             ))?;
         let bytes_to_read = chunk_sizes.iter().sum::<u64>() as usize;
@@ -1510,7 +1514,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                         // The last chunk contains a number of points
                         // that is less or equal to the chunk_size, we don't exactly know it.
                         // Decompress the last chunk separately until an end of file error appears
-                        let last_chunk_source = io::Cursor::new(tail_chunk);
+                        let last_chunk_source = std::io::Cursor::new(tail_chunk);
                         debug_assert_eq!(tail_output.len() % point_size, 0);
 
                         let mut decompressor =
