@@ -1292,7 +1292,8 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
             // Try to complete our rest buffer to form a complete chunk
             let missing_bytes = chunk_size_in_bytes - self.rest.len();
             let num_bytes_to_copy = missing_bytes.min(compressible_buf.len());
-            self.rest.extend_from_slice(&compressible_buf[..num_bytes_to_copy]);
+            self.rest
+                .extend_from_slice(&compressible_buf[..num_bytes_to_copy]);
 
             if self.rest.len() < chunk_size_in_bytes {
                 // rest + points did not form a complete chunk,
@@ -1441,13 +1442,13 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 
         let start_index = (self.last_chunk_read + 1) as usize;
         let end_index = start_index + num_chunks_to_decompress;
-        let chunk_sizes = self
-            .chunk_table
-            .get(start_index..end_index)
-            .ok_or(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "Not that many points to decompress",
-            ))?;
+        let chunk_sizes =
+            self.chunk_table
+                .get(start_index..end_index)
+                .ok_or(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Not that many points to decompress",
+                ))?;
         let bytes_to_read = chunk_sizes.iter().sum::<u64>() as usize;
         self.internal_buffer.resize(bytes_to_read, 0u8);
         self.source.read(&mut self.internal_buffer)?;

@@ -26,18 +26,21 @@ pub fn check_decompression<R1: Read + Seek + Send, R2: Read + Seek + Send>(
 
 pub struct LasChecker<'a> {
     reader: crate::las::file::SimpleReader<'a>,
+    point_index: usize,
 }
 
 impl<'a> LasChecker<'a> {
     pub fn new<R: Read + Seek + Send + 'a>(src: R) -> crate::Result<Self> {
         Ok(Self {
             reader: crate::las::file::SimpleReader::new(src)?,
+            point_index: 0,
         })
     }
 
     pub fn from_path(las_path: &str) -> crate::Result<Self> {
         Ok(Self {
             reader: crate::las::file::SimpleReader::new(BufReader::new(File::open(las_path)?))?,
+            point_index: 0,
         })
     }
 
@@ -45,7 +48,14 @@ impl<'a> LasChecker<'a> {
         assert_eq!(points.len() % self.reader.header.point_size as usize, 0);
 
         for point in points.chunks_exact(self.reader.header.point_size as usize) {
-            assert_eq!(point, self.reader.read_next().unwrap().unwrap());
+            let expected_point = self.reader.read_next().unwrap().unwrap();
+            if expected_point != point {
+                panic!(
+                    "Points {} / {}  are not equal",
+                    self.point_index, self.reader.header.num_points
+                )
+            }
+            self.point_index += 1;
         }
     }
 }
