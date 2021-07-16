@@ -1575,19 +1575,25 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             self.vlr.items(),
             std::io::Cursor::new(&self.internal_buffer),
         )?;
-        let is_last_chunk = chunk_of_point == self.chunk_table.len() - 1;
+        let is_last_chunk = chunk_of_point == (self.chunk_table.len() - 1);
         if is_last_chunk {
-            decompressor.decompress_until_end_of_file(self.rest.get_mut())?;
-            // Make the rest appear as fully consumed to
-            // force EOF error on next decompression
-            self.rest.set_position(self.rest.get_ref().len() as u64);
+            let num_bytes_decompressed =
+                decompressor.decompress_until_end_of_file(self.rest.get_mut())?;
+            let num_points_in_last_chunk = num_bytes_decompressed / self.vlr.items_size() as usize;
+            let pos_in_chunk = index % self.vlr.chunk_size as u64;
+            if pos_in_chunk as usize >= num_points_in_last_chunk as usize {
+                // Make the rest appear as fully consumed to
+                // force EOF error on next decompression
+                self.rest.set_position(self.rest.get_ref().len() as u64);
+                return Ok(());
+            }
         } else {
             decompressor.decompress_many(self.rest.get_mut())?;
-            // This effectively discard points that were
-            // before the one we just seeked to
-            let pos_in_chunk = index % self.vlr.chunk_size as u64;
-            self.rest.set_position(pos_in_chunk * self.vlr.items_size());
         }
+        // This effectively discard points that were
+        // before the one we just seeked to
+        let pos_in_chunk = index % self.vlr.chunk_size as u64;
+        self.rest.set_position(pos_in_chunk * self.vlr.items_size());
         self.last_chunk_read = chunk_of_point as isize;
         Ok(())
     }
