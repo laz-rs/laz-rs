@@ -1426,8 +1426,6 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         // 1. Copy the data from our rest into the caller's buffer
         if !out_rest.is_empty() {
             self.rest.read(out_rest)?;
-            self.rest.get_mut().clear();
-            self.rest.set_position(0);
         }
 
         if out_decompress.is_empty() {
@@ -1462,6 +1460,11 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 &chunk_sizes,
             )?;
         } else {
+            debug_assert_eq!(
+                self.rest.position() as usize,
+                self.rest.get_mut().len(),
+                "Rest buffer not completely consumed"
+            );
             // Decompress all the chunks but the last one directly into the caller's output.
             let size_of_all_chunks_but_last =
                 bytes_to_read - chunk_sizes.last().copied().unwrap() as usize;
@@ -1469,65 +1472,48 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 self.internal_buffer.split_at(size_of_all_chunks_but_last);
             let (head_output, tail_output) =
                 out_decompress.split_at_mut(num_bytes_in_chunk * (num_chunks_to_decompress - 1));
-            if end_index < self.chunk_table.len() {
-                // These are to make the borrow checker happy
-                // self is not `Send`.
-                let rest = &mut self.rest;
-                let vlr = &self.vlr;
-                let (res1, res2) = rayon::join(
-                    || -> crate::Result<()> {
-                        par_decompress(
-                            head_chunks,
-                            head_output,
-                            &vlr,
-                            &chunk_sizes[..num_chunks_to_decompress - 1],
-                        )
-                    },
-                    || -> crate::Result<()> {
-                        let mut last_src = std::io::Cursor::new(tail_chunk);
-                        let mut decompressor =
-                            record_decompressor_from_laz_items(&vlr.items, &mut last_src)?;
-                        // Decompress what we can in the caller's buffer
-                        // then, decompress what we did not, into our rest buffer
-                        decompressor.decompress_many(tail_output)?;
+            // These are to make the borrow checker happy
+            // self is not `Send`.
+            let rest = &mut self.rest;
+            let vlr = &self.vlr;
+            let chunk_table_len = self.chunk_table.len();
+            let (res1, res2) = rayon::join(
+                || -> crate::Result<()> {
+                    par_decompress(
+                        head_chunks,
+                        head_output,
+                        &vlr,
+                        &chunk_sizes[..num_chunks_to_decompress - 1],
+                    )
+                },
+                || -> crate::Result<()> {
+                    rest.get_mut().clear();
+                    rest.set_position(0);
+                    let mut last_src = std::io::Cursor::new(tail_chunk);
+                    let mut decompressor =
+                        record_decompressor_from_laz_items(&vlr.items, &mut last_src)?;
+                    // Decompress what we can in the caller's buffer
+                    // then, decompress what we did not, into our rest buffer
+                    println!("Decompressing {} bytes into tail output", tail_output.len());
+                    decompressor.decompress_many(tail_output)?;
+                    if end_index < chunk_table_len {
                         let bytes_left = num_bytes_in_chunk - tail_output.len();
                         rest.get_mut().resize(bytes_left, 0u8);
                         decompressor.decompress_many(rest.get_mut())?;
-                        rest.set_position(0);
-                        Ok(())
-                    },
-                );
-                res1?;
-                res2?;
-            } else {
-                let vlr = &self.vlr;
-                let items = &vlr.items;
-                let (res1, res2) = rayon::join(
-                    || -> crate::Result<()> {
-                        par_decompress(
-                            head_chunks,
-                            head_output,
-                            vlr,
-                            &chunk_sizes[..num_chunks_to_decompress - 1],
-                        )
-                    },
-                    || -> crate::Result<()> {
-                        // The last chunk contains a number of points
-                        // that is less or equal to the chunk_size, we don't exactly know it.
-                        // Decompress the last chunk separately until an end of file error appears
-                        let last_chunk_source = std::io::Cursor::new(tail_chunk);
-                        debug_assert_eq!(tail_output.len() % point_size, 0);
-
-                        let mut decompressor =
-                            record_decompressor_from_laz_items(items, last_chunk_source)?;
-                        decompressor.decompress_until_end_of_file(tail_output)?;
-
-                        Ok(())
-                    },
-                );
-                res1?;
-                res2?;
-            }
+                    } else {
+                        rest.get_mut()
+                            .resize(vlr.num_bytes_in_decompressed_chunk() as usize, 0u8);
+                        let num_bytes_decompressed =
+                            decompressor.decompress_until_end_of_file(rest.get_mut())?;
+                        rest.get_mut().resize(num_bytes_decompressed, 0u8);
+                        println!("Decompressed {} bytes rest", num_bytes_decompressed);
+                    }
+                    rest.set_position(0);
+                    Ok(())
+                },
+            );
+            res1?;
+            res2?;
         }
 
         self.last_chunk_read += num_chunks_to_decompress as isize;
