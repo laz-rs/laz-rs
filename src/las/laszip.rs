@@ -843,11 +843,16 @@ fn update_chunk_table_offset<W: Write + Seek>(
 /// Struct that handles the compression of the points into the given destination
 pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
     vlr: LazVlr,
+    /// compressor used for the current chunk
     record_compressor: Box<dyn RecordCompressor<W> + Send + 'a>,
-    first_point: bool,
+    /// How many points in the current chunk
     chunk_point_written: u32,
+    /// Size in bytes of each chunks written so far
     chunk_sizes: Vec<usize>,
-    last_chunk_pos: u64,
+    /// Position (offset from beginning)
+    /// where the current chunk started
+    chunk_start_pos: u64,
+    /// Position where LasZipCompressor started
     start_pos: u64,
 }
 
@@ -858,10 +863,9 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
         Ok(Self {
             vlr,
             record_compressor,
-            first_point: true,
             chunk_point_written: 0,
             chunk_sizes: vec![],
-            last_chunk_pos: 0,
+            chunk_start_pos: 0,
             start_pos: 0,
         })
     }
@@ -876,6 +880,19 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
         Self::new(output, vlr)
     }
 
+    /// Reserves and prepares the offset to chunk table that will be
+    /// updated when [done] is called.
+    ///
+    /// This method will automatically be called on the first point being compressed,
+    /// but for some scenarios, manually calling this might be useful.
+    pub fn reserve_offset_to_chunk_table(&mut self) -> std::io::Result<()> {
+        let stream = self.record_compressor.get_mut();
+        self.start_pos = stream.seek(SeekFrom::Current(0))?;
+        stream.write_i64::<LittleEndian>(-1)?;
+        self.chunk_start_pos = self.start_pos + std::mem::size_of::<i64>() as u64;
+        Ok(())
+    }
+
     /// Compress the point and write the compressed data to the destination given when
     /// the compressor was constructed
     ///
@@ -885,12 +902,8 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// - The fields/dimensions are in the same order than the LAS spec says
     /// - The data in the buffer is in Little Endian order
     pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
-        if self.first_point {
-            let stream = self.record_compressor.get_mut();
-            self.start_pos = stream.seek(SeekFrom::Current(0))?;
-            stream.write_i64::<LittleEndian>(-1)?;
-            self.last_chunk_pos = self.start_pos + std::mem::size_of::<i64>() as u64;
-            self.first_point = false;
+        if self.chunk_start_pos == 0 {
+            self.reserve_offset_to_chunk_table()?;
         }
 
         if self.chunk_point_written == self.vlr.chunk_size {
@@ -952,8 +965,8 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
             .get_mut()
             .seek(SeekFrom::Current(0))?;
         self.chunk_sizes
-            .push((current_pos - self.last_chunk_pos) as usize);
-        self.last_chunk_pos = current_pos;
+            .push((current_pos - self.chunk_start_pos) as usize);
+        self.chunk_start_pos = current_pos;
         Ok(())
     }
 }
@@ -1244,8 +1257,11 @@ pub fn par_decompress_all_from_file_greedy(
 #[cfg(feature = "parallel")]
 pub struct ParLasZipCompressor<W> {
     vlr: LazVlr,
+    /// Size in bytes of each chunks written so far
     chunk_table: Vec<usize>,
-    table_offset: u64,
+    /// offset from beginning of the file to where the
+    /// offset to chunk table will be written
+    table_offset: i64,
     // Stores uncompressed points from the last call to compress_many
     // that did not allow to make a full chunk of the requested vlr.chunk_size
     // They are prepended to the points data passed to the compress_many fn.
@@ -1259,21 +1275,24 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
     pub fn new(dest: W, vlr: LazVlr) -> crate::Result<Self> {
         let rest = Vec::<u8>::with_capacity(vlr.num_bytes_in_decompressed_chunk() as usize);
-        let mut myself = Self {
+        Ok(Self {
             vlr,
             chunk_table: vec![],
-            table_offset: 0,
+            table_offset: -1,
             rest,
             dest,
-        };
-        myself.reserve_chunk_table_offset()?;
-        Ok(myself)
+        })
     }
 
-    fn reserve_chunk_table_offset(&mut self) -> std::io::Result<()> {
-        self.table_offset = self.dest.seek(SeekFrom::Current(0))?;
-        self.dest
-            .write_i64::<LittleEndian>(self.table_offset as i64)
+    /// Reserves and prepares the offset to chunk table that will be
+    /// updated when [done] is called.
+    ///
+    /// This method will automatically be called on the first point(s) being compressed,
+    /// but for some scenarios, manually calling this might be useful.
+    pub fn reserve_offset_to_chunk_table(&mut self) -> std::io::Result<()> {
+        println!("Reserving offset");
+        self.table_offset = self.dest.seek(SeekFrom::Current(0))? as i64;
+        self.dest.write_i64::<LittleEndian>(self.table_offset)
     }
 
     /// Compresses many points using multiple threads
@@ -1281,6 +1300,9 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// For this function to actually use multiple threads, the `points`
     /// buffer shall hold more points that the vlr's `chunk_size`.
     pub fn compress_many(&mut self, points: &[u8]) -> std::io::Result<()> {
+        if self.table_offset == -1 {
+            self.reserve_offset_to_chunk_table()?;
+        }
         let point_size = self.vlr.items_size() as usize;
         debug_assert_eq!(self.rest.len() % point_size, 0);
 
@@ -1343,7 +1365,12 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
             let last_chunk_size = compress_one_chunk(&self.rest, &self.vlr, &mut self.dest)?;
             self.chunk_table.push(last_chunk_size as usize);
         }
-        update_chunk_table_offset(&mut self.dest, SeekFrom::Start(self.table_offset))?;
+
+        if self.table_offset == -1 && self.chunk_table.is_empty() {
+            // No call to compress_many was made
+            self.reserve_offset_to_chunk_table()?;
+        }
+        update_chunk_table_offset(&mut self.dest, SeekFrom::Start(self.table_offset as u64))?;
         write_chunk_table(&mut self.dest, &self.chunk_table)?;
         Ok(())
     }
@@ -1581,6 +1608,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn test_create_laz_items() {
@@ -1591,5 +1619,86 @@ mod test {
                 .len(),
             1
         );
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_table_offset_one_point() {
+        // Test that if we compress just one point using the Parallel compressor
+        // the chunk table offset is correctly reserved
+        let vlr = super::LazVlr::from_laz_items(
+            LazItemRecordBuilder::new()
+                .add_item(LazItemType::Point10)
+                .build(),
+        );
+
+        let point = vec![0u8; vlr.items_size() as usize];
+        let mut compressor =
+            ParLasZipCompressor::new(std::io::Cursor::new(Vec::<u8>::new()), vlr).unwrap();
+        assert_eq!(compressor.table_offset, -1);
+        compressor.compress_many(&point).unwrap();
+        assert_eq!(compressor.table_offset, 0);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_table_offset_complete_chunk() {
+        // Test that if we compress at least a chunk using the Parallel compressor
+        // the chunk table offset is correctly reserved
+        let vlr = super::LazVlr::from_laz_items(
+            LazItemRecordBuilder::new()
+                .add_item(LazItemType::Point10)
+                .build(),
+        );
+
+        let points = vec![0u8; vlr.num_bytes_in_decompressed_chunk() as usize];
+        let mut compressor =
+            ParLasZipCompressor::new(std::io::Cursor::new(Vec::<u8>::new()), vlr).unwrap();
+        assert_eq!(compressor.table_offset, -1);
+        compressor.compress_many(&points).unwrap();
+        assert_eq!(compressor.table_offset, 0);
+    }
+
+    macro_rules! test_manual_reserve_on {
+        ($CompressorType:ty) => {
+            // Check that by manually calling reserve, the result is the same than without calling it
+            let vlr = super::LazVlr::from_laz_items(
+                LazItemRecordBuilder::new()
+                    .add_item(LazItemType::Point10)
+                    .build(),
+            );
+
+            let point = vec![0u8; vlr.items_size() as usize];
+
+            let data1 = {
+                let mut compressor =
+                    <$CompressorType>::new(std::io::Cursor::new(Vec::<u8>::new()), vlr.clone()).unwrap();
+                compressor.compress_many(&point).unwrap();
+                compressor.done().unwrap();
+                compressor.into_inner().into_inner()
+            };
+
+            let data2 = {
+                let mut compressor =
+                    <$CompressorType>::new(std::io::Cursor::new(Vec::<u8>::new()), vlr.clone()).unwrap();
+                compressor.reserve_offset_to_chunk_table().unwrap();
+                compressor.compress_many(&point).unwrap();
+                compressor.done().unwrap();
+                compressor.into_inner().into_inner()
+            };
+
+            assert_eq!(data1, data2);
+        };
+    }
+
+    #[test]
+    fn test_manual_reserve() {
+        test_manual_reserve_on!(LasZipCompressor<Cursor<Vec<u8>>>);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_manual_reserve_par() {
+        test_manual_reserve_on!(ParLasZipCompressor<Cursor<Vec<u8>>>);
     }
 }
