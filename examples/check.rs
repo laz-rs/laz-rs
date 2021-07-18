@@ -173,7 +173,9 @@ where
         compressor.done()?;
     }
 
+
     compressed_data.set_position(0);
+    progress.set_position(0);
     progress.set_message("[3/3] Checking decompression");
     progress.tick();
     las_file.seek(SeekFrom::Start(las_header.offset_to_points as u64))?;
@@ -230,12 +232,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     global_bar.set_style(progress_style());
     for (las_path, laz_path) in las_paths.into_iter().zip(laz_paths.into_iter()) {
         global_bar.set_message(format!("Checking {}", &las_path));
-        // TODO impl Error for LasZipError
-
         run_check_2::<DefaultDecompressorCreator, DefaultDecompressorCreator, DefaultCompressorCreator>(
             &las_path, &laz_path, &args,
-        )
-        .unwrap();
+        )?;
         global_bar.inc(1);
         global_bar.println(format!("{}: Ok", &las_path))
     }
