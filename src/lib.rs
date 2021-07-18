@@ -136,7 +136,7 @@ pub use errors::LasZipError;
 pub use las::laszip::{compress_buffer, decompress_buffer};
 
 #[cfg(feature = "parallel")]
-pub use las::laszip::{
+pub use las::laszip::parallel::{
     par_compress_buffer, par_decompress_buffer, ParLasZipCompressor, ParLasZipDecompressor,
 };
 

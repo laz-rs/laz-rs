@@ -8,7 +8,7 @@ use laz::checking::LasChecker;
 #[cfg(feature = "parallel")]
 use laz::las::file::read_header_and_vlrs;
 #[cfg(feature = "parallel")]
-use laz::las::laszip::par_decompress_all_from_file_greedy;
+use laz::las::laszip::parallel::par_decompress_all_from_file_greedy;
 
 use std::fs::File;
 

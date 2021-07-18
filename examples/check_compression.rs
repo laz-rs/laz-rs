@@ -5,13 +5,10 @@ use std::io::{BufReader, Cursor, Read, SeekFrom};
 use std::path::Path;
 
 use laz::las::file::QuickHeader;
-use laz::las::laszip::{LasZipDecompressor, LazItemRecordBuilder};
-
-#[cfg(not(feature = "parallel"))]
-use laz::las::laszip::LasZipCompressor;
+use laz::{LasZipCompressor, LasZipDecompressor, LazItemRecordBuilder};
 
 #[cfg(feature = "parallel")]
-use laz::las::laszip::{par_compress_buffer, LazVlr, ParLasZipCompressor};
+use laz::{par_compress_buffer, LazVlr, ParLasZipCompressor};
 
 #[cfg(feature = "parallel")]
 fn par_check_compression<T: AsRef<Path>>(las_path: T, greedy: bool) {

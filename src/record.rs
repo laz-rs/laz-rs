@@ -8,7 +8,8 @@ use crate::byteslice::{ChunksIrregular, ChunksIrregularMut};
 use crate::decoders;
 use crate::encoders;
 use crate::las;
-use crate::las::laszip::{LasZipError, LazItem, LazItemType};
+use crate::las::laszip::{LazItem, LazItemType};
+use crate::LasZipError;
 
 /***************************************************************************************************
                     Decompression Related Traits
