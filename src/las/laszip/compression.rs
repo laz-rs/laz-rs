@@ -135,6 +135,18 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     }
 }
 
+impl<'a, W: Write + Seek + Send + 'a> super::LazCompressor for LasZipCompressor<'a, W> {
+    fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
+        self.compress_many(points)?;
+        Ok(())
+    }
+
+    fn done(&mut self) -> crate::Result<()> {
+        self.done()?;
+        Ok(())
+    }
+}
+
 /// Compresses all points
 ///
 /// The data written will be a standard LAZ file data

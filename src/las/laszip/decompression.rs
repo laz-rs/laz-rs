@@ -183,6 +183,18 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     }
 }
 
+impl<'a, R: Read + Seek + Send + 'a> super::LazDecompressor for LasZipDecompressor<'a, R> {
+    fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()> {
+        self.decompress_many(points)?;
+        Ok(())
+    }
+
+    fn seek(&mut self, index: u64) -> crate::Result<()> {
+        self.seek(index)?;
+        Ok(())
+    }
+}
+
 /// Decompresses all points from the buffer
 ///
 /// The `compressed_points_data` slice must contain all the laszip data

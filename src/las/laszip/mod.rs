@@ -21,6 +21,18 @@ pub use decompression::{decompress_buffer, LasZipDecompressor};
 
 pub use details::{read_chunk_table, write_chunk_table};
 
+pub trait LazDecompressor {
+    fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()>;
+
+    fn seek(&mut self, index: u64) -> crate::Result<()>;
+}
+
+pub trait LazCompressor {
+    fn compress_many(&mut self, points: &[u8]) -> crate::Result<()>;
+
+    fn done(&mut self) -> crate::Result<()>;
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

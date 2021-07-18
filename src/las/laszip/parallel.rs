@@ -168,6 +168,19 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
         &self.dest
     }
 }
+
+impl<W: Write + Seek + Send> super::LazCompressor for ParLasZipCompressor<W> {
+    fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
+        self.compress_many(points)?;
+        Ok(())
+    }
+
+    fn done(&mut self) -> crate::Result<()> {
+        self.done()?;
+        Ok(())
+    }
+}
+
 #[cfg(feature = "parallel")]
 /// Laszip decompressor, that can decompress data using multiple threads
 pub struct ParLasZipDecompressor<R> {
@@ -385,6 +398,15 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     }
 }
 
+impl<R: Read + Seek> super::LazDecompressor for ParLasZipDecompressor<R> {
+    fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()> {
+        self.decompress_many(points)
+    }
+
+    fn seek(&mut self, index: u64) -> crate::Result<()> {
+        self.seek(index)
+    }
+}
 /// Compresses all points in parallel
 ///
 /// Just like [`compress_buffer`] but the compression is done in multiple threads
