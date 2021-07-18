@@ -1290,7 +1290,6 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// This method will automatically be called on the first point(s) being compressed,
     /// but for some scenarios, manually calling this might be useful.
     pub fn reserve_offset_to_chunk_table(&mut self) -> std::io::Result<()> {
-        println!("Reserving offset");
         self.table_offset = self.dest.seek(SeekFrom::Current(0))? as i64;
         self.dest.write_i64::<LittleEndian>(self.table_offset)
     }
@@ -1521,7 +1520,6 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                         record_decompressor_from_laz_items(&vlr.items, &mut last_src)?;
                     // Decompress what we can in the caller's buffer
                     // then, decompress what we did not, into our rest buffer
-                    println!("Decompressing {} bytes into tail output", tail_output.len());
                     decompressor.decompress_many(tail_output)?;
                     if end_index < chunk_table_len {
                         let bytes_left = num_bytes_in_chunk - tail_output.len();
@@ -1533,7 +1531,6 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                         let num_bytes_decompressed =
                             decompressor.decompress_until_end_of_file(rest.get_mut())?;
                         rest.get_mut().resize(num_bytes_decompressed, 0u8);
-                        println!("Decompressed {} bytes rest", num_bytes_decompressed);
                     }
                     rest.set_position(0);
                     Ok(())
