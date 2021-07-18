@@ -125,7 +125,6 @@ pub(crate) mod encoders;
 pub(crate) mod models;
 
 mod byteslice;
-pub mod checking;
 pub mod errors;
 pub mod las;
 pub mod packers;
@@ -141,8 +140,8 @@ pub use las::laszip::parallel::{
 };
 
 pub use las::laszip::{
-    read_chunk_table, write_chunk_table, LasZipCompressor, LasZipDecompressor, LazItem,
-    LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
+    read_chunk_table, write_chunk_table, LasZipCompressor, LasZipDecompressor, LazCompressor,
+    LazDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 
 pub type Result<T> = std::result::Result<T, LasZipError>;
