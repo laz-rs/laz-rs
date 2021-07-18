@@ -64,3 +64,5 @@ impl fmt::Display for LasZipError {
         }
     }
 }
+
+impl std::error::Error for LasZipError {}
