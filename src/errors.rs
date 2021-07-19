@@ -19,10 +19,6 @@ pub enum LasZipError {
     UnsupportedPointFormat(u8),
     /// Wrapper around and io error from the std lib
     IoError(std::io::Error),
-    BufferLenNotMultipleOfPointSize {
-        buffer_len: usize,
-        point_size: usize,
-    },
     /// The chunk table could not be found in the file
     /// and it is required for the operation.
     MissingChunkTable,
@@ -51,14 +47,6 @@ impl fmt::Display for LasZipError {
             }
             LasZipError::IoError(e) => write!(f, "IoError: {}", e),
 
-            LasZipError::BufferLenNotMultipleOfPointSize {
-                buffer_len: bl,
-                point_size: ps,
-            } => write!(
-                f,
-                "The len of the buffer ({}) is not a multiple of the point size {}",
-                bl, ps
-            ),
             LasZipError::UnsupportedPointFormat(id) => {
                 write!(f, "Point format {} is not supported", id)
             }

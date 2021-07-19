@@ -409,6 +409,7 @@ impl<R: Read + Seek> super::LazDecompressor for ParLasZipDecompressor<R> {
         self.seek(index)
     }
 }
+
 /// Compresses all points in parallel
 ///
 /// Just like [`compress_buffer`] but the compression is done in multiple threads
@@ -450,48 +451,39 @@ pub fn par_compress<W: Write>(
 ) -> crate::Result<Vec<usize>> {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
     use std::io::Cursor;
-
+    debug_assert_eq!(uncompressed_points.len() % laz_vlr.items_size() as usize, 0);
     let point_size = laz_vlr.items_size() as usize;
-    if uncompressed_points.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: uncompressed_points.len(),
-            point_size,
+    let points_per_chunk = laz_vlr.chunk_size() as usize;
+    let chunk_size_in_bytes = points_per_chunk * point_size;
+
+    // The last chunk may not have the same size,
+    // the chunks() method takes care of that for us
+    let all_slices = uncompressed_points
+        .chunks(chunk_size_in_bytes)
+        .collect::<Vec<_>>();
+
+    let chunks = all_slices
+        .into_par_iter()
+        .map(|slc| {
+            let mut record_compressor =
+                record_compressor_from_laz_items(&laz_vlr.items(), Cursor::new(Vec::<u8>::new()))?;
+
+            for raw_point in slc.chunks_exact(point_size) {
+                record_compressor.compress_next(raw_point)?;
+            }
+            record_compressor.done()?;
+
+            Ok(record_compressor.box_into_inner())
         })
-    } else {
-        let points_per_chunk = laz_vlr.chunk_size() as usize;
-        let chunk_size_in_bytes = points_per_chunk * point_size;
+        .collect::<Vec<crate::Result<Cursor<Vec<u8>>>>>();
 
-        // The last chunk may not have the same size,
-        // the chunks() method takes care of that for us
-        let all_slices = uncompressed_points
-            .chunks(chunk_size_in_bytes)
-            .collect::<Vec<_>>();
-
-        let chunks = all_slices
-            .into_par_iter()
-            .map(|slc| {
-                let mut record_compressor = record_compressor_from_laz_items(
-                    &laz_vlr.items(),
-                    Cursor::new(Vec::<u8>::new()),
-                )?;
-
-                for raw_point in slc.chunks_exact(point_size) {
-                    record_compressor.compress_next(raw_point)?;
-                }
-                record_compressor.done()?;
-
-                Ok(record_compressor.box_into_inner())
-            })
-            .collect::<Vec<crate::Result<Cursor<Vec<u8>>>>>();
-
-        let mut chunk_sizes = Vec::<usize>::with_capacity(chunks.len());
-        for chunk_result in chunks {
-            let chunk = chunk_result?;
-            chunk_sizes.push(chunk.get_ref().len());
-            dst.write_all(chunk.get_ref())?;
-        }
-        Ok(chunk_sizes)
+    let mut chunk_sizes = Vec::<usize>::with_capacity(chunks.len());
+    for chunk_result in chunks {
+        let chunk = chunk_result?;
+        chunk_sizes.push(chunk.get_ref().len());
+        dst.write_all(chunk.get_ref())?;
     }
+    Ok(chunk_sizes)
 }
 
 /// Decompresses all points from the buffer in parallel.
@@ -512,26 +504,19 @@ pub fn par_decompress_buffer(
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
 ) -> crate::Result<()> {
-    let point_size = laz_vlr.items_size() as usize;
-    if decompressed_points.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: decompressed_points.len(),
-            point_size,
-        })
-    } else {
-        let mut cursor = std::io::Cursor::new(compressed_points_data);
-        let offset_to_chunk_table = cursor.read_i64::<LittleEndian>()?;
-        let chunk_sizes = read_chunk_table_at_offset(&mut cursor, offset_to_chunk_table)?;
+    debug_assert_eq!(decompressed_points.len() % laz_vlr.items_size() as usize, 0);
+    let mut cursor = std::io::Cursor::new(compressed_points_data);
+    let offset_to_chunk_table = cursor.read_i64::<LittleEndian>()?;
+    let chunk_sizes = read_chunk_table_at_offset(&mut cursor, offset_to_chunk_table)?;
 
-        let compressed_points =
-            &compressed_points_data[std::mem::size_of::<i64>()..offset_to_chunk_table as usize];
-        par_decompress(
-            compressed_points,
-            decompressed_points,
-            laz_vlr,
-            &chunk_sizes,
-        )
-    }
+    let compressed_points =
+        &compressed_points_data[std::mem::size_of::<i64>()..offset_to_chunk_table as usize];
+    par_decompress(
+        compressed_points,
+        decompressed_points,
+        laz_vlr,
+        &chunk_sizes,
+    )
 }
 
 /// Actual the parallel decompression
@@ -596,21 +581,13 @@ pub fn par_decompress_all_from_file_greedy(
     points_out: &mut [u8],
     laz_vlr: &LazVlr,
 ) -> crate::Result<()> {
-    let point_size = laz_vlr.items_size() as usize;
-    if points_out.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: points_out.len(),
-            point_size,
-        })
-    } else {
-        let chunk_table = read_chunk_table(src).ok_or(LasZipError::MissingChunkTable)??;
+    debug_assert_eq!(points_out.len() % laz_vlr.items_size() as usize, 0);
+    let chunk_table = read_chunk_table(src).ok_or(LasZipError::MissingChunkTable)??;
+    let point_data_size = chunk_table.iter().copied().sum::<u64>();
 
-        let point_data_size = chunk_table.iter().copied().sum::<u64>();
-
-        let mut compressed_points = vec![0u8; point_data_size as usize];
-        src.read_exact(&mut compressed_points)?;
-        par_decompress(&compressed_points, points_out, laz_vlr, &chunk_table)
-    }
+    let mut compressed_points = vec![0u8; point_data_size as usize];
+    src.read_exact(&mut compressed_points)?;
+    par_decompress(&compressed_points, points_out, laz_vlr, &chunk_table)
 }
 
 #[cfg(test)]

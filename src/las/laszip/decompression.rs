@@ -220,17 +220,10 @@ pub fn decompress_buffer(
     decompressed_points: &mut [u8],
     laz_vlr: LazVlr,
 ) -> crate::Result<()> {
-    let point_size = laz_vlr.items_size() as usize;
-    if decompressed_points.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: decompressed_points.len(),
-            point_size,
-        })
-    } else {
-        let src = std::io::Cursor::new(compressed_points_data);
-        LasZipDecompressor::new(src, laz_vlr).and_then(|mut decompressor| {
-            decompressor.decompress_many(decompressed_points)?;
-            Ok(())
-        })
-    }
+    debug_assert_eq!(decompressed_points.len() % laz_vlr.items_size() as usize, 0);
+    let src = std::io::Cursor::new(compressed_points_data);
+    LasZipDecompressor::new(src, laz_vlr).and_then(|mut decompressor| {
+        decompressor.decompress_many(decompressed_points)?;
+        Ok(())
+    })
 }

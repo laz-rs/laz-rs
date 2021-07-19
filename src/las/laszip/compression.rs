@@ -1,6 +1,5 @@
-use super::{details, LazVlr};
+use super::{details, LazItem, LazVlr};
 use crate::record::RecordCompressor;
-use crate::{LasZipError, LazItem};
 use byteorder::{LittleEndian, WriteBytesExt};
 use std::io::{Seek, SeekFrom, Write};
 
@@ -165,16 +164,9 @@ pub fn compress_buffer<W: Write + Seek + Send>(
     uncompressed_points: &[u8],
     laz_vlr: LazVlr,
 ) -> crate::Result<()> {
+    debug_assert_eq!(uncompressed_points.len() % laz_vlr.items_size() as usize, 0);
     let mut compressor = LasZipCompressor::new(dst, laz_vlr)?;
-    let point_size = compressor.vlr().items_size() as usize;
-    if uncompressed_points.len() % point_size != 0 {
-        Err(LasZipError::BufferLenNotMultipleOfPointSize {
-            buffer_len: uncompressed_points.len(),
-            point_size,
-        })
-    } else {
-        compressor.compress_many(uncompressed_points)?;
-        compressor.done()?;
-        Ok(())
-    }
+    compressor.compress_many(uncompressed_points)?;
+    compressor.done()?;
+    Ok(())
 }
