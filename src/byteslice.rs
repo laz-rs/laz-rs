@@ -1,5 +1,9 @@
 use std::iter::FusedIterator;
 
+/// Iterator over non-overlaping chunks of `&[u8]`, non-evenly-size
+///
+/// The idea is extremely similar to [std::slice::Chunks] however,
+/// the chunks returned by this do not necessarily have the same size.
 pub struct ChunksIrregular<'a> {
     remainder: &'a [u8],
     sizes: std::slice::Iter<'a, usize>,
@@ -28,6 +32,10 @@ impl<'a> Iterator for ChunksIrregular<'a> {
 
 impl<'a> FusedIterator for ChunksIrregular<'a> {}
 
+/// Iterator over non-overlaping chunks of `&mut [u8]`, non-evenly-size
+///
+/// The idea is extremely similar to [std::slice::ChunksMut] however,
+/// the chunks returned by this do not necessarily have the same size.
 pub struct ChunksIrregularMut<'a> {
     remainder: &'a mut [u8],
     sizes: std::slice::Iter<'a, usize>,
