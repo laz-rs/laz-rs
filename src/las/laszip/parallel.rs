@@ -31,7 +31,7 @@ fn compress_one_chunk<W: Write + Seek + Send>(
 /// the next call to [`compress_many`] or [`done`].
 ///
 /// [`compress_many`]: ./struct.ParLasZipCompressor.html#method.compress_many
-/// [`done`]: ./struct.ParLasZipCompressor.html#method.done
+/// [`done`]: Self::done
 #[cfg(feature = "parallel")]
 pub struct ParLasZipCompressor<W> {
     vlr: LazVlr,
@@ -67,6 +67,8 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     ///
     /// This method will automatically be called on the first point(s) being compressed,
     /// but for some scenarios, manually calling this might be useful.
+    ///
+    /// [done]: Self::done
     pub fn reserve_offset_to_chunk_table(&mut self) -> std::io::Result<()> {
         self.table_offset = self.dest.seek(SeekFrom::Current(0))? as i64;
         self.dest.write_i64::<LittleEndian>(self.table_offset)
@@ -415,7 +417,7 @@ impl<R: Read + Seek> super::LazDecompressor for ParLasZipDecompressor<R> {
 ///
 /// Point order [is conserved](https://github.com/rayon-rs/rayon/issues/551)
 ///
-/// [`compress_buffer`]: fn.compress_buffer.html
+/// [`compress_buffer`]: crate::compress_buffer
 #[cfg(feature = "parallel")]
 pub fn par_compress_buffer<W: Write + Seek>(
     dst: &mut W,

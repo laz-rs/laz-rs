@@ -1,3 +1,5 @@
+//! Definitions of error related thins.
+
 use crate::las::laszip::{CompressorType, LazItemType};
 use std::fmt;
 

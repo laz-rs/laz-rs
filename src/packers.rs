@@ -24,6 +24,7 @@
 ===============================================================================
 */
 
+#![doc(hidden)]
 //! Packing types from / to bytes
 
 /// Definition of the packing & unpacking trait

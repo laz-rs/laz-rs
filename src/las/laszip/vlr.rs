@@ -6,12 +6,14 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
-
+/// The user id of the LasZip VLR header.
 pub const LASZIP_USER_ID: &str = "laszip encoded";
+/// The record id of the LasZip VLR header.
 pub const LASZIP_RECORD_ID: u16 = 22204;
+/// The description of the LasZip VLR header.
 pub const LASZIP_DESCRIPTION: &str = "http://laszip.org";
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct Version {
     major: u8,
     minor: u8,
@@ -36,7 +38,7 @@ impl Version {
 }
 
 /// The different type of data / fields found in the definition of LAS points
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum LazItemType {
     /// ExtraBytes for LAS versions <= 1.3 & point format <= 5
     Byte(u16),
@@ -92,9 +94,9 @@ impl From<LazItemType> for u16 {
 
 /// Struct stored as part of the laszip's vlr record_data
 ///
-/// This gives information about the dimension encoded and the version used
-/// when encoding the data.
-#[derive(Debug, Copy, Clone)]
+/// This gives information about the dimension compressed
+/// and the version used for the compression.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct LazItem {
     // coded on a u16
     pub(crate) item_type: LazItemType,
@@ -155,6 +157,8 @@ impl LazItem {
     }
 }
 
+/// A collection of [LazItem].
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LazItems(Vec<LazItem>);
 
 macro_rules! define_trait_for_version {
@@ -273,7 +277,8 @@ fn write_laz_items_to<W: Write>(laz_items: &Vec<LazItem>, mut dst: &mut W) -> st
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+/// The possibilities for how the compressed data is organized.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CompressorType {
     None = 0,
     /// No chunks, or rather only 1 chunk with all the points
@@ -308,7 +313,7 @@ impl Default for CompressorType {
 /// This vlr contains information needed to compress or decompress
 /// LAZ/LAS data. Such as the points per chunk, the fields & version
 /// of the compression/decompression algorithm.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LazVlr {
     // coded on u16
     pub(super) compressor: CompressorType,
@@ -394,10 +399,13 @@ impl LazVlr {
         Ok(())
     }
 
+    /// Returns the chunk size, that is, the number of points
+    /// in each chunk.
     pub fn chunk_size(&self) -> u32 {
         self.chunk_size
     }
 
+    /// Returns the items compressed by this VLR
     pub fn items(&self) -> &Vec<LazItem> {
         &self.items
     }

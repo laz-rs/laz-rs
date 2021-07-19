@@ -49,6 +49,8 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     ///
     /// This method will automatically be called on the first point being compressed,
     /// but for some scenarios, manually calling this might be useful.
+    ///
+    /// [done]: Self::done
     pub fn reserve_offset_to_chunk_table(&mut self) -> std::io::Result<()> {
         let stream = self.record_compressor.get_mut();
         self.start_pos = stream.seek(SeekFrom::Current(0))?;

@@ -96,10 +96,6 @@
 //! # }
 //! ```
 //!
-//! [`LasZipCompressor`]: las/laszip/struct.LasZipCompressor.html
-//! [`LasZipDecompressor`]: las/laszip/struct.LasZipDecompressor.html
-//!
-//!
 //!
 //! # Parallelism
 //!
@@ -111,12 +107,6 @@
 //!
 //! - [`par_compress_buffer`]
 //! - [`par_decompress_buffer`]
-//!
-//!
-//! [`ParLasZipCompressor`]: las/laszip/struct.ParLasZipCompressor.html
-//! [`ParLasZipDecompressor`]: las/laszip/struct.ParLasZipDecompressor.html
-//! [`par_compress_buffer`]: las/laszip/fn.par_compress_buffer.html
-//! [`par_decompress_buffer`]: las/laszip/fn.par_decompress_buffer.html
 
 pub(crate) mod compressors;
 pub(crate) mod decoders;
@@ -144,4 +134,5 @@ pub use las::laszip::{
     LazDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 
+/// Shortcut for `Result`s of this crate.
 pub type Result<T> = std::result::Result<T, LasZipError>;
