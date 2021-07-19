@@ -1,5 +1,12 @@
 # Unreleased
   - Added a `seek` method to `ParLasZipDecompressor`.
+  - Added `reserve_offset_to_chunk_table` to the `LasZipCompressor`& `ParLasZipCompressor` API.
+  - Added `std::error::Error` implementation for `LasZipError`.
+  - Added a `LazCompressor` & `LazDecompressor` traits handle the non-parallel & parallel compressors/decompressor using 
+    generics.
+  - Fixed memory usage of `ParLasZipCompressor` and `ParLasZipDecompressor`
+    and slightly improve their performance as side effect. (commit 955d0938eb385966b85f0685b0e7719aa2c5fa4e, PR #23)
+  - Removed `BuffeLenNotMultipleOfPointSize` error kind.
 
 # 0.5.2
   - Changed: Ensure LasZipCompressor, LasZipDecompressor, ParLasZipCompressor, ParLasZipDecompressor
@@ -19,9 +26,6 @@
     the source and destination of the compressor/decompressor to also be marked `Send`.
     (Which is the case for `std::fs::File` and `std::io::Cursor<T>` if `T`is `Send`, which
     both are the source and dest used in 99.99% of the time) 
-  
-  
-
 
 # 0.4.0
 
