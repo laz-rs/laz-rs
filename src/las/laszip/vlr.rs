@@ -6,12 +6,6 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
-/// The user id of the LasZip VLR header.
-pub const LASZIP_USER_ID: &str = "laszip encoded";
-/// The record id of the LasZip VLR header.
-pub const LASZIP_RECORD_ID: u16 = 22204;
-/// The description of the LasZip VLR header.
-pub const LASZIP_DESCRIPTION: &str = "http://laszip.org";
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct Version {
@@ -334,6 +328,13 @@ pub struct LazVlr {
 }
 
 impl LazVlr {
+    /// The user id of the LasZip VLR header.
+    pub const USER_ID: &'static str = "laszip encoded";
+    /// The record id of the LasZip VLR header.
+    pub const RECORD_ID: u16 = 22204;
+    /// The description of the LasZip VLR header.
+    pub const DESCRIPTION: &'static str = "http://laszip.org";
+
     pub fn from_laz_items(items: Vec<LazItem>) -> Self {
         let first_item = items
             .first()

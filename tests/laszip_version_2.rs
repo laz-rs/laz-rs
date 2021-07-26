@@ -1,155 +1,88 @@
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use laz::las::laszip::{
+use laz::{
     LasZipCompressor, LasZipDecompressor, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 
-const LAS_HEADER_SIZE: u64 = 227;
-const VLR_HEADER_SIZE: u64 = 54;
-const OFFSET_TO_LASZIP_VLR_DATA: u64 = LAS_HEADER_SIZE + VLR_HEADER_SIZE;
-const NUM_POINTS: usize = 1065;
+fn loop_test_on_buffer_(las_path: &str, laz_path: &str) {
+    let mut las_file = File::open(las_path).unwrap();
+    let (las_header, _) = laz::las::file::read_header_and_vlrs(&mut las_file).unwrap();
 
-/// Tests both the decompression and compression
-/// The generated function reads the LAS and LAZ file (they must hold the same points data)
-/// and compares the decompressed points with the uncompressed points,
-/// it also compressed the points to read them again and compare that we have the same data
-macro_rules! loop_test_on_buffer {
-    ($test_name:ident, $source_las:expr, $source_laz:expr, $point_size:expr, $las_point_start:expr, $laz_vlr_data_start:expr) => {
-        #[test]
-        fn $test_name() {
-            let mut las_file = File::open($source_las).unwrap();
-            las_file.seek(SeekFrom::Start($las_point_start)).unwrap();
+    let mut laz_file = File::open(laz_path).unwrap();
+    let (laz_header, laz_vlr) = laz::las::file::read_header_and_vlrs(&mut laz_file).unwrap();
+    let laz_vlr = laz_vlr.expect("Expected  a laz vlr in the laz file");
 
-            let mut laz_file = File::open($source_laz).unwrap();
-            laz_file.seek(SeekFrom::Start($laz_vlr_data_start)).unwrap();
+    assert_eq!(laz_header.point_size, las_header.point_size);
+    assert_eq!(laz_header.num_points, las_header.num_points);
 
-            let laz_vlr = LazVlr::read_from(&mut laz_file).unwrap();
-            assert_eq!(laz_vlr.items_size(), $point_size);
+    let mut point_buf = vec![0u8; las_header.point_size as usize];
+    let mut expected_point_buf = point_buf.clone();
+    let mut compressed_data = Cursor::new(Vec::<u8>::new());
+    {
+        let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr.clone()).unwrap();
+        let mut compressor = LasZipCompressor::new(&mut compressed_data, laz_vlr.clone()).unwrap();
 
-            let mut compressor = LasZipCompressor::from_laz_items(
-                Cursor::new(Vec::<u8>::new()),
-                laz_vlr.items().clone(),
-            )
-            .unwrap();
-            let mut decompressor = LasZipDecompressor::new(laz_file, laz_vlr).unwrap();
-
-            // write the laz record_data in a buffer, to use it later to create
-            // our decompressor
-            let mut my_laz_vlr = Cursor::new(Vec::<u8>::with_capacity(64));
-            compressor.vlr().write_to(&mut my_laz_vlr).unwrap();
-
-            let mut buf = [0u8; $point_size];
-            let mut expected_buf = [0u8; $point_size];
-
-            for i in 0..NUM_POINTS {
-                decompressor.decompress_one(&mut buf).unwrap();
-                las_file.read_exact(&mut expected_buf).unwrap();
-                compressor.compress_one(&expected_buf).unwrap();
-
-                let mut s;
-                let mut e = 0;
-                for j in 0..$point_size / 32 {
-                    s = j * 32;
-                    e = (j + 1) * 32;
-                    assert_eq!(
-                        buf[s..e],
-                        expected_buf[s..e],
-                        "Buffers[{}..{}] for point {} are not eq!",
-                        s,
-                        e,
-                        i
-                    );
-                }
-                assert_eq!(buf[e..], expected_buf[e..]);
-            }
-            compressor.done().unwrap();
-
-            let mut compression_output = compressor.into_inner();
-            compression_output.set_position(0);
-            my_laz_vlr.set_position(0);
-            let my_laz_vlr = LazVlr::read_from(&mut my_laz_vlr).unwrap();
-            assert_eq!(my_laz_vlr.items_size(), $point_size);
-
-            let mut decompressor = LasZipDecompressor::new(compression_output, my_laz_vlr).unwrap();
-
-            las_file.seek(SeekFrom::Start($las_point_start)).unwrap();
-            for i in 0..NUM_POINTS {
-                las_file.read_exact(&mut expected_buf).unwrap();
-                decompressor
-                    .decompress_one(&mut buf)
-                    .expect(&format!("Failed to decompress point {}", i));
-
-                let mut s;
-                let mut e = 0;
-                for j in 0..$point_size / 32 {
-                    s = j * 32;
-                    e = (j + 1) * 32;
-                    assert_eq!(
-                        buf[s..e],
-                        expected_buf[s..e],
-                        "Buffers[{}..{}] for point {} are not eq!",
-                        s,
-                        e,
-                        i
-                    );
-                }
-                assert_eq!(buf[e..], expected_buf[e..]);
-            }
+        for _ in 0..las_header.num_points {
+            las_file.read_exact(&mut expected_point_buf).unwrap();
+            decompressor.decompress_one(&mut point_buf).unwrap();
+            assert_eq!(point_buf, expected_point_buf);
+            compressor.compress_one(&expected_point_buf).unwrap();
         }
-    };
+        compressor.done().unwrap();
+    }
+
+    las_file
+        .seek(SeekFrom::Start(las_header.offset_to_points as u64))
+        .unwrap();
+    compressed_data.set_position(0);
+    {
+        let mut decompressor =
+            LasZipDecompressor::new(&mut compressed_data, laz_vlr.clone()).unwrap();
+
+        for _ in 0..las_header.num_points {
+            las_file.read_exact(&mut expected_point_buf).unwrap();
+            decompressor.decompress_one(&mut point_buf).unwrap();
+            assert_eq!(point_buf, expected_point_buf);
+        }
+    }
 }
 
-loop_test_on_buffer!(
-    test_point_format_0_version_2,
-    "tests/data/point10.las",
-    "tests/data/point10.laz",
-    20,
-    LAS_HEADER_SIZE,
-    OFFSET_TO_LASZIP_VLR_DATA
-);
+#[test]
+fn test_point_format_0_version_2() {
+    loop_test_on_buffer_("tests/data/point10.las", "tests/data/point10.laz")
+}
 
-loop_test_on_buffer!(
-    test_point_format_1_version_2,
-    "tests/data/point-time.las",
-    "tests/data/point-time.laz",
-    28,
-    LAS_HEADER_SIZE,
-    OFFSET_TO_LASZIP_VLR_DATA
-);
+#[test]
+fn test_point_format_1_version_2() {
+    loop_test_on_buffer_("tests/data/point-time.las", "tests/data/point-time.laz")
+}
 
-loop_test_on_buffer!(
-    test_point_format_2_version_2,
-    "tests/data/point-color.las",
-    "tests/data/point-color.laz",
-    26,
-    LAS_HEADER_SIZE,
-    OFFSET_TO_LASZIP_VLR_DATA
-);
+#[test]
+fn test_point_format_2_version_2() {
+    loop_test_on_buffer_("tests/data/point-color.las", "tests/data/point-color.laz")
+}
 
-loop_test_on_buffer!(
-    test_point_format_3_version_2,
-    "tests/data/point-time-color.las",
-    "tests/data/point-time-color.laz",
-    34,
-    LAS_HEADER_SIZE,
-    OFFSET_TO_LASZIP_VLR_DATA
-);
+#[test]
+fn test_point_format_3_version_2() {
+    loop_test_on_buffer_(
+        "tests/data/point-time-color.las",
+        "tests/data/point-time-color.laz",
+    )
+}
 
-loop_test_on_buffer!(
-    test_point_format_3_with_extra_bytes_version_2,
-    "tests/data/extra-bytes.las",
-    "tests/data/extra-bytes.laz",
-    61,
-    LAS_HEADER_SIZE + VLR_HEADER_SIZE + (5 * 192),
-    LAS_HEADER_SIZE + (2 * VLR_HEADER_SIZE) + (5 * 192)
-);
+#[test]
+fn test_point_format_3_with_extra_bytes_version_2() {
+    loop_test_on_buffer_("tests/data/extra-bytes.las", "tests/data/extra-bytes.laz")
+}
 
 fn create_data_with_small_chunk_size() -> (File, Cursor<Vec<u8>>, Cursor<Vec<u8>>) {
     const CHUNK_SIZE: u32 = 50;
-    const POINT_SIZE: usize = 20;
     let mut las_file = File::open("tests/data/point10.las").unwrap();
-    las_file.seek(SeekFrom::Start(LAS_HEADER_SIZE)).unwrap();
+    let (las_header, _) = laz::las::file::read_header_and_vlrs(&mut las_file).unwrap();
+    las_file
+        .seek(SeekFrom::Start(las_header.offset_to_points as u64))
+        .unwrap();
 
     let vlr = LazVlrBuilder::new()
         .with_chunk_size(CHUNK_SIZE)
@@ -166,8 +99,8 @@ fn create_data_with_small_chunk_size() -> (File, Cursor<Vec<u8>>, Cursor<Vec<u8>
 
     let mut compressor = LasZipCompressor::new(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
 
-    let mut buf = [0u8; POINT_SIZE];
-    for _ in 0..NUM_POINTS {
+    let mut buf = vec![0u8; las_header.point_size as usize];
+    for _ in 0..las_header.num_points {
         las_file.read_exact(&mut buf).unwrap();
         compressor.compress_one(&buf).unwrap();
     }
@@ -184,6 +117,8 @@ fn test_seek() {
     // can test the seek function
     const POINT_SIZE: usize = 20;
     let (mut las_file, compressed_data_stream, mut vlr_data) = create_data_with_small_chunk_size();
+    las_file.seek(SeekFrom::Start(0)).unwrap();
+    let (las_header, _) = laz::las::file::read_header_and_vlrs(&mut las_file).unwrap();
 
     let mut decompressor = LasZipDecompressor::new(
         compressed_data_stream,
@@ -191,13 +126,13 @@ fn test_seek() {
     )
     .unwrap();
 
-    let mut decompression_buf = [0u8; POINT_SIZE];
-    let mut buf = [0u8; POINT_SIZE];
+    let mut decompression_buf = vec![0u8; las_header.point_size as usize];
+    let mut buf = vec![0u8; las_header.point_size as usize];
 
     let point_idx = 5;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * POINT_SIZE) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -209,7 +144,7 @@ fn test_seek() {
     let point_idx = 496;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * POINT_SIZE) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -220,10 +155,10 @@ fn test_seek() {
 
     // stream to a point that is beyond the number of points compressed
     // BUT the point index fall into the last chunk index
-    let point_idx = NUM_POINTS + 1;
+    let point_idx = las_header.num_points as u64 + 1;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * las_header.point_size as u64) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -233,10 +168,10 @@ fn test_seek() {
 
     // stream to a point that is beyond the number of points compressed
     // and that does not belong to the last chunk
-    let point_idx = NUM_POINTS + 36;
+    let point_idx = las_header.num_points as u64 + 36;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * las_header.point_size as u64) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -250,22 +185,23 @@ fn test_seek() {
 fn test_parallel_seek() {
     // We use a small chunk size to generate chunked data so that we
     // can test the seek function
-    const POINT_SIZE: usize = 20;
     let (mut las_file, compressed_data_stream, mut vlr_data) = create_data_with_small_chunk_size();
+    las_file.seek(SeekFrom::Start(0)).unwrap();
+    let (las_header, _) = laz::las::file::read_header_and_vlrs(&mut las_file).unwrap();
 
     let mut decompressor = laz::ParLasZipDecompressor::new(
         compressed_data_stream,
         LazVlr::read_from(&mut vlr_data).unwrap(),
     )
     .unwrap();
-
-    let mut decompression_buf = [0u8; POINT_SIZE];
-    let mut buf = [0u8; POINT_SIZE];
+    let point_size = las_header.point_size as usize;
+    let mut decompression_buf = vec![0u8; point_size];
+    let mut buf = vec![0u8; point_size];
 
     let point_idx = 5;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * point_size) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -279,7 +215,7 @@ fn test_parallel_seek() {
     let point_idx = 496;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * point_size) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -292,10 +228,10 @@ fn test_parallel_seek() {
 
     // stream to a point that is beyond the number of points compressed
     // BUT the point index fall into the last chunk index
-    let point_idx = NUM_POINTS + 1;
+    let point_idx = las_header.num_points as u64 + 1;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * las_header.point_size as u64) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();
@@ -307,10 +243,10 @@ fn test_parallel_seek() {
 
     // stream to a point that is beyond the number of points compressed
     // and that does not belong to the last chunk
-    let point_idx = NUM_POINTS + 36;
+    let point_idx = las_header.num_points as u64 + 36;
     las_file
         .seek(SeekFrom::Start(
-            LAS_HEADER_SIZE + (point_idx * POINT_SIZE) as u64,
+            las_header.offset_to_points as u64 + (point_idx * las_header.point_size as u64) as u64,
         ))
         .unwrap();
     decompressor.seek(point_idx as u64).unwrap();

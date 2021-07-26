@@ -113,13 +113,21 @@ pub(crate) mod decoders;
 pub(crate) mod decompressors;
 pub(crate) mod encoders;
 pub(crate) mod models;
+#[cfg(not(feature = "benchmarks"))]
+pub(crate) mod packers;
+#[cfg(feature = "benchmarks")]
+pub mod packers;
+#[cfg(not(feature = "benchmarks"))]
+pub(crate) mod record;
+#[cfg(feature = "benchmarks")]
+pub mod record;
 
 mod byteslice;
 pub mod errors;
 pub mod las;
-pub mod packers;
-#[macro_use]
-pub mod record;
+
+#[cfg(test)]
+mod test;
 
 pub use errors::LasZipError;
 pub use las::laszip::{compress_buffer, decompress_buffer};

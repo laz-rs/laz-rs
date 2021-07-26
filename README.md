@@ -16,3 +16,9 @@ Original Implementations:
  
  
 Minimal Rust version: 1.40.0
+
+
+## Running benches
+```
+cargo bench --features benchmarks
+```

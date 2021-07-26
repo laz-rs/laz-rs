@@ -4,22 +4,27 @@
 //! It defines the LaszipCompressor & LaszipDecompressor
 //! as well as the Laszip VLr data  and how to build it
 
-pub mod compression;
-pub mod decompression;
-mod details;
-#[cfg(feature = "parallel")]
-pub mod parallel;
-pub mod vlr;
-
+pub use compression::{compress_buffer, LasZipCompressor};
+pub use decompression::{decompress_buffer, LasZipDecompressor};
+pub use details::{read_chunk_table, write_chunk_table};
 pub use vlr::{
     CompressorType, DefaultVersion, LazItem, LazItemRecordBuilder, LazItemType, LazItems, LazVlr,
     LazVlrBuilder, Version1, Version2, Version3,
 };
 
-pub use compression::{compress_buffer, LasZipCompressor};
-pub use decompression::{decompress_buffer, LasZipDecompressor};
+mod compression;
+mod decompression;
+mod details;
+#[cfg(feature = "parallel")]
+pub mod parallel;
+mod vlr;
 
-pub use details::{read_chunk_table, write_chunk_table};
+#[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::USER_ID")]
+pub const LASZIP_USER_ID: &str = LazVlr::USER_ID;
+#[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::RECORD_ID")]
+pub const LASZIP_RECORD_ID: u16 = LazVlr::RECORD_ID;
+#[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::USER_ID")]
+pub const LASZIP_DESCRIPTION: &str = LazVlr::DESCRIPTION;
 
 pub trait LazDecompressor {
     fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()>;
@@ -35,8 +40,9 @@ pub trait LazCompressor {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::io::Cursor;
+
+    use super::*;
 
     #[test]
     fn test_create_laz_items() {

@@ -164,7 +164,9 @@ impl<'a, R: Read> SequentialPointRecordDecompressor<'a, R> {
     }
 
     /// Add a field decompressor that will be used to decompress points record
-    pub fn add_boxed_decompressor(&mut self, d: Box<dyn FieldDecompressor<R> + Send>) {
+    // This is used in our tests, but not in other code
+    #[allow(dead_code)]
+    pub(crate) fn add_boxed_decompressor(&mut self, d: Box<dyn FieldDecompressor<R> + Send>) {
         let field_size = d.size_of_field();
         self.record_size += field_size;
         self.fields_sizes.push(field_size);
@@ -543,7 +545,9 @@ impl<'a, W: Write> SequentialPointRecordCompressor<'a, W> {
         self.field_compressors.push(Box::new(field));
     }
 
-    pub fn add_boxed_compressor(&mut self, c: Box<dyn FieldCompressor<W> + Send>) {
+    // This is used in our tests, but not in other code
+    #[allow(dead_code)]
+    pub(crate) fn add_boxed_compressor(&mut self, c: Box<dyn FieldCompressor<W> + Send>) {
         let size = c.size_of_field();
         self.record_size += size;
         self.fields_sizes.push(size);

@@ -551,9 +551,7 @@ fn par_decompress(
         .map(|(chunk_in, chunk_out)| {
             let src = std::io::Cursor::new(chunk_in);
             let mut record_decompressor = record_decompressor_from_laz_items(laz_vlr.items(), src)?;
-            for raw_point in chunk_out.chunks_exact_mut(point_size) {
-                record_decompressor.decompress_next(raw_point)?;
-            }
+            record_decompressor.decompress_many(chunk_out)?;
             Ok(())
         })
         .collect::<crate::Result<()>>()?;

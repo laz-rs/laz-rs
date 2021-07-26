@@ -256,6 +256,7 @@ impl<T: Write> ArithmeticEncoder<T> {
 
     /* Encode a bit without modelling  */
     // again sym is a bool
+    #[allow(dead_code)]
     pub fn write_bit(&mut self, sym: u32) -> std::io::Result<()> {
         debug_assert!(sym <= 1);
 
@@ -300,6 +301,7 @@ impl<T: Write> ArithmeticEncoder<T> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn write_byte(&mut self, sym: u8) -> std::io::Result<()> {
         let init_base = self.base;
         self.length >>= 8;

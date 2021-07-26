@@ -12,7 +12,9 @@ exclude = [
 ]
 
 [features]
+default = []
 parallel = ['rayon']
+benchmarks = []
 
 [dependencies]
 num-traits = "0.2.12"
