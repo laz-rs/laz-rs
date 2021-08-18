@@ -41,8 +41,7 @@
 //!             .add_item(LazItemType::Point10)
 //!             .add_item(LazItemType::RGB12)
 //!             .build();
-//! let vlr = LazVlrBuilder::new()
-//!           .with_laz_items(items)
+//! let vlr = LazVlrBuilder::from_laz_items(items)
 //!           .with_chunk_size(5_000)
 //!           .build();
 //!
