@@ -112,13 +112,7 @@ pub(crate) mod decoders;
 pub(crate) mod decompressors;
 pub(crate) mod encoders;
 pub(crate) mod models;
-#[cfg(not(feature = "benchmarks"))]
-pub(crate) mod packers;
-#[cfg(feature = "benchmarks")]
 pub mod packers;
-#[cfg(not(feature = "benchmarks"))]
-pub(crate) mod record;
-#[cfg(feature = "benchmarks")]
 pub mod record;
 
 mod byteslice;
