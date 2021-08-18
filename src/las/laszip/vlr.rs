@@ -455,13 +455,14 @@ impl LazVlrBuilder {
         }
     }
 
-    pub fn with_chunk_size(mut self, chunk_size: u32) -> Self {
-        self.laz_vlr.chunk_size = chunk_size;
-        self
+    pub fn from_laz_items(laz_items: Vec<LazItem>) -> Self {
+        Self {
+            laz_vlr: LazVlr::from_laz_items(laz_items),
+        }
     }
 
-    pub fn with_laz_items(mut self, laz_items: Vec<LazItem>) -> Self {
-        self.laz_vlr.items = laz_items;
+    pub fn with_chunk_size(mut self, chunk_size: u32) -> Self {
+        self.laz_vlr.chunk_size = chunk_size;
         self
     }
 
