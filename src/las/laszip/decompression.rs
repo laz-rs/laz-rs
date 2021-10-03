@@ -1,17 +1,19 @@
 use super::{details, CompressorType, LazVlr};
 use crate::record::RecordDecompressor;
 use crate::LasZipError;
-use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{Read, Seek, SeekFrom};
 
-/// Struct that handles the decompression of the points written in a LAZ file
+use super::chunk_table::ChunkTable;
+use crate::errors::LasZipError::MissingChunkTable;
+
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
-    chunk_points_read: u32,
-    offset_to_chunk_table: i64,
     data_start: u64,
-    chunk_table: Option<Vec<u64>>,
+    chunk_table: Option<ChunkTable>,
+    current_chunk: usize,
+    chunk_points_read: u64,
+    num_points_in_chunk: u64,
 }
 
 impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
@@ -24,18 +26,20 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
         }
 
-        let offset_to_chunk_table = source.read_i64::<LittleEndian>()?;
+        let chunk_table = ChunkTable::read_from(&mut source, &vlr).ok();
         let data_start = source.seek(SeekFrom::Current(0))?;
+
         let record_decompressor =
             details::record_decompressor_from_laz_items(&vlr.items(), source)?;
 
         Ok(Self {
             vlr,
             record_decompressor,
-            chunk_points_read: 0,
-            offset_to_chunk_table,
             data_start,
-            chunk_table: None,
+            chunk_table,
+            current_chunk: 0,
+            chunk_points_read: 0,
+            num_points_in_chunk: 1,
         })
     }
 
@@ -52,11 +56,23 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// - The data is written in the buffer exactly as it would have been in a LAS File
     ///     in Little Endian order,
     pub fn decompress_one(&mut self, mut out: &mut [u8]) -> std::io::Result<()> {
-        if self.chunk_points_read == self.vlr.chunk_size() {
+        if self.chunk_points_read == self.num_points_in_chunk {
             self.reset_for_new_chunk();
+            self.current_chunk += 1;
         }
+
         self.record_decompressor.decompress_next(&mut out)?;
         self.chunk_points_read += 1;
+
+        if self.chunk_points_read == 1 {
+            self.num_points_in_chunk = match &self.chunk_table {
+                Some(chunk_table) => chunk_table[self.current_chunk].point_count,
+                None if self.vlr.compressor == CompressorType::LayeredChunked => {
+                    self.record_decompressor.record_count()
+                }
+                None => self.vlr.chunk_size().into(),
+            };
+        }
         Ok(())
     }
 
@@ -85,30 +101,54 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// because the stream has to be moved to the start of the chunk
     /// and then we have to decompress points in the chunk until we reach the
     /// one we want.
-    pub fn seek(&mut self, point_idx: u64) -> std::io::Result<()> {
-        if let Some(chunk_table) = &self.chunk_table {
-            let chunk_of_point = point_idx / self.vlr.chunk_size() as u64;
-            let delta = point_idx % self.vlr.chunk_size() as u64;
+    pub fn seek(&mut self, point_idx: u64) -> crate::Result<()> {
+        let chunk_table = self.chunk_table.as_ref().ok_or(MissingChunkTable)?;
 
-            if chunk_of_point == (chunk_table.len() - 1) as u64 {
+        let chunk_info = {
+            let mut chunk_of_point = 0usize;
+            let mut start_of_chunk = self.data_start;
+            let mut tmp_count = 0;
+            for entry in chunk_table {
+                tmp_count += entry.point_count;
+                if tmp_count >= point_idx {
+                    break;
+                }
+                start_of_chunk += entry.byte_count;
+                chunk_of_point += 1;
+            }
+
+            if point_idx > tmp_count {
+                None
+            } else {
+                Some((chunk_of_point, start_of_chunk))
+            }
+        };
+
+        if let Some((chunk_of_point, start_of_chunk)) = chunk_info {
+            self.current_chunk = chunk_of_point as usize;
+            let delta = point_idx % chunk_table[self.current_chunk].point_count;
+            if chunk_of_point == (chunk_table.len() - 1) {
                 // the requested point fall into the last chunk,
                 // but that does not mean that the point exists
                 // so we have to be careful, we will do as we would normally,
                 // but if we reach the chunk_table_offset that means the requested
                 // point is out ouf bounds so will just seek to the end cf(the else in the if let below)
                 // we do this to avoid decompressing data (ie the chunk table) thinking its a record
-
-                if self.offset_to_chunk_table == -1 {
-                    // If the offset is still -1 it means the chunk table could not
-                    // be read :thinking:
-                    unreachable!("unexpected offset to chunk table");
-                }
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
                 self.record_decompressor
                     .get_mut()
-                    .seek(SeekFrom::Start(chunk_table[chunk_of_point as usize] as u64))?;
+                    .seek(SeekFrom::Start(start_of_chunk))?;
 
                 self.reset_for_new_chunk();
+                let offset_to_chunk_table = self.data_start
+                    + self
+                        .chunk_table
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .iter()
+                        .map(|e| e.byte_count)
+                        .sum::<u64>();
 
                 for _i in 0..delta {
                     self.decompress_one(&mut tmp_out)?;
@@ -117,57 +157,41 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
                         .get_mut()
                         .seek(SeekFrom::Current(0))?;
 
-                    if current_pos >= self.offset_to_chunk_table as u64 {
+                    if current_pos >= offset_to_chunk_table {
                         self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
                         return Ok(());
                     }
                 }
-            } else if let Some(start_of_chunk) = chunk_table.get(chunk_of_point as usize) {
+            } else {
                 self.record_decompressor
                     .get_mut()
-                    .seek(SeekFrom::Start(*start_of_chunk as u64))?;
+                    .seek(SeekFrom::Start(start_of_chunk))?;
                 self.reset_for_new_chunk();
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
 
                 for _i in 0..delta {
                     self.decompress_one(&mut tmp_out)?;
                 }
-            } else {
-                // the requested point it out of bounds (ie higher than the number of
-                // points compressed)
-
-                // Seek to the end so that the next call to decompress causes en error
-                // like "Failed to fill whole buffer (seeking past end is allowed by the Seek Trait)
-                self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
             }
-            Ok(())
         } else {
-            self.read_chunk_table()?;
-            self.seek(point_idx)
+            // the requested point it out of bounds (ie higher than the number of
+            // points compressed)
+
+            // Seek to the end so that the next call to decompress causes en error
+            // like "Failed to fill whole buffer (seeking past end is allowed by the Seek Trait)
+            self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
         }
+        Ok(())
     }
 
+    #[inline(always)]
     fn reset_for_new_chunk(&mut self) {
         self.chunk_points_read = 0;
         self.record_decompressor.reset();
-        //we can safely unwrap here, as set_field would have failed in the ::new()
+        // we can safely unwrap here, as set_field would have failed in the ::new()
         self.record_decompressor
             .set_fields_from(&self.vlr.items())
             .unwrap();
-    }
-
-    fn read_chunk_table(&mut self) -> std::io::Result<()> {
-        let stream = self.record_decompressor.get_mut();
-        let chunk_sizes = details::read_chunk_table_at_offset(stream, self.offset_to_chunk_table)?;
-        let number_of_chunks = chunk_sizes.len();
-        let mut chunk_starts = vec![0u64; number_of_chunks as usize];
-        chunk_starts[0] = self.data_start;
-        for i in 1..number_of_chunks {
-            chunk_starts[i as usize] =
-                chunk_sizes[(i - 1) as usize] + chunk_starts[(i - 1) as usize];
-        }
-        self.chunk_table = Some(chunk_starts);
-        Ok(())
     }
 
     pub fn into_inner(self) -> R {

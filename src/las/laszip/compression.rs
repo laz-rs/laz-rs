@@ -1,4 +1,4 @@
-use super::{details, LazItem, LazVlr};
+use super::{chunk_table, details, LazItem, LazVlr};
 use crate::record::RecordCompressor;
 use byteorder::{LittleEndian, WriteBytesExt};
 use std::io::{Seek, SeekFrom, Write};
@@ -22,6 +22,9 @@ pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
 impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// Creates a compressor using the provided vlr.
     pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
+        if vlr.uses_variably_sized_chunks() {
+            panic!("Variable sized chunks not supported when writing");
+        }
         let record_compressor = details::record_compressor_from_laz_items(&vlr.items(), output)?;
         Ok(Self {
             vlr,
@@ -102,8 +105,8 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
         self.record_compressor.done()?;
         self.update_chunk_table()?;
         let stream = self.record_compressor.get_mut();
-        details::update_chunk_table_offset(stream, SeekFrom::Start(self.start_pos))?;
-        details::write_chunk_table(stream, &self.chunk_sizes)?;
+        chunk_table::update_chunk_table_offset(stream, SeekFrom::Start(self.start_pos))?;
+        chunk_table::write_chunk_table(stream, &self.chunk_sizes)?;
         Ok(())
     }
 

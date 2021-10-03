@@ -131,8 +131,8 @@ pub use las::laszip::parallel::{
 };
 
 pub use las::laszip::{
-    read_chunk_table, write_chunk_table, LasZipCompressor, LasZipDecompressor, LazCompressor,
-    LazDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
+    write_chunk_table, LasZipCompressor, LasZipDecompressor, LazCompressor, LazDecompressor,
+    LazItem, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 
 /// Shortcut for `Result`s of this crate.

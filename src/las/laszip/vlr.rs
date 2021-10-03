@@ -334,6 +334,8 @@ impl LazVlr {
     pub const RECORD_ID: u16 = 22204;
     /// The description of the LasZip VLR header.
     pub const DESCRIPTION: &'static str = "http://laszip.org";
+    // Sentinel value to indicate that chunks have a variable size.
+    pub const VARIABLE_CHUNK_SIZE: u32 = u32::MAX;
 
     pub fn from_laz_items(items: Vec<LazItem>) -> Self {
         let first_item = items
@@ -398,6 +400,10 @@ impl LazVlr {
         dst.write_i64::<LittleEndian>(self.offset_to_special_evlrs)?;
         write_laz_items_to(&self.items, &mut dst)?;
         Ok(())
+    }
+
+    pub fn uses_variably_sized_chunks(&self) -> bool {
+        self.chunk_size == Self::VARIABLE_CHUNK_SIZE
     }
 
     /// Returns the chunk size, that is, the number of points

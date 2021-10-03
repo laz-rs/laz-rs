@@ -4,14 +4,15 @@
 //! It defines the LaszipCompressor & LaszipDecompressor
 //! as well as the Laszip VLr data  and how to build it
 
+pub use chunk_table::write_chunk_table;
 pub use compression::{compress_buffer, LasZipCompressor};
 pub use decompression::{decompress_buffer, LasZipDecompressor};
-pub use details::{read_chunk_table, write_chunk_table};
 pub use vlr::{
     CompressorType, DefaultVersion, LazItem, LazItemRecordBuilder, LazItemType, LazItems, LazVlr,
     LazVlrBuilder, Version1, Version2, Version3,
 };
 
+mod chunk_table;
 mod compression;
 mod decompression;
 mod details;
