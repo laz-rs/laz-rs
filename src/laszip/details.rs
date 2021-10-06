@@ -1,9 +1,10 @@
+use std::io::{Read, Seek, Write};
+
 use crate::record::{
     LayeredPointRecordCompressor, LayeredPointRecordDecompressor, RecordCompressor,
     RecordDecompressor, SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
 use crate::{LasZipError, LazItem};
-use std::io::{Read, Seek, Write};
 
 pub(super) fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>(
     items: &Vec<LazItem>,

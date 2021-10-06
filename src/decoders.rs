@@ -87,8 +87,9 @@
 //                                                                           -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-use byteorder::ReadBytesExt;
 use std::io::Read;
+
+use byteorder::ReadBytesExt;
 
 use crate::models;
 use crate::models::DM_LENGTH_SHIFT;

@@ -1,9 +1,11 @@
+use std::io::{Read, Write};
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
 use crate::las::nir::Nir;
 use crate::las::pointtypes::RGB;
 use crate::las::{Point0, Point6};
 use crate::LasZipError;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Write};
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
 
@@ -335,7 +337,7 @@ impl LazVlr {
     /// The description of the LasZip VLR header.
     pub const DESCRIPTION: &'static str = "http://laszip.org";
     // Sentinel value to indicate that chunks have a variable size.
-    pub const VARIABLE_CHUNK_SIZE: u32 = u32::MAX;
+    const VARIABLE_CHUNK_SIZE: u32 = u32::MAX;
 
     pub fn from_laz_items(items: Vec<LazItem>) -> Self {
         let first_item = items
@@ -402,29 +404,34 @@ impl LazVlr {
         Ok(())
     }
 
+    #[inline]
     pub fn uses_variably_sized_chunks(&self) -> bool {
         self.chunk_size == Self::VARIABLE_CHUNK_SIZE
     }
 
     /// Returns the chunk size, that is, the number of points
     /// in each chunk.
+    #[inline]
     pub fn chunk_size(&self) -> u32 {
         self.chunk_size
     }
 
     /// Returns the items compressed by this VLR
+    #[inline]
     pub fn items(&self) -> &Vec<LazItem> {
         &self.items
     }
 
     /// Returns the sum of the size of the laz_items, which should correspond to the
     /// expected size of points (uncompressed).
+    #[inline]
     pub fn items_size(&self) -> u64 {
         u64::from(self.items.iter().map(|item| item.size).sum::<u16>())
     }
 
     /// returns how many bytes a decompressed chunk contains
     #[cfg(feature = "parallel")]
+    #[inline]
     pub(crate) fn num_bytes_in_decompressed_chunk(&self) -> u64 {
         self.chunk_size as u64 * self.items_size()
     }
@@ -469,6 +476,11 @@ impl LazVlrBuilder {
 
     pub fn with_chunk_size(mut self, chunk_size: u32) -> Self {
         self.laz_vlr.chunk_size = chunk_size;
+        self
+    }
+
+    pub fn with_variable_chunk_size(mut self) -> Self {
+        self.laz_vlr.chunk_size = LazVlr::VARIABLE_CHUNK_SIZE;
         self
     }
 

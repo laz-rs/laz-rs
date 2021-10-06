@@ -1,11 +1,15 @@
-use super::{details, CompressorType, LazVlr};
-use crate::record::RecordDecompressor;
-use crate::LasZipError;
 use std::io::{Read, Seek, SeekFrom};
 
-use super::chunk_table::ChunkTable;
 use crate::errors::LasZipError::MissingChunkTable;
+use crate::record::RecordDecompressor;
+use crate::LasZipError;
 
+use super::chunk_table::ChunkTable;
+use super::{details, CompressorType, LazVlr};
+
+/// LasZip decompressor that decompresses points.
+///
+/// Supports both **fixed-size** and **variable-size** chunks.
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
@@ -54,7 +58,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     ///
     /// - The buffer should have at least enough byte to store the decompressed data
     /// - The data is written in the buffer exactly as it would have been in a LAS File
-    ///     in Little Endian order,
+    ///   in Little Endian order,
     pub fn decompress_one(&mut self, mut out: &mut [u8]) -> std::io::Result<()> {
         if self.chunk_points_read == self.num_points_in_chunk {
             self.reset_for_new_chunk();
@@ -87,10 +91,6 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             self.decompress_one(point)?;
         }
         Ok(())
-    }
-
-    pub fn vlr(&self) -> &LazVlr {
-        &self.vlr
     }
 
     /// Seeks to the point designed by the index
@@ -145,7 +145,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
                         .chunk_table
                         .as_ref()
                         .unwrap()
-                        .0
+                        .as_ref()
                         .iter()
                         .map(|e| e.byte_count)
                         .sum::<u64>();
@@ -184,16 +184,12 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         Ok(())
     }
 
-    #[inline(always)]
-    fn reset_for_new_chunk(&mut self) {
-        self.chunk_points_read = 0;
-        self.record_decompressor.reset();
-        // we can safely unwrap here, as set_field would have failed in the ::new()
-        self.record_decompressor
-            .set_fields_from(&self.vlr.items())
-            .unwrap();
+    /// Returns the vlr used.
+    pub fn vlr(&self) -> &LazVlr {
+        &self.vlr
     }
 
+    /// Consumes the decompressor and returns the data source.
     pub fn into_inner(self) -> R {
         self.record_decompressor.box_into_inner()
     }
@@ -202,8 +198,19 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         self.record_decompressor.get_mut()
     }
 
+    /// Returns a reference to the data source.
     pub fn get(&self) -> &R {
         self.record_decompressor.get()
+    }
+
+    #[inline(always)]
+    fn reset_for_new_chunk(&mut self) {
+        self.chunk_points_read = 0;
+        self.record_decompressor.reset();
+        // we can safely unwrap here, as set_field would have failed in the ::new()
+        self.record_decompressor
+            .set_fields_from(&self.vlr.items())
+            .unwrap();
     }
 }
 

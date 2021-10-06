@@ -1,20 +1,27 @@
 //! Module with all the things related to LAZ chunk tables
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::ops::Index;
+use std::slice::SliceIndex;
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
 use crate::compressors::IntegerCompressorBuilder;
 use crate::decoders::ArithmeticDecoder;
 use crate::decompressors::IntegerDecompressorBuilder;
 use crate::encoders::ArithmeticEncoder;
 use crate::{LasZipError, LazVlr};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::ops::Index;
-use std::slice::SliceIndex;
+
+/// Indices of the contexts used for the IntegerCompressor/IntergerDecompressor
+/// when decompressing/compressing parts of the chunk table
+const POINT_COUNT_CONTEXT: u32 = 0;
+const BYTE_COUNT_CONTEXT: u32 = 0;
 
 /// An entry describe one chunk and contains 2 information:
 ///
 /// - The number of bytes in the compressed chunk
 /// - The number of points in the compressed
-#[derive(Copy, Clone, Debug)]
-pub(super) struct ChunkTableEntry {
+#[derive(Copy, Clone, Debug, Default)]
+pub struct ChunkTableEntry {
     pub(super) point_count: u64,
     pub(super) byte_count: u64,
 }
@@ -24,9 +31,10 @@ pub(super) struct ChunkTableEntry {
 /// The ChunkTable has two ways of being stored in a LAZ file
 /// depending on if the chunks are fixed-size variable-sized
 ///
-/// fixed-size chunks -> Only the number of bytes of the chunk is stored
-/// variable-size chunks -> Both the number of points and the number of bytes are stored
-pub(super) struct ChunkTable(pub(super) Vec<ChunkTableEntry>);
+/// - fixed-size chunks -> Only the number of bytes of the chunk is stored
+/// - variable-size chunks -> Both the number of points and the number of bytes are stored
+#[derive(Default, Debug, Clone)]
+pub struct ChunkTable(Vec<ChunkTableEntry>);
 
 impl ChunkTable {
     /// Reads the chunk table from the source
@@ -52,11 +60,16 @@ impl ChunkTable {
         }
     }
 
+    /// Writes the chunk table to the `dst`.
+    pub fn write_to<W: Write>(&self, mut dst: W, vlr: &LazVlr) -> std::io::Result<()> {
+        self.write(&mut dst, vlr.uses_variably_sized_chunks())
+    }
+
     /// Reads the chunk table that contains both the `point_count` and `bytes_size`.
     ///
     /// This of course will only give correct results if the chunk table stored in the source
     /// contains both these information. Which is the case for **variable-sized** chunks.
-    pub(super) fn read_as_variably_sized<R: Read + Seek>(mut src: R) -> crate::Result<Self> {
+    fn read_as_variably_sized<R: Read + Seek>(mut src: R) -> crate::Result<Self> {
         let (data_start, chunk_table_start) =
             Self::read_offset(&mut src)?.ok_or(LasZipError::MissingChunkTable)?;
         src.seek(SeekFrom::Start(chunk_table_start))?;
@@ -69,10 +82,7 @@ impl ChunkTable {
     ///
     /// This is for the case when chunks are  **fixed-size**.
     /// Each chunk entry will have the given `point_count` as the point_count.
-    pub(super) fn read_as_fixed_size<R: Read + Seek>(
-        mut src: R,
-        point_count: u64,
-    ) -> crate::Result<Self> {
+    fn read_as_fixed_size<R: Read + Seek>(mut src: R, point_count: u64) -> crate::Result<Self> {
         let (data_start, chunk_table_start) =
             Self::read_offset(&mut src)?.ok_or(LasZipError::MissingChunkTable)?;
         src.seek(SeekFrom::Start(chunk_table_start))?;
@@ -121,10 +131,7 @@ impl ChunkTable {
         decoder.read_init_bytes()?;
 
         let mut chunk_table = ChunkTable::with_capacity(number_of_chunks as usize);
-        let mut last_entry = ChunkTableEntry {
-            point_count: 0,
-            byte_count: 0,
-        };
+        let mut previous_entry = ChunkTableEntry::default();
         for _ in 1..=number_of_chunks {
             let mut current_entry = ChunkTableEntry {
                 point_count: 0,
@@ -133,31 +140,79 @@ impl ChunkTable {
             if contains_point_count {
                 current_entry.point_count = u64::from_le(decompressor.decompress(
                     &mut decoder,
-                    last_entry.point_count as i32,
-                    0,
+                    previous_entry.point_count as i32,
+                    POINT_COUNT_CONTEXT,
                 )? as u64);
             }
             current_entry.byte_count = u64::from_le(decompressor.decompress(
                 &mut decoder,
-                last_entry.byte_count as i32,
-                1,
+                previous_entry.byte_count as i32,
+                BYTE_COUNT_CONTEXT,
             )? as u64);
 
             chunk_table.0.push(current_entry);
-            last_entry = current_entry;
+            previous_entry = current_entry;
         }
         Ok(chunk_table)
+    }
+
+    fn write<W: Write>(&self, mut dst: &mut W, write_point_count: bool) -> std::io::Result<()> {
+        // Write header
+        dst.write_u32::<LittleEndian>(0)?;
+        dst.write_u32::<LittleEndian>(self.len() as u32)?;
+
+        let mut encoder = ArithmeticEncoder::new(&mut dst);
+        let mut compressor = IntegerCompressorBuilder::new()
+            .bits(32)
+            .contexts(2)
+            .build_initialized();
+
+        let mut previous_entry = ChunkTableEntry::default();
+        for current_entry in &self.0 {
+            if write_point_count {
+                compressor.compress(
+                    &mut encoder,
+                    previous_entry.point_count as i32,
+                    current_entry.point_count as i32,
+                    POINT_COUNT_CONTEXT,
+                )?;
+                previous_entry.point_count = current_entry.point_count;
+            }
+            compressor.compress(
+                &mut encoder,
+                previous_entry.byte_count as i32,
+                current_entry.byte_count as i32,
+                BYTE_COUNT_CONTEXT,
+            )?;
+            previous_entry.byte_count = current_entry.byte_count;
+        }
+        encoder.done()?;
+        Ok(())
     }
 }
 
 impl ChunkTable {
-    fn with_capacity(capacity: usize) -> Self {
+    pub(super) fn with_capacity(capacity: usize) -> Self {
         let vec = Vec::<ChunkTableEntry>::with_capacity(capacity);
         Self { 0: vec }
     }
 
+    pub(super) fn push(&mut self, entry: ChunkTableEntry) {
+        self.0.push(entry);
+    }
+
     pub(super) fn len(&self) -> usize {
-        return self.0.len();
+        self.0.len()
+    }
+
+    #[cfg(feature = "parallel")]
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[cfg(feature = "parallel")]
+    pub(super) fn extend(&mut self, other: &ChunkTable) {
+        self.0.extend(&other.0)
     }
 }
 
@@ -198,6 +253,9 @@ where
 /// (even if its garbage bytes / 0s)
 ///
 /// The position of the destination is untouched
+///
+/// `offset_pos`: position the function have to seek to, to be where the offset
+///               should be updated.
 pub(super) fn update_chunk_table_offset<W: Write + Seek>(
     dst: &mut W,
     offset_pos: SeekFrom,
@@ -206,31 +264,5 @@ pub(super) fn update_chunk_table_offset<W: Write + Seek>(
     dst.seek(offset_pos)?;
     dst.write_i64::<LittleEndian>(start_of_chunk_table_pos as i64)?;
     dst.seek(SeekFrom::Start(start_of_chunk_table_pos))?;
-    Ok(())
-}
-
-/// Write the chunk table
-///
-/// This function encodes and write the chunk table in the stream
-pub fn write_chunk_table<W: Write>(
-    mut stream: &mut W,
-    chunk_table: &Vec<usize>,
-) -> std::io::Result<()> {
-    // Write header
-    stream.write_u32::<LittleEndian>(0)?;
-    stream.write_u32::<LittleEndian>(chunk_table.len() as u32)?;
-
-    let mut encoder = ArithmeticEncoder::new(&mut stream);
-    let mut compressor = IntegerCompressorBuilder::new()
-        .bits(32)
-        .contexts(2)
-        .build_initialized();
-
-    let mut predictor = 0;
-    for chunk_size in chunk_table {
-        compressor.compress(&mut encoder, predictor, (*chunk_size) as i32, 1)?;
-        predictor = (*chunk_size) as i32;
-    }
-    encoder.done()?;
     Ok(())
 }

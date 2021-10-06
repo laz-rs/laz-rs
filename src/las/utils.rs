@@ -24,13 +24,14 @@
 ===============================================================================
 */
 
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::{BitAnd, BitXor};
+
+use num_traits::Zero;
 
 use crate::decoders::ArithmeticDecoder;
 use crate::encoders::ArithmeticEncoder;
 use crate::packers::Packable;
-use num_traits::Zero;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 #[derive(Copy, Clone)]
 pub struct StreamingMedian<T: Zero + Copy + PartialOrd> {

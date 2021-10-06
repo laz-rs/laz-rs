@@ -1,7 +1,8 @@
 //! Definitions of error related thins.
 
-use crate::las::laszip::{CompressorType, LazItemType};
 use std::fmt;
+
+use crate::laszip::{CompressorType, LazItemType};
 
 /// Errors of this crate
 #[derive(Debug)]

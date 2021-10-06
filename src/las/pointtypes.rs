@@ -1,9 +1,9 @@
 pub use crate::las::gps::LasGpsTime;
-use crate::las::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
 use crate::las::nir::Nir;
 pub use crate::las::point0::{LasPoint0, Point0};
 pub use crate::las::point6::{LasPoint6, Point6};
 pub use crate::las::rgb::{LasRGB, RGB};
+use crate::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
 
 pub trait Point0Based {
     fn point0(&self) -> &Point0;

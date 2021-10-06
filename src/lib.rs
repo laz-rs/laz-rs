@@ -107,10 +107,22 @@
 //! - [`par_compress_buffer`]
 //! - [`par_decompress_buffer`]
 
+pub use errors::LasZipError;
+#[cfg(feature = "parallel")]
+pub use laszip::parallel::{
+    par_compress_buffer, par_decompress_buffer, ParLasZipCompressor, ParLasZipDecompressor,
+};
+pub use laszip::{compress_buffer, decompress_buffer};
+pub use laszip::{
+    LasZipCompressor, LasZipDecompressor, LazCompressor, LazDecompressor, LazItem,
+    LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
+};
+
 pub(crate) mod compressors;
 pub(crate) mod decoders;
 pub(crate) mod decompressors;
 pub(crate) mod encoders;
+pub mod laszip;
 pub(crate) mod models;
 pub mod packers;
 pub mod record;
@@ -121,19 +133,6 @@ pub mod las;
 
 #[cfg(test)]
 mod test;
-
-pub use errors::LasZipError;
-pub use las::laszip::{compress_buffer, decompress_buffer};
-
-#[cfg(feature = "parallel")]
-pub use las::laszip::parallel::{
-    par_compress_buffer, par_decompress_buffer, ParLasZipCompressor, ParLasZipDecompressor,
-};
-
-pub use las::laszip::{
-    write_chunk_table, LasZipCompressor, LasZipDecompressor, LazCompressor, LazDecompressor,
-    LazItem, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
-};
 
 /// Shortcut for `Result`s of this crate.
 pub type Result<T> = std::result::Result<T, LasZipError>;

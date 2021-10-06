@@ -90,13 +90,15 @@ type DefaultCompressorCreator = SimpleCompressorCreator;
 #[cfg(not(feature = "parallel"))]
 type DefaultDecompressorCreator = SimpleDecompressorCreator;
 
-#[derive(Clap)]
+#[derive(Clap, Debug)]
 struct Arguments {
     path: String,
     num_points_per_iter: Option<i64>,
+    #[clap(long)]
+    decompression_only: bool,
 }
 
-use laz::las::laszip::{LazCompressor, LazDecompressor};
+use laz::laszip::{LazCompressor, LazDecompressor};
 use laz::LazVlr;
 
 fn run_check_2<Decompressor1, Decompressor2, Compressor>(
@@ -149,6 +151,10 @@ where
             num_points_left -= num_points_to_read;
             progress.inc(num_points_to_read as u64);
         }
+    }
+
+    if args.decompression_only {
+        return Ok(());
     }
 
     // Check our compression
@@ -212,6 +218,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             args.num_points_per_iter = Some(1);
         }
     }
+
+    println!("Starting check with options: {:?}", &args);
 
     let laz_globber = glob::glob(&format!("{}/**/*.laz", &args.path))?;
     let las_globber = glob::glob(&format!("{}/**/*.las", &args.path))?;

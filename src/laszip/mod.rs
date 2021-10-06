@@ -3,8 +3,6 @@
 //!
 //! It defines the LaszipCompressor & LaszipDecompressor
 //! as well as the Laszip VLr data  and how to build it
-
-pub use chunk_table::write_chunk_table;
 pub use compression::{compress_buffer, LasZipCompressor};
 pub use decompression::{decompress_buffer, LasZipDecompressor};
 pub use vlr::{
@@ -96,6 +94,6 @@ mod test {
     #[cfg(feature = "parallel")]
     #[test]
     fn test_manual_reserve_par() {
-        test_manual_reserve_on!(super::parallel::ParLasZipCompressor<Cursor<Vec<u8>>>);
+        test_manual_reserve_on!(parallel::ParLasZipCompressor<Cursor<Vec<u8>>>);
     }
 }

@@ -2,13 +2,12 @@ use std::fs::File;
 use std::io::Cursor;
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::las::v1;
-use crate::record::{FieldCompressor, FieldDecompressor};
-
 use crate::las::gps::{v2::GpsTimeCompressor, v2::GpsTimeDecompressor, GpsTime};
 use crate::las::point0::{v2::LasPoint0Compressor, v2::LasPoint0Decompressor, Point0};
 use crate::las::rgb::{v2::LasRGBCompressor, v2::LasRGBDecompressor, RGB};
+use crate::las::v1;
 use crate::packers::Packable;
+use crate::record::{FieldCompressor, FieldDecompressor};
 use crate::record::{
     RecordCompressor, RecordDecompressor, SequentialPointRecordCompressor,
     SequentialPointRecordDecompressor,

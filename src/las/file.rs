@@ -3,9 +3,12 @@
 //! to support all the features of LAS.
 
 #![allow(dead_code)]
-use crate::las::laszip::{LasZipDecompressor, LazVlr};
-use byteorder::{LittleEndian, ReadBytesExt};
+
 use std::io::{Read, Seek, SeekFrom};
+
+use byteorder::{LittleEndian, ReadBytesExt};
+
+use crate::laszip::{LasZipDecompressor, LazVlr};
 
 /// LAS header with only the minimum information
 /// to be able to read points contained in a LAS file.
@@ -206,5 +209,21 @@ impl<'a> SimpleReader<'a> {
         } else {
             None
         }
+    }
+
+    pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        assert!(buf.is_empty());
+        let mut num_read = 0usize;
+        buf.resize(
+            self.header.num_points as usize * self.header.point_size as usize,
+            0u8,
+        );
+        let slc = buf.as_mut_slice();
+        while let Some(point) = self.read_next() {
+            let point = point?;
+            slc[num_read * point.len()..(num_read + 1) * point.len()].copy_from_slice(point);
+            num_read += 1;
+        }
+        Ok(num_read)
     }
 }
