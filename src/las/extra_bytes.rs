@@ -361,7 +361,7 @@ pub mod v3 {
             let the_context = &mut self.contexts[*context];
 
             for i in 0..self.num_extra_bytes {
-                let diff = current_point[i] - the_context.last_bytes.bytes[i];
+                let diff = current_point[i].wrapping_sub(the_context.last_bytes.bytes[i]);
                 self.encoders[i].encode_symbol(&mut the_context.models[i], u32::from(diff))?;
                 if diff != 0 {
                     self.has_byte_changed[i] = true;
