@@ -55,7 +55,7 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
     pub fn new(dest: W, vlr: LazVlr) -> crate::Result<Self> {
         let mut rest = Vec::<u8>::new();
-        if !vlr.uses_variably_sized_chunks() {
+        if !vlr.uses_variable_size_chunks() {
             rest.reserve(vlr.num_bytes_in_decompressed_chunk() as usize);
         }
         Ok(Self {
@@ -90,7 +90,7 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// For this function to actually use multiple threads, the `points`
     /// buffer shall hold more points that the vlr's `chunk_size`.
     pub fn compress_many(&mut self, points: &[u8]) -> std::io::Result<()> {
-        assert!(!self.vlr.uses_variably_sized_chunks());
+        assert!(!self.vlr.uses_variable_size_chunks());
         if self.table_offset == -1 {
             self.reserve_offset_to_chunk_table()?;
         }
@@ -157,10 +157,10 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// buffer shall hold more points that the vlr's `chunk_size`.
     pub fn compress_chunks<Chunks, Item>(&mut self, chunks: Chunks) -> std::io::Result<()>
     where
-        Item: AsRef<[u8]>,
+        Item: AsRef<[u8]> + Send,
         Chunks: IntoParallelIterator<Item = Item>,
     {
-        assert!(self.vlr.uses_variably_sized_chunks());
+        assert!(self.vlr.uses_variable_size_chunks());
         debug_assert!(self.rest.is_empty());
         if self.table_offset == -1 {
             self.reserve_offset_to_chunk_table()?;
@@ -264,7 +264,7 @@ pub fn par_compress<W: Write>(
     uncompressed_points: &[u8],
     laz_vlr: &LazVlr,
 ) -> crate::Result<ChunkTable> {
-    debug_assert!(!laz_vlr.uses_variably_sized_chunks());
+    debug_assert!(!laz_vlr.uses_variable_size_chunks());
     debug_assert_eq!(uncompressed_points.len() % laz_vlr.items_size() as usize, 0);
 
     let point_size = laz_vlr.items_size() as usize;
@@ -282,8 +282,8 @@ fn par_compress_chunks<'a, W, Chunks, Item>(
 ) -> crate::Result<ChunkTable>
 where
     W: Write,
+    Item: AsRef<[u8]> + Send,
     Chunks: IntoParallelIterator<Item = Item>,
-    Item: AsRef<[u8]>,
 {
     use std::io::Cursor;
 
@@ -302,7 +302,7 @@ where
     let point_size = laz_vlr.items_size() as usize;
     for chunk_result in chunks {
         let (input_size, compressed_data) = chunk_result?;
-        let point_count = if laz_vlr.uses_variably_sized_chunks() {
+        let point_count = if laz_vlr.uses_variable_size_chunks() {
             (input_size / point_size) as u64
         } else {
             laz_vlr.chunk_size() as u64

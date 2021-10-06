@@ -22,8 +22,8 @@ const BYTE_COUNT_CONTEXT: u32 = 0;
 /// - The number of points in the compressed
 #[derive(Copy, Clone, Debug, Default)]
 pub struct ChunkTableEntry {
-    pub(super) point_count: u64,
-    pub(super) byte_count: u64,
+    pub point_count: u64,
+    pub byte_count: u64,
 }
 
 /// The ChunkTable contains chunk entries for a LAZ file.
@@ -53,7 +53,7 @@ impl ChunkTable {
     /// For `variable-size` chunks the `point_count` of each entry is the one read
     /// from the source.
     pub fn read_from<R: Read + Seek>(mut src: R, vlr: &LazVlr) -> crate::Result<Self> {
-        if vlr.uses_variably_sized_chunks() {
+        if vlr.uses_variable_size_chunks() {
             ChunkTable::read_as_variably_sized(&mut src)
         } else {
             ChunkTable::read_as_fixed_size(&mut src, vlr.chunk_size().into())
@@ -62,7 +62,7 @@ impl ChunkTable {
 
     /// Writes the chunk table to the `dst`.
     pub fn write_to<W: Write>(&self, mut dst: W, vlr: &LazVlr) -> std::io::Result<()> {
-        self.write(&mut dst, vlr.uses_variably_sized_chunks())
+        self.write(&mut dst, vlr.uses_variable_size_chunks())
     }
 
     /// Reads the chunk table that contains both the `point_count` and `bytes_size`.
@@ -192,26 +192,26 @@ impl ChunkTable {
 }
 
 impl ChunkTable {
-    pub(super) fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         let vec = Vec::<ChunkTableEntry>::with_capacity(capacity);
         Self { 0: vec }
     }
 
-    pub(super) fn push(&mut self, entry: ChunkTableEntry) {
+    pub fn push(&mut self, entry: ChunkTableEntry) {
         self.0.push(entry);
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 
     #[cfg(feature = "parallel")]
-    pub(super) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     #[cfg(feature = "parallel")]
-    pub(super) fn extend(&mut self, other: &ChunkTable) {
+    pub fn extend(&mut self, other: &ChunkTable) {
         self.0.extend(&other.0)
     }
 }

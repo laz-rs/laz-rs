@@ -33,6 +33,16 @@ impl Version {
     }
 }
 
+impl Default for Version {
+    fn default() -> Self {
+        Self {
+            major: 2,
+            minor: 2,
+            revision: 0,
+        }
+    }
+}
+
 /// The different type of data / fields found in the definition of LAS points
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum LazItemType {
@@ -57,6 +67,22 @@ pub enum LazItemType {
 }
 
 impl LazItemType {
+    fn from_u16(item_type: u16, size: u16) -> Option<Self> {
+        match item_type {
+            0 => Some(LazItemType::Byte(size)),
+            6 => Some(LazItemType::Point10),
+            7 => Some(LazItemType::GpsTime),
+            8 => Some(LazItemType::RGB12),
+            //9 => LazItemType::WavePacket13,
+            10 => Some(LazItemType::Point14),
+            11 => Some(LazItemType::RGB14),
+            12 => Some(LazItemType::RGBNIR14),
+            //13 => LazItemType::WavePacket14,
+            14 => Some(LazItemType::Byte14(size)),
+            _ => None,
+        }
+    }
+
     fn size(&self) -> u16 {
         match self {
             LazItemType::Byte(size) => *size,
@@ -67,6 +93,19 @@ impl LazItemType {
             LazItemType::RGB14 => RGB::SIZE as u16,
             LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
             LazItemType::Byte14(size) => *size,
+        }
+    }
+
+    fn default_version(self) -> u16 {
+        match self {
+            LazItemType::Byte(_) => 2,
+            LazItemType::Point10 => 2,
+            LazItemType::GpsTime => 2,
+            LazItemType::RGB12 => 2,
+            LazItemType::Point14 => 3,
+            LazItemType::RGB14 => 3,
+            LazItemType::RGBNIR14 => 3,
+            LazItemType::Byte14(_) => 3,
         }
     }
 }
@@ -101,7 +140,7 @@ pub struct LazItem {
 }
 
 impl LazItem {
-    pub fn new(item_type: LazItemType, version: u16) -> Self {
+    pub(crate) fn new(item_type: LazItemType, version: u16) -> Self {
         let size = item_type.size();
         Self {
             item_type,
@@ -125,19 +164,8 @@ impl LazItem {
     fn read_from<R: Read>(src: &mut R) -> crate::Result<Self> {
         let item_type = src.read_u16::<LittleEndian>()?;
         let size = src.read_u16::<LittleEndian>()?;
-        let item_type = match item_type {
-            0 => LazItemType::Byte(size),
-            6 => LazItemType::Point10,
-            7 => LazItemType::GpsTime,
-            8 => LazItemType::RGB12,
-            //9 => LazItemType::WavePacket13,
-            10 => LazItemType::Point14,
-            11 => LazItemType::RGB14,
-            12 => LazItemType::RGBNIR14,
-            //13 => LazItemType::WavePacket14,
-            14 => LazItemType::Byte14(size),
-            _ => return Err(LasZipError::UnknownLazItem(item_type)),
-        };
+        let item_type = LazItemType::from_u16(item_type, size)
+            .ok_or_else(|| LasZipError::UnknownLazItem(item_type))?;
         Ok(Self {
             item_type,
             size,
@@ -153,10 +181,10 @@ impl LazItem {
     }
 }
 
-/// A collection of [LazItem].
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct LazItems(Vec<LazItem>);
-
+/// Defines a trait with one function to create
+/// [LazItem]s to be used by a vlr.
+///
+// TODO explain this trait + LazItemRecordBuilder mechanism
 macro_rules! define_trait_for_version {
     ($trait_name:ident, $trait_fn_name:ident) => {
         pub trait $trait_name {
@@ -236,16 +264,7 @@ impl LazItemRecordBuilder {
             .iter()
             .map(|item_type| {
                 let size = item_type.size();
-                let version = match item_type {
-                    LazItemType::Byte(_) => 2,
-                    LazItemType::Point10 => 2,
-                    LazItemType::GpsTime => 2,
-                    LazItemType::RGB12 => 2,
-                    LazItemType::Point14 => 3,
-                    LazItemType::RGB14 => 3,
-                    LazItemType::RGBNIR14 => 3,
-                    LazItemType::Byte14(_) => 3,
-                };
+                let version = item_type.default_version();
                 LazItem {
                     item_type: *item_type,
                     size,
@@ -296,6 +315,14 @@ impl CompressorType {
             _ => None,
         }
     }
+
+    fn from_item_version(item_version: u16) -> Option<Self> {
+        match item_version {
+            1 | 2 => Some(CompressorType::PointWiseChunked),
+            3 | 4 => Some(CompressorType::LayeredChunked),
+            _ => None,
+        }
+    }
 }
 
 impl Default for CompressorType {
@@ -309,6 +336,8 @@ impl Default for CompressorType {
 /// This vlr contains information needed to compress or decompress
 /// LAZ/LAS data. Such as the points per chunk, the fields & version
 /// of the compression/decompression algorithm.
+///
+/// To create one from scratch, see the [`LazVlrBuilder`]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LazVlr {
     // coded on u16
@@ -335,27 +364,28 @@ impl LazVlr {
     /// The record id of the LasZip VLR header.
     pub const RECORD_ID: u16 = 22204;
     /// The description of the LasZip VLR header.
-    pub const DESCRIPTION: &'static str = "http://laszip.org";
+    pub const DESCRIPTION: &'static str = "https://laszip.org";
     // Sentinel value to indicate that chunks have a variable size.
     const VARIABLE_CHUNK_SIZE: u32 = u32::MAX;
 
+    /// Creates a new LazVlr
+    ///
+    /// With **fixed-size** chunks.
+    ///
+    /// # panics
+    ///
+    /// Will panic if `items` is empty or contains invalid items.
     pub fn from_laz_items(items: Vec<LazItem>) -> Self {
         let first_item = items
             .first()
             .expect("Vec<LazItem> should at least have one element");
-        let compressor = match first_item.version {
-            1 | 2 => CompressorType::PointWiseChunked,
-            3 | 4 => CompressorType::LayeredChunked,
-            _ => panic!("Unknown laz_item version"),
-        };
+        let compressor = CompressorType::from_item_version(first_item.version)
+            .expect("Unknown laz_item version");
+
         Self {
             compressor,
             coder: 0,
-            version: Version {
-                major: 2,
-                minor: 2,
-                revision: 0,
-            },
+            version: Version::default(),
             options: 0,
             chunk_size: DEFAULT_CHUNK_SIZE as u32,
             number_of_special_evlrs: -1,
@@ -364,14 +394,8 @@ impl LazVlr {
         }
     }
 
-    /// Tries to read the Vlr information from the record_data buffer
-    pub fn from_buffer(record_data: &[u8]) -> crate::Result<Self> {
-        let mut cursor = std::io::Cursor::new(record_data);
-        Self::read_from(&mut cursor)
-    }
-
     /// Tries to read the Vlr information from the record_data source
-    pub fn read_from<R: Read>(mut src: &mut R) -> crate::Result<Self> {
+    pub fn read_from<R: Read>(mut src: R) -> crate::Result<Self> {
         let compressor_type = src.read_u16::<LittleEndian>()?;
         let compressor = match CompressorType::from_u16(compressor_type) {
             Some(c) => c,
@@ -405,12 +429,14 @@ impl LazVlr {
     }
 
     #[inline]
-    pub fn uses_variably_sized_chunks(&self) -> bool {
+    /// Returns whether the chunk size is variable.
+    pub fn uses_variable_size_chunks(&self) -> bool {
         self.chunk_size == Self::VARIABLE_CHUNK_SIZE
     }
 
-    /// Returns the chunk size, that is, the number of points
-    /// in each chunk.
+    /// Returns the chunk size, that is, the number of points in each chunk.
+    ///
+    /// This is only valid if [`Self::uses_variable_size_chunks`] returns false.
     #[inline]
     pub fn chunk_size(&self) -> u32 {
         self.chunk_size
@@ -437,54 +463,70 @@ impl LazVlr {
     }
 }
 
-impl Default for LazVlr {
-    fn default() -> Self {
-        Self {
-            compressor: Default::default(),
-            coder: 0,
-            version: Version {
-                major: 2,
-                minor: 2,
-                revision: 0,
-            },
-            options: 0,
-            chunk_size: DEFAULT_CHUNK_SIZE as u32,
-            number_of_special_evlrs: -1,
-            offset_to_special_evlrs: -1,
-            items: vec![],
-        }
-    }
-}
-
 /// Builder struct to personalize the LazVlr
 pub struct LazVlrBuilder {
-    laz_vlr: LazVlr,
+    items: Vec<LazItem>,
+    chunk_size: u32,
+}
+
+impl Default for LazVlrBuilder {
+    fn default() -> Self {
+        Self {
+            items: vec![],
+            chunk_size: DEFAULT_CHUNK_SIZE as u32,
+        }
+    }
 }
 
 impl LazVlrBuilder {
-    pub fn new() -> Self {
+    pub fn new(laz_items: Vec<LazItem>) -> Self {
         Self {
-            laz_vlr: Default::default(),
+            items: laz_items,
+            ..Self::default()
         }
     }
 
-    pub fn from_laz_items(laz_items: Vec<LazItem>) -> Self {
-        Self {
-            laz_vlr: LazVlr::from_laz_items(laz_items),
-        }
+    pub fn with_point_format(
+        mut self,
+        point_format_id: u8,
+        num_extra_bytes: u16,
+    ) -> crate::Result<Self> {
+        self.items =
+            LazItemRecordBuilder::default_for_point_format_id(point_format_id, num_extra_bytes)?;
+        Ok(self)
     }
 
-    pub fn with_chunk_size(mut self, chunk_size: u32) -> Self {
-        self.laz_vlr.chunk_size = chunk_size;
+    pub fn with_laz_items(mut self, laz_items: Vec<LazItem>) -> Self {
+        self.items = laz_items;
+        self
+    }
+
+    pub fn with_fixed_chunk_size(mut self, chunk_size: u32) -> Self {
+        self.chunk_size = chunk_size;
         self
     }
 
     pub fn with_variable_chunk_size(mut self) -> Self {
-        self.laz_vlr.chunk_size = LazVlr::VARIABLE_CHUNK_SIZE;
+        self.chunk_size = LazVlr::VARIABLE_CHUNK_SIZE;
         self
     }
 
     pub fn build(self) -> LazVlr {
-        self.laz_vlr
+        let mut vlr = LazVlr::from_laz_items(self.items);
+        vlr.chunk_size = self.chunk_size;
+        vlr
+    }
+
+    #[deprecated(
+        since = "0.6.0",
+        note = "Please use LazVlrBuilder::with_fixed_chunk_size"
+    )]
+    pub fn with_chunk_size(self, chunk_size: u32) -> Self {
+        self.with_fixed_chunk_size(chunk_size)
+    }
+
+    #[deprecated(since = "0.6.0", note = "Please use LazVlrBuilder::new(laz_items)")]
+    pub fn from_laz_items(laz_items: Vec<LazItem>) -> Self {
+        Self::new(laz_items)
     }
 }

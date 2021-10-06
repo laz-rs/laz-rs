@@ -84,12 +84,12 @@ fn create_data_with_small_chunk_size() -> (File, Cursor<Vec<u8>>, Cursor<Vec<u8>
         .seek(SeekFrom::Start(las_header.offset_to_points as u64))
         .unwrap();
 
-    let vlr = LazVlrBuilder::from_laz_items(
+    let vlr = LazVlrBuilder::new(
         LazItemRecordBuilder::new()
             .add_item(LazItemType::Point10)
             .build(),
     )
-    .with_chunk_size(CHUNK_SIZE)
+    .with_fixed_chunk_size(CHUNK_SIZE)
     .build();
 
     let mut vlr_data = Cursor::new(Vec::<u8>::new());

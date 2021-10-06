@@ -47,13 +47,6 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         })
     }
 
-    /// Creates a new instance from a data source of compressed points
-    /// and the `record data` of the laszip vlr
-    pub fn new_with_record_data(source: R, laszip_vlr_record_data: &[u8]) -> crate::Result<Self> {
-        let vlr = LazVlr::from_buffer(laszip_vlr_record_data)?;
-        Self::new(source, vlr)
-    }
-
     /// Decompress the next point and write the uncompressed data to the out buffer.
     ///
     /// - The buffer should have at least enough byte to store the decompressed data

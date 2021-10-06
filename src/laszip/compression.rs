@@ -116,7 +116,7 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
         Item: AsRef<[u8]>,
         Chunks: IntoIterator<Item = Item>,
     {
-        debug_assert!(self.vlr.uses_variably_sized_chunks());
+        debug_assert!(self.vlr.uses_variable_size_chunks());
         for chunks in chunks.into_iter() {
             let chunk_points = chunks.as_ref();
             self.compress_many(chunk_points)?;
@@ -150,7 +150,7 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// [`compress_many`]: Self::compress_many
     pub fn finish_current_chunk(&mut self) -> std::io::Result<()> {
         debug_assert!(
-            self.vlr.uses_variably_sized_chunks(),
+            self.vlr.uses_variable_size_chunks(),
             "finish_current_chunk called on a file which is not in variable-size chunks mode"
         );
         self.finish_current_chunk_impl()

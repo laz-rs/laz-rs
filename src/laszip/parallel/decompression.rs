@@ -150,7 +150,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 // Then, decompress what we did not, into our rest buffer
                 let num_bytes_left =
                     (tail_chunk_entry.point_count as usize * point_size) - tail_output.len();
-                if !vlr.uses_variably_sized_chunks() && end_index == chunk_table_len {
+                if !vlr.uses_variable_size_chunks() && end_index == chunk_table_len {
                     // When fixed-size chunks are used, for the last chunk, the number of point
                     // is unknown, so we have to decompress it until an end of file appears
                     rest.get_mut().resize(num_bytes_left, 0u8);

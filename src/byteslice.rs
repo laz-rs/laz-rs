@@ -12,7 +12,8 @@ pub struct ChunksIrregular<'a, T> {
 impl<'a, T> ChunksIrregular<'a, T> {
     pub fn new<P>(slc: &'a [u8], size_provider: P) -> Self
     where
-        P: IntoIterator<IntoIter = T>,
+        P: IntoIterator<IntoIter = T, Item = usize>,
+        T: Iterator<Item = usize>,
     {
         Self {
             remainder: slc,
@@ -50,7 +51,8 @@ pub struct ChunksIrregularMut<'a, T> {
 impl<'a, T> ChunksIrregularMut<'a, T> {
     pub fn new<P>(slc: &'a mut [u8], size_provider: P) -> Self
     where
-        P: IntoIterator<IntoIter = T>,
+        P: IntoIterator<IntoIter = T, Item = usize>,
+        T: Iterator<Item = usize>,
     {
         Self {
             remainder: slc,

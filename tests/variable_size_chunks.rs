@@ -23,7 +23,7 @@ fn check_chunks(concatenated_chunks: &[u8], chunks: &Vec<Vec<u8>>) {
     let mut end = 0usize;
     for chunk in chunks {
         end += chunk.len();
-        assert_eq!(&concatenated_chunks[start..end], chunk);
+        assert_eq!(&concatenated_chunks[start..end], chunk.as_slice());
         start = end;
     }
 }
@@ -47,7 +47,7 @@ fn test_variable_size_chunks() {
     let chunks = organize_as_variable_size_chunks(&las_points_bytes, point_size, &chunk_sizes);
 
     // 2. Compress into multiple chunks of variable size.
-    let laz_vlr = LazVlrBuilder::from_laz_items(
+    let laz_vlr = LazVlrBuilder::new(
         LazItemRecordBuilder::default_for_point_format_id(las_reader.header.point_format_id, 0)
             .unwrap(),
     )
@@ -92,12 +92,11 @@ fn test_variable_size_chunks_parallel_compression() {
     let chunks = organize_as_variable_size_chunks(&las_points_bytes, point_size, &chunk_sizes);
 
     // 2. Compress into multiple chunks of variable size.
-    let laz_vlr = LazVlrBuilder::from_laz_items(
-        LazItemRecordBuilder::default_for_point_format_id(las_reader.header.point_format_id, 0)
-            .unwrap(),
-    )
-    .with_variable_chunk_size()
-    .build();
+    let laz_vlr = LazVlrBuilder::default()
+        .with_point_format(las_reader.header.point_format_id, 0)
+        .unwrap()
+        .with_variable_chunk_size()
+        .build();
     let mut compressed_output = Cursor::new(Vec::<u8>::new());
     {
         let mut compressor =
@@ -133,12 +132,11 @@ fn test_variable_size_chunks_parallel_decompression() {
     let chunks = organize_as_variable_size_chunks(&las_points_bytes, point_size, &chunk_sizes);
 
     // 2. Compress into multiple chunks of variable size.
-    let laz_vlr = LazVlrBuilder::from_laz_items(
-        LazItemRecordBuilder::default_for_point_format_id(las_reader.header.point_format_id, 0)
-            .unwrap(),
-    )
-    .with_variable_chunk_size()
-    .build();
+    let laz_vlr = LazVlrBuilder::default()
+        .with_point_format(las_reader.header.point_format_id, 0)
+        .unwrap()
+        .with_variable_chunk_size()
+        .build();
     let mut compressed_output = Cursor::new(Vec::<u8>::new());
     {
         let mut compressor =

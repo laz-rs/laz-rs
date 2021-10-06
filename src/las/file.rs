@@ -114,7 +114,7 @@ pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) 
             && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
                 == "laszip encoded"
         {
-            laszip_vlr = Some(LazVlr::from_buffer(&vlr.data).unwrap());
+            laszip_vlr = Some(LazVlr::read_from(vlr.data.as_slice()).unwrap());
         }
     }
     laszip_vlr
