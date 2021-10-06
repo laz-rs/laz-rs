@@ -14,7 +14,7 @@ use crate::{LasZipError, LazVlr};
 /// Indices of the contexts used for the IntegerCompressor/IntergerDecompressor
 /// when decompressing/compressing parts of the chunk table
 const POINT_COUNT_CONTEXT: u32 = 0;
-const BYTE_COUNT_CONTEXT: u32 = 0;
+const BYTE_COUNT_CONTEXT: u32 = 1;
 
 /// An entry describe one chunk and contains 2 information:
 ///
