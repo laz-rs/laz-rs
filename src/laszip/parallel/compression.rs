@@ -84,6 +84,7 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// # Important
     ///
     /// This **must** be called **only** when writing **fixed-size** chunks.
+    /// This will **panic** otherwise.
     ///
     /// # Note
     ///
@@ -137,8 +138,8 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
         }
 
         if !compressible_buf.is_empty() {
-            // TODO change this unwrap
-            let chunk_table = par_compress(&mut self.dest, compressible_buf, &self.vlr).unwrap();
+            let chunk_table = par_compress(&mut self.dest, compressible_buf, &self.vlr)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
             self.chunk_table.extend(&chunk_table);
         }
 
@@ -150,6 +151,7 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// # Important
     ///
     /// This **must** be called **only** when writing **variable-size** chunks.
+    /// This will **panic** otherwise.
     ///
     /// # Note
     ///
@@ -165,8 +167,8 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
         if self.table_offset == -1 {
             self.reserve_offset_to_chunk_table()?;
         }
-        // TODO change this unwrap
-        let chunk_table = par_compress_chunks(&mut self.dest, chunks, &self.vlr).unwrap();
+        let chunk_table = par_compress_chunks(&mut self.dest, chunks, &self.vlr)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
         self.chunk_table.extend(&chunk_table);
         Ok(())
     }
