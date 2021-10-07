@@ -30,7 +30,18 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
         }
 
-        let chunk_table = ChunkTable::read_from(&mut source, &vlr).ok();
+        let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
+            Ok(chunk_table) => Some(chunk_table),
+            Err(e) => {
+                if vlr.uses_variable_size_chunks()
+                    && vlr.compressor != CompressorType::LayeredChunked
+                {
+                    return Err(e);
+                } else {
+                    None
+                }
+            }
+        };
         let data_start = source.seek(SeekFrom::Current(0))?;
 
         let record_decompressor =
@@ -62,13 +73,21 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         self.chunk_points_read += 1;
 
         if self.chunk_points_read == 1 {
-            self.num_points_in_chunk = match &self.chunk_table {
-                Some(chunk_table) => chunk_table[self.current_chunk].point_count,
-                None if self.vlr.compressor == CompressorType::LayeredChunked => {
-                    self.record_decompressor.record_count()
+            if self.vlr.uses_variable_size_chunks() {
+                self.num_points_in_chunk = match (&self.chunk_table, self.vlr.compressor) {
+                    (Some(chunk_table), _) => chunk_table[self.current_chunk].point_count,
+                    (None, CompressorType::LayeredChunked) => {
+                        self.record_decompressor.record_count()
+                    }
+                    (None, _) => {
+                        // This should not be possible, the `new` method should ensure
+                        // we have the chunk table if we need one
+                        panic!("Variable-size chunks, but no chunk table");
+                    }
                 }
-                None => self.vlr.chunk_size().into(),
-            };
+            } else {
+                self.num_points_in_chunk = self.vlr.chunk_size().into();
+            }
         }
         Ok(())
     }
