@@ -184,7 +184,15 @@ impl LazItem {
 /// Defines a trait with one function to create
 /// [LazItem]s to be used by a vlr.
 ///
-// TODO explain this trait + LazItemRecordBuilder mechanism
+/// The idea is that we define a different trait for each
+/// version of the LAZ compression, plus one trait for the default version.
+///
+/// These traits only have one function where the implementers
+/// must return the Laz Items for the LAZ version.
+///
+/// And we also have one struct for each possible point format, each
+/// of this struct implements the traits depending of which point format
+/// support which LAZ version + the default version trait.
 macro_rules! define_trait_for_version {
     ($trait_name:ident, $trait_fn_name:ident) => {
         pub trait $trait_name {
@@ -203,10 +211,20 @@ pub struct LazItemRecordBuilder {
 }
 
 impl LazItemRecordBuilder {
+    ///```
+    /// let items = laz::LazItemRecordBuilder::default_version_of::<laz::las::Point0>(0);
+    ///```
     pub fn default_version_of<PointFormat: DefaultVersion>(num_extra_bytes: u16) -> Vec<LazItem> {
         PointFormat::default_version(num_extra_bytes)
     }
 
+    ///```
+    /// let items = laz::LazItemRecordBuilder::version_1_of::<laz::las::Point0>(0);
+    ///```
+    ///
+    /// ```compile_fail
+    /// let items = laz::LazItemRecordBuilder::version_1_of::<laz::las::Point8>(0);
+    /// ```
     pub fn version_1_of<PointFormat: Version1>(num_extra_bytes: u16) -> Vec<LazItem> {
         PointFormat::version_1(num_extra_bytes)
     }
@@ -414,8 +432,14 @@ impl LazVlr {
         })
     }
 
-    /// Writes the Vlr to the source, this only write the 'record_data' the
-    /// header should be written before-hand
+    pub fn from_buffer<T: AsRef<[u8]>>(buffer: T) -> crate::Result<Self> {
+        Self::read_from(buffer.as_ref())
+    }
+
+    /// Writes the Vlr to the source.
+    ///
+    /// This **only** write the *record_data* the
+    /// header should be written before-hand.
     pub fn write_to<W: Write>(&self, mut dst: &mut W) -> std::io::Result<()> {
         dst.write_u16::<LittleEndian>(self.compressor as u16)?;
         dst.write_u16::<LittleEndian>(self.coder)?;
@@ -464,6 +488,26 @@ impl LazVlr {
 }
 
 /// Builder struct to personalize the LazVlr
+///
+/// # Examples
+/// ```
+/// # fn main() -> laz::Result<()> {
+/// let vlr = laz::LazVlrBuilder::default()
+///     .with_point_format(1, 0)?
+///     .build();
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ```
+/// # fn main() -> laz::Result<()> {
+/// let vlr = laz::LazVlrBuilder::default()
+///     .with_point_format(1, 0)?
+///     .with_fixed_chunk_size(60_000)
+///     .build();
+/// # Ok(())
+/// # }
+/// ```
 pub struct LazVlrBuilder {
     items: Vec<LazItem>,
     chunk_size: u32,

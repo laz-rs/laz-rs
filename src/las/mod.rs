@@ -8,6 +8,12 @@ pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8};
 mod utils;
 pub(crate) mod pointtypes;
 
+#[deprecated(
+    since = "0.6.0",
+    note = "use laz::laszip, or better yet, import directly from laz::"
+)]
+pub use crate::laszip;
+
 pub mod point0;
 pub mod point6;
 
