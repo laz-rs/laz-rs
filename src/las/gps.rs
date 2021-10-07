@@ -329,7 +329,6 @@ pub mod v1 {
                                 self.multi_extreme_counter = 0;
                             }
                         } else if multi < 10 {
-                            //TODO simplify following if elses ?
                             self.ic_gps_time.compress(
                                 &mut encoder,
                                 self.last_gps_time_diff * multi,
@@ -359,7 +358,7 @@ pub mod v1 {
                             }
                         }
                     } else {
-                        // Note orignal code says '-2' but looking at the decompress
+                        // Note original code says '-2' but looking at the decompress
                         // shouldn't it be '-1' (or vice versa) ?
                         // if difference is so huge ... we simply write the double
                         encoder.encode_symbol(

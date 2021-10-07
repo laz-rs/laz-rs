@@ -734,9 +734,6 @@ pub mod v2 {
         }
     }
 
-    // TODO Do just like Point6Compressor & Point6Decompressor: have a Point0Models, Point0 compressors
-    // All the things we need to compress a point, group them into structs
-    // so we don't have too many names flying around
     struct Common {
         last_intensity: [u16; 16],
 

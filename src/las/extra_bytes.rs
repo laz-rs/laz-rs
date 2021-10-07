@@ -147,7 +147,6 @@ pub mod v1 {
             Ok(())
         }
 
-        //TODO this can probably be 'obtimized'
         fn decompress_with(
             &mut self,
             decoder: &mut ArithmeticDecoder<R>,
