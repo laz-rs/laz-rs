@@ -4,9 +4,11 @@
   - Added `std::error::Error` implementation for `LasZipError`.
   - Added a `LazCompressor` & `LazDecompressor` traits handle the non-parallel & parallel compressors/decompressor using 
     generics.
+  - Added **variable-size** chunks support for `LasZipDecompressor`, `ParLasZipDecompressor`, `LasZipCompressor` and `ParLasZipCompressor`.
   - Fixed memory usage of `ParLasZipCompressor` and `ParLasZipDecompressor`
     and slightly improve their performance as side effect. (commit 955d0938eb385966b85f0685b0e7719aa2c5fa4e, PR #23)
   - Removed `BuffeLenNotMultipleOfPointSize` error kind.
+  - Removed `Remove LasZipDecompressor::new_with_record_data`
 
 # 0.5.2
   - Changed: Ensure LasZipCompressor, LasZipDecompressor, ParLasZipCompressor, ParLasZipDecompressor
