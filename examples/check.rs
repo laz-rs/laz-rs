@@ -116,7 +116,7 @@ where
 
     let mut laz_file = BufReader::new(File::open(laz_path)?);
     let (laz_header, laz_vlr) = read_header_and_vlrs(&mut laz_file)?;
-    let laz_vlr = laz_vlr.expect("Expected a laszip VLR for laz file");
+    let mut laz_vlr = laz_vlr.expect("Expected a laszip VLR for laz file");
 
     assert_eq!(las_header.point_size, laz_header.point_size);
     assert_eq!(las_header.num_points, laz_header.num_points);
@@ -165,6 +165,10 @@ where
     num_points_left = las_header.num_points as usize;
     let mut compressed_data = Cursor::new(Vec::<u8>::new());
     {
+        // Recreate the vlr so that we use fixed-size chunks as
+        // this test does no support variable-size chunk compression
+        let items = laz_vlr.items().clone();
+        laz_vlr = LazVlr::from_laz_items(items);
         let mut compressor = Compressor::create(&mut compressed_data, laz_vlr.clone());
         while num_points_left > 0 {
             let num_points_to_read = num_points_per_iter.min(num_points_left);
