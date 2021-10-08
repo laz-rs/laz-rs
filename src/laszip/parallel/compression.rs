@@ -1,4 +1,4 @@
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use rayon::prelude::*;
@@ -48,6 +48,7 @@ pub struct ParLasZipCompressor<W> {
     // The rest is compressed when done is called, forming the last chunk
     rest: Vec<u8>,
     dest: W,
+    compressor: ParChunkCompressor,
 }
 
 #[cfg(feature = "parallel")]
@@ -64,6 +65,7 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
             table_offset: -1,
             rest,
             dest,
+            compressor: ParChunkCompressor::default(),
         })
     }
 
@@ -138,8 +140,12 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
         }
 
         if !compressible_buf.is_empty() {
-            let chunk_table = par_compress(&mut self.dest, compressible_buf, &self.vlr)
+            let chunk_table = self
+                .compressor
+                .compress_points(&mut self.dest, compressible_buf, &self.vlr)
                 .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+            // let chunk_table = par_compress(&mut self.dest, compressible_buf, &self.vlr)
+            //     .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
             self.chunk_table.extend(&chunk_table);
         }
 
@@ -157,18 +163,24 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     ///
     /// For this function to actually use multiple threads, their should be more that one chunk.
     /// buffer shall hold more points that the vlr's `chunk_size`.
-    pub fn compress_chunks<Chunks, Item>(&mut self, chunks: Chunks) -> std::io::Result<()>
+    pub fn compress_chunks<Chunks, Item, Iter>(&mut self, chunks: Chunks) -> std::io::Result<()>
     where
         Item: AsRef<[u8]> + Send,
-        Chunks: IntoParallelIterator<Item = Item>,
+        Iter: IndexedParallelIterator<Item = Item>,
+        Chunks: IntoParallelIterator<Item = Item, Iter = Iter> + Copy,
     {
         assert!(self.vlr.uses_variable_size_chunks());
         debug_assert!(self.rest.is_empty());
         if self.table_offset == -1 {
             self.reserve_offset_to_chunk_table()?;
         }
-        let chunk_table = par_compress_chunks(&mut self.dest, chunks, &self.vlr)
+
+        let chunk_table = self
+            .compressor
+            .compress_chunks(&mut self.dest, chunks, &self.vlr)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        // let chunk_table = par_compress_chunks(&mut self.dest, chunks, &self.vlr)
+        //     .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
         self.chunk_table.extend(&chunk_table);
         Ok(())
     }
@@ -277,7 +289,107 @@ pub fn par_compress<W: Write>(
     par_compress_chunks(dst, all_slices, laz_vlr)
 }
 
-fn par_compress_chunks<'a, W, Chunks, Item>(
+#[derive(Copy, Clone)]
+struct RawPoints<'a> {
+    slc: &'a [u8],
+    chunk_size_in_bytes: usize,
+}
+
+impl<'a> IntoParallelIterator for RawPoints<'a> {
+    type Iter = rayon::slice::Chunks<'a, u8>;
+    type Item = <rayon::slice::Chunks<'a, u8> as ParallelIterator>::Item;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.slc.par_chunks(self.chunk_size_in_bytes)
+    }
+}
+
+#[derive(Default)]
+struct Lol {
+    input_size: usize,
+    buffer: Vec<u8>,
+}
+
+#[derive(Default)]
+struct ParChunkCompressor {
+    chunk_buffers: Vec<Lol>,
+}
+
+impl ParChunkCompressor {
+    fn compress_points<W: Write>(
+        &mut self,
+        dst: &mut W,
+        uncompressed_points: &[u8],
+        laz_vlr: &LazVlr,
+    ) -> crate::Result<ChunkTable> {
+        debug_assert!(!laz_vlr.uses_variable_size_chunks());
+        debug_assert_eq!(uncompressed_points.len() % laz_vlr.items_size() as usize, 0);
+
+        let point_size = laz_vlr.items_size() as usize;
+        let points_per_chunk = laz_vlr.chunk_size() as usize;
+        let chunk_size_in_bytes = points_per_chunk * point_size;
+
+        let r = RawPoints {
+            slc: uncompressed_points,
+            chunk_size_in_bytes,
+        };
+        self.compress_chunks(dst, r, laz_vlr)
+    }
+
+    fn compress_chunks<W, Chunks, Item, Iter>(
+        &mut self,
+        dst: &mut W,
+        chunks: Chunks,
+        laz_vlr: &LazVlr,
+    ) -> crate::Result<ChunkTable>
+    where
+        W: Write,
+        Item: AsRef<[u8]> + Send,
+        Iter: IndexedParallelIterator<Item = Item>,
+        Chunks: IntoParallelIterator<Item = Item, Iter = Iter> + Copy,
+    {
+        let num_chunks = chunks.into_par_iter().count();
+        if num_chunks > self.chunk_buffers.len() {
+            self.chunk_buffers.resize_with(num_chunks, Lol::default);
+        }
+
+        let chunk_buffers = &mut self.chunk_buffers[..num_chunks];
+
+        chunk_buffers
+            .into_par_iter()
+            .zip(chunks.into_par_iter())
+            .map(|(lol, data)| {
+                let slc = data.as_ref();
+                lol.buffer.clear();
+                let mut output = Cursor::new(&mut lol.buffer);
+                compress_one_chunk(slc, &laz_vlr, &mut output)?;
+                lol.input_size = slc.len();
+                Ok(())
+            })
+            .collect::<crate::Result<()>>()?;
+
+        let point_size = laz_vlr.items_size() as usize;
+        let mut chunk_table = ChunkTable::with_capacity(chunk_buffers.len());
+        for lol in chunk_buffers {
+            let input_size = lol.input_size;
+            let compressed_data = &lol.buffer;
+            let point_count = if laz_vlr.uses_variable_size_chunks() {
+                (input_size / point_size) as u64
+            } else {
+                laz_vlr.chunk_size() as u64
+            };
+            let entry = ChunkTableEntry {
+                point_count,
+                byte_count: compressed_data.len() as u64,
+            };
+            chunk_table.push(entry);
+            dst.write_all(&compressed_data)?;
+        }
+        Ok(chunk_table)
+    }
+}
+
+fn par_compress_chunks<W, Chunks, Item>(
     dst: &mut W,
     chunks: Chunks,
     laz_vlr: &LazVlr,
