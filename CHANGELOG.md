@@ -1,4 +1,4 @@
-# Unreleased
+# 0.6.0
   - Added a `seek` method to `ParLasZipDecompressor`.
   - Added `reserve_offset_to_chunk_table` to the `LasZipCompressor`& `ParLasZipCompressor` API.
   - Added `std::error::Error` implementation for `LasZipError`.
