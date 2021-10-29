@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use clap::Clap;
+use clap::Parser;
 use glob::GlobError;
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -90,7 +90,7 @@ type DefaultCompressorCreator = SimpleCompressorCreator;
 #[cfg(not(feature = "parallel"))]
 type DefaultDecompressorCreator = SimpleDecompressorCreator;
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 struct Arguments {
     path: String,
     num_points_per_iter: Option<i64>,
