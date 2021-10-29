@@ -23,7 +23,7 @@ mod vlr;
 pub const LASZIP_USER_ID: &str = LazVlr::USER_ID;
 #[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::RECORD_ID")]
 pub const LASZIP_RECORD_ID: u16 = LazVlr::RECORD_ID;
-#[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::USER_ID")]
+#[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::DESCRIPTION")]
 pub const LASZIP_DESCRIPTION: &str = LazVlr::DESCRIPTION;
 
 pub trait LazDecompressor {
