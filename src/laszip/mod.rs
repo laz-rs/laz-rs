@@ -40,7 +40,7 @@ pub trait LazCompressor {
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
+    use std::io::{Cursor, Seek, SeekFrom};
 
     use super::*;
 
@@ -53,6 +53,21 @@ mod test {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn test_compress_empty_buffer() {
+        let vlr = super::LazVlr::from_laz_items(
+            LazItemRecordBuilder::new()
+                .add_item(LazItemType::Point10)
+                .build(),
+        );
+        let header = vec![42; 10];
+        let mut write = Cursor::new(header.clone());
+        write.seek(SeekFrom::Start(header.len() as u64)).unwrap();
+        compress_buffer(&mut write, &[], vlr).unwrap();
+        let data = write.into_inner();
+        assert!(data.starts_with(&header));
     }
 
     macro_rules! test_manual_reserve_on {

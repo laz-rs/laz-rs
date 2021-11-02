@@ -127,6 +127,9 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
 
     /// Must be called when you have compressed all your points.
     pub fn done(&mut self) -> std::io::Result<()> {
+        if self.chunk_start_pos == 0 {
+            self.reserve_offset_to_chunk_table()?;
+        }
         self.record_compressor.done()?;
         self.update_chunk_table()?;
         let stream = self.record_compressor.get_mut();
