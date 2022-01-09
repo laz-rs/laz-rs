@@ -238,7 +238,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|result| result.map(|path| path.to_str().unwrap().to_owned()))
         .collect::<Result<Vec<String>, GlobError>>()?;
 
-    assert_eq!(laz_paths.len(), las_paths.len());
+    assert_eq!(
+        laz_paths.len(),
+        las_paths.len(),
+        "The number of las files does not match the number of laz files"
+    );
     let global_bar = ProgressBar::new(laz_paths.len() as u64);
     global_bar.set_style(progress_style());
     for (las_path, laz_path) in las_paths.into_iter().zip(laz_paths.into_iter()) {

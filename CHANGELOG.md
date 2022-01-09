@@ -1,3 +1,7 @@
+# 0.6.1
+  - Added support for `PointWise` compressed data in `LasZipDecompressor`.
+  - Fixed `LasZipCompressor` when no points where compressed.
+
 # 0.6.0
   - Added a `seek` method to `ParLasZipDecompressor`.
   - Added `reserve_offset_to_chunk_table` to the `LasZipCompressor`& `ParLasZipCompressor` API.
