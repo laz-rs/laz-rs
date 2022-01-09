@@ -5,7 +5,8 @@ use rayon::prelude::*;
 
 use crate::laszip::chunk_table::{update_chunk_table_offset, ChunkTable, ChunkTableEntry};
 use crate::laszip::details::record_compressor_from_laz_items;
-use crate::LazVlr;
+use crate::laszip::CompressorType;
+use crate::{LasZipError, LazVlr};
 
 /// LasZip compressor that compresses using multiple threads
 ///
@@ -54,10 +55,17 @@ pub struct ParLasZipCompressor<W> {
 impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
     pub fn new(dest: W, vlr: LazVlr) -> crate::Result<Self> {
+        if vlr.compressor != CompressorType::PointWiseChunked
+            && vlr.compressor != CompressorType::LayeredChunked
+        {
+            return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
+        }
+
         let mut rest = Vec::<u8>::new();
         if !vlr.uses_variable_size_chunks() {
             rest.reserve(vlr.num_bytes_in_decompressed_chunk() as usize);
         }
+
         Ok(Self {
             vlr,
             chunk_table: ChunkTable::default(),

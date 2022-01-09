@@ -5,7 +5,8 @@ use rayon::prelude::*;
 use crate::byteslice::ChunksIrregularMut;
 use crate::laszip::chunk_table::{ChunkTable, ChunkTableEntry};
 use crate::laszip::details::record_decompressor_from_laz_items;
-use crate::LazVlr;
+use crate::laszip::CompressorType;
+use crate::{LasZipError, LazVlr};
 
 #[cfg(feature = "parallel")]
 /// Laszip decompressor, that can decompress data using multiple threads
@@ -36,6 +37,13 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     ///
     /// Fails if no chunk table could be found.
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
+        // Technically we could support PointWise compressor
+        // But it's old and rare so not much point to do so
+        if vlr.compressor != CompressorType::PointWiseChunked
+            && vlr.compressor != CompressorType::LayeredChunked
+        {
+            return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
+        }
         let chunk_table = ChunkTable::read_from(&mut source, &vlr)?;
         let start_of_data = source.seek(SeekFrom::Current(0))?;
         let biggest_chunk = chunk_table
@@ -43,7 +51,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             .into_iter()
             .map(|entry| entry.point_count)
             .max()
-            .unwrap();
+            .unwrap_or(0);
         let vec = Vec::<u8>::with_capacity(biggest_chunk as usize);
         let rest = std::io::Cursor::new(vec);
 

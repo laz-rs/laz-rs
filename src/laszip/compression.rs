@@ -3,7 +3,9 @@ use std::io::{Seek, SeekFrom, Write};
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::laszip::chunk_table::{ChunkTable, ChunkTableEntry};
+use crate::laszip::CompressorType;
 use crate::record::RecordCompressor;
+use crate::LasZipError;
 
 use super::{chunk_table, details, LazItem, LazVlr};
 
@@ -53,6 +55,12 @@ pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
 impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// Creates a compressor using the provided vlr.
     pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
+        if vlr.compressor != CompressorType::PointWiseChunked
+            && vlr.compressor != CompressorType::LayeredChunked
+        {
+            return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
+        }
+
         let record_compressor = details::record_compressor_from_laz_items(&vlr.items(), output)?;
         Ok(Self {
             vlr,

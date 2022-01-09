@@ -24,24 +24,26 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
-        if vlr.compressor != CompressorType::PointWiseChunked
-            && vlr.compressor != CompressorType::LayeredChunked
-        {
-            return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
-        }
-
-        let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
-            Ok(chunk_table) => Some(chunk_table),
-            Err(e) => {
-                if vlr.uses_variable_size_chunks()
-                    && vlr.compressor != CompressorType::LayeredChunked
-                {
-                    return Err(e);
-                } else {
-                    None
-                }
+        let chunk_table = match vlr.compressor {
+            CompressorType::PointWise => None,
+            CompressorType::PointWiseChunked | CompressorType::LayeredChunked => {
+                let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
+                    Ok(chunk_table) => Some(chunk_table),
+                    Err(e) => {
+                        if vlr.uses_variable_size_chunks()
+                            && vlr.compressor != CompressorType::LayeredChunked
+                        {
+                            return Err(e);
+                        } else {
+                            None
+                        }
+                    }
+                };
+                chunk_table
             }
+            _ => return Err(LasZipError::UnsupportedCompressorType(vlr.compressor)),
         };
+
         let data_start = source.seek(SeekFrom::Current(0))?;
 
         let record_decompressor =
@@ -85,8 +87,10 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
                         panic!("Variable-size chunks, but no chunk table");
                     }
                 }
+            } else if self.vlr.compressor == CompressorType::PointWise {
+                self.num_points_in_chunk = u64::from(u32::MAX);
             } else {
-                self.num_points_in_chunk = self.vlr.chunk_size().into();
+                self.num_points_in_chunk = u64::from(self.vlr.chunk_size());
             }
         }
         Ok(())
