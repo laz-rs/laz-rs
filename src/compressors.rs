@@ -45,12 +45,10 @@ const COMPRESS_ONLY_K: bool = false;
 pub struct IntegerCompressor {
     k: u32,
 
-    bits: u32,
-
+    // bits: u32,
     contexts: u32,
     bits_high: u32,
-    range: u32,
-
+    // range: u32,
     corr_bits: u32,
     corr_range: u32,
     corr_min: i32,
@@ -101,10 +99,10 @@ impl IntegerCompressor {
 
         Self {
             k: 0,
-            bits,
+            // bits,
             contexts,
             bits_high,
-            range,
+            // range,
             corr_bits,
             corr_range,
             corr_min,
