@@ -7,14 +7,47 @@ use crate::LasZipError;
 use super::chunk_table::ChunkTable;
 use super::{details, CompressorType, LazVlr};
 
+pub(super) struct SeekInfo {
+    // offset to the first point
+    pub(super) data_start: u64,
+    pub(super) chunk_table: ChunkTable,
+}
+
+impl SeekInfo {
+    pub(super) fn read_from<T: Read + Seek>(
+        mut source: &mut T,
+        vlr: &LazVlr,
+    ) -> crate::Result<Self> {
+        let chunk_table = ChunkTable::read_from(&mut source, vlr)?;
+        let data_start = source.seek(SeekFrom::Current(0))?;
+
+        Ok(Self {
+            data_start,
+            chunk_table,
+        })
+    }
+
+    /// Returns the offset where the chunk table is written
+    pub(super) fn offset_to_chunk_table(&self) -> u64 {
+        self.data_start
+            + self
+                .chunk_table
+                .as_ref()
+                .iter()
+                .map(|e| e.byte_count)
+                .sum::<u64>()
+    }
+}
+
 /// LasZip decompressor that decompresses points.
 ///
 /// Supports both **fixed-size** and **variable-size** chunks.
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
-    data_start: u64,
-    chunk_table: Option<ChunkTable>,
+    // Allowed to be None if the source was not seekable and
+    // chunks are not of variable size
+    seek_info: Option<SeekInfo>,
     current_chunk: usize,
     chunk_points_read: u64,
     num_points_in_chunk: u64,
@@ -24,27 +57,34 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
     pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
-        let chunk_table = match vlr.compressor {
-            CompressorType::PointWise => None,
-            CompressorType::PointWiseChunked | CompressorType::LayeredChunked => {
-                let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
-                    Ok(chunk_table) => Some(chunk_table),
-                    Err(e) => {
-                        if vlr.uses_variable_size_chunks()
-                            && vlr.compressor != CompressorType::LayeredChunked
-                        {
-                            return Err(e);
-                        } else {
-                            None
-                        }
-                    }
-                };
-                chunk_table
+        // The chunk table is not always mandatory when just reading data.
+        let seek_info = match vlr.compressor {
+            CompressorType::PointWise => {
+                // Everything is in one chunk, so we don't need a table
+                None
             }
-            _ => return Err(LasZipError::UnsupportedCompressorType(vlr.compressor)),
+            CompressorType::PointWiseChunked => {
+                let result = SeekInfo::read_from(&mut source, &vlr);
+                match (result, vlr.uses_variable_size_chunks()) {
+                    (Ok(info), _) => Some(info),
+                    (Err(_), false) => None,
+                    // For for point wise chunked with variable size chunks,
+                    // we absolutely need the chunk table to be able to know when a
+                    // chunk ends.
+                    (Err(err), true) => {
+                        return Err(err);
+                    }
+                }
+            }
+            CompressorType::LayeredChunked => {
+                // Layered Chunks embeds the point count at the start of the chunk
+                // So its fine if we don't have a chunk table
+                SeekInfo::read_from(&mut source, &vlr).ok()
+            }
+            _ => {
+                return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
+            }
         };
-
-        let data_start = source.seek(SeekFrom::Current(0))?;
 
         let record_decompressor =
             details::record_decompressor_from_laz_items(&vlr.items(), source)?;
@@ -52,8 +92,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         Ok(Self {
             vlr,
             record_decompressor,
-            data_start,
-            chunk_table,
+            seek_info,
             current_chunk: 0,
             chunk_points_read: 0,
             num_points_in_chunk: 1,
@@ -76,8 +115,8 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
 
         if self.chunk_points_read == 1 {
             if self.vlr.uses_variable_size_chunks() {
-                self.num_points_in_chunk = match (&self.chunk_table, self.vlr.compressor) {
-                    (Some(chunk_table), _) => chunk_table[self.current_chunk].point_count,
+                self.num_points_in_chunk = match (&self.seek_info, self.vlr.compressor) {
+                    (Some(seek_info), _) => seek_info.chunk_table[self.current_chunk].point_count,
                     (None, CompressorType::LayeredChunked) => {
                         self.record_decompressor.record_count()
                     }
@@ -118,11 +157,14 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// and then we have to decompress points in the chunk until we reach the
     /// one we want.
     pub fn seek(&mut self, point_idx: u64) -> crate::Result<()> {
-        let chunk_table = self.chunk_table.as_ref().ok_or(MissingChunkTable)?;
+        let SeekInfo {
+            data_start,
+            chunk_table,
+        } = self.seek_info.as_ref().ok_or(MissingChunkTable)?;
 
         let chunk_info = {
             let mut chunk_of_point = 0usize;
-            let mut start_of_chunk = self.data_start;
+            let mut start_of_chunk = *data_start;
             let mut tmp_count = 0;
             for entry in chunk_table {
                 tmp_count += entry.point_count;
@@ -156,15 +198,11 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
                     .seek(SeekFrom::Start(start_of_chunk))?;
 
                 self.reset_for_new_chunk();
-                let offset_to_chunk_table = self.data_start
-                    + self
-                        .chunk_table
-                        .as_ref()
-                        .unwrap()
-                        .as_ref()
-                        .iter()
-                        .map(|e| e.byte_count)
-                        .sum::<u64>();
+                let offset_to_chunk_table = self
+                    .seek_info
+                    .as_ref()
+                    .map(SeekInfo::offset_to_chunk_table)
+                    .unwrap();
 
                 for _i in 0..delta {
                     self.decompress_one(&mut tmp_out)?;
