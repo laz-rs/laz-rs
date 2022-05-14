@@ -298,8 +298,10 @@ pub fn par_decompress_buffer(
 ///
 /// `compressed_points` must contains only the bytes corresponding to the points
 /// (so no offset, no chunk_table)
+///
+/// The chunk table describes the chunks contained in the `compressed_points` buffer
 #[cfg(feature = "parallel")]
-fn par_decompress(
+pub fn par_decompress(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
