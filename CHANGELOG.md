@@ -1,4 +1,5 @@
 # Unreleased
+  - Added `par_decompress` to the public API. (`parallel` feature required)
   - Fixed `LasZipDecompressor` to still be able to read points even when the source
     is not seekable. Seeking is only required to get the ChunkTable, and the ChunkTable
     is only required when wanting to use `LasZipDecompressor.seek` to get a point.
