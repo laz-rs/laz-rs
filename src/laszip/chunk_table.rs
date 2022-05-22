@@ -125,7 +125,15 @@ impl ChunkTable {
     }
 
     /// Actual implementation of the reading of the chunk table.
-    fn read<R: Read + Seek>(mut src: &mut R, contains_point_count: bool) -> std::io::Result<Self> {
+    ///
+    /// The `src` position **must** be at the start of the chunk table
+    ///
+    /// This function *does not* put the src position at the actual start of points data.
+    /// It leaves the position at the end of the chunk table.
+    pub fn read<R: Read + Seek>(
+        mut src: &mut R,
+        contains_point_count: bool,
+    ) -> std::io::Result<Self> {
         let _version = src.read_u32::<LittleEndian>()?;
         let number_of_chunks = src.read_u32::<LittleEndian>()?;
 
