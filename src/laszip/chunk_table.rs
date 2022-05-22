@@ -37,6 +37,12 @@ pub struct ChunkTableEntry {
 pub struct ChunkTable(Vec<ChunkTableEntry>);
 
 impl ChunkTable {
+    /// Size in bytes of the offset to the chunk table.
+    ///
+    /// These bytes are the very first ones, located just after
+    /// the `offset_to_point_data`
+    pub const OFFSET_SIZE: usize = 8;
+
     /// Reads the chunk table from the source
     ///
     /// The source position **must** be at the start of the point data

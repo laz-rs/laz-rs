@@ -7,6 +7,8 @@ use crate::LasZipError;
 use super::chunk_table::ChunkTable;
 use super::{details, CompressorType, LazVlr};
 
+/// SeekInfo aggregates the two information needed to be able to seek
+/// to a point in a las file.
 pub(super) struct SeekInfo {
     // offset to the first point
     pub(super) data_start: u64,
@@ -67,11 +69,20 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
                 let result = SeekInfo::read_from(&mut source, &vlr);
                 match (result, vlr.uses_variable_size_chunks()) {
                     (Ok(info), _) => Some(info),
-                    (Err(_), false) => None,
-                    // For for point wise chunked with variable size chunks,
-                    // we absolutely need the chunk table to be able to know when a
-                    // chunk ends.
+                    (Err(_), false) => {
+                        // The error is probably due to a seek error
+                        // (Eg for a source that is not actually seekable).
+                        // So we _may_ still be at the start of point data,
+                        // we need to skip the chunk table offset otherwise
+                        // decompression won't be correct.
+                        let mut tmp = [0u8; ChunkTable::OFFSET_SIZE];
+                        source.read_exact(&mut tmp)?;
+                        None
+                    }
                     (Err(err), true) => {
+                        // For for point wise chunked with variable size chunks,
+                        // we absolutely need the chunk table to be able to know when a
+                        // chunk ends.
                         return Err(err);
                     }
                 }
@@ -79,7 +90,13 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             CompressorType::LayeredChunked => {
                 // Layered Chunks embeds the point count at the start of the chunk
                 // So its fine if we don't have a chunk table
-                SeekInfo::read_from(&mut source, &vlr).ok()
+                let seek_info = SeekInfo::read_from(&mut source, &vlr).ok();
+                if seek_info.is_none() {
+                    // Same as in PointWiseChunked
+                    let mut tmp = [0u8; ChunkTable::OFFSET_SIZE];
+                    source.read_exact(&mut tmp)?;
+                }
+                seek_info
             }
             _ => {
                 return Err(LasZipError::UnsupportedCompressorType(vlr.compressor));
