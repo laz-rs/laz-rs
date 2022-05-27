@@ -1,3 +1,7 @@
+# 0.6.3
+  - Added `ChunkTable::read` to public API.
+  - Fixed support for non seekable stream (fix contained in 0.6.2 was incomplete)
+
 # 0.6.2
   - Added `par_decompress` to the public API. (`parallel` feature required)
   - Fixed `LasZipDecompressor` to still be able to read points even when the source
