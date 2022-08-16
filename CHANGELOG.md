@@ -1,3 +1,8 @@
+# Unreleased
+  - Fixed compression of RGB and NIR for point format >= 6 where the NIR/RBG was
+    always the same value.
+  - Fixed compression and decompression of extra bytes for point format >= 6.
+
 # 0.6.3
   - Added `ChunkTable::read` to public API.
   - Fixed support for non seekable stream (fix contained in 0.6.2 was incomplete)
