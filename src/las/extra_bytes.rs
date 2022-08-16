@@ -48,6 +48,12 @@ impl ExtraBytes {
     }
 }
 
+impl From<Vec<u8>> for ExtraBytes {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+}
+
 impl LasExtraBytes for ExtraBytes {
     fn extra_bytes(&self) -> &[u8] {
         &self.bytes
@@ -180,7 +186,6 @@ pub mod v3 {
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
 
     struct ExtraBytesContext {
-        last_bytes: ExtraBytes,
         models: Vec<ArithmeticModel>,
         unused: bool,
     }
@@ -188,7 +193,6 @@ pub mod v3 {
     impl ExtraBytesContext {
         pub fn new(count: usize) -> Self {
             Self {
-                last_bytes: ExtraBytes::new(count),
                 models: (0..count)
                     .map(|_i| ArithmeticModelBuilder::new(256).build())
                     .collect(),
@@ -203,6 +207,8 @@ pub mod v3 {
         num_bytes_per_layer: Vec<u32>,
         has_byte_changed: Vec<bool>,
         contexts: Vec<ExtraBytesContext>,
+        // Last & contexts are separated for the same reasons as in v3::RGB
+        last_bytes: Vec<ExtraBytes>,
         num_extra_bytes: usize,
         last_context_used: usize,
     }
@@ -216,6 +222,7 @@ pub mod v3 {
                 num_bytes_per_layer: vec![0; count],
                 has_byte_changed: vec![false; count],
                 contexts: (0..4).map(|_i| ExtraBytesContext::new(count)).collect(),
+                last_bytes: (0..4).map(|_| ExtraBytes::new(count)).collect(),
                 num_extra_bytes: count,
                 last_context_used: 0,
             }
@@ -237,12 +244,11 @@ pub mod v3 {
                 eb_context.unused = true;
             }
 
-            let the_context = &mut self.contexts[*context];
             src.read_exact(first_point)?;
-            the_context.last_bytes.bytes.copy_from_slice(first_point);
+            self.last_bytes[*context].bytes.copy_from_slice(first_point);
 
             self.last_context_used = *context;
-            the_context.unused = false;
+            self.contexts[*context].unused = false;
             Ok(())
         }
 
@@ -251,28 +257,33 @@ pub mod v3 {
             current_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
+            let mut last_bytes_ptr =
+                &mut self.last_bytes[self.last_context_used] as *mut ExtraBytes;
             if self.last_context_used != *context {
+                self.last_context_used = *context;
                 if self.contexts[*context].unused {
-                    let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
-                    new_context
-                        .last_bytes
-                        .bytes
-                        .copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+                    let last_bytes = unsafe { &mut *last_bytes_ptr };
+                    let new_context = ExtraBytesContext::new(last_bytes.bytes.len());
                     self.contexts[*context] = new_context;
+                    self.contexts[*context].unused = false;
+                    self.last_bytes[*context]
+                        .bytes
+                        .copy_from_slice(&last_bytes.bytes);
+                    last_bytes_ptr = &mut self.last_bytes[*context] as &mut _;
                 }
             }
 
+            let last_bytes = unsafe { &mut *last_bytes_ptr };
             let the_context = &mut self.contexts[*context];
             for i in 0..self.num_extra_bytes {
                 if self.has_byte_changed[i] {
-                    let last_value = &mut the_context.last_bytes.bytes[i];
-                    let new_value = u32::from(*last_value)
-                        + self.decoders[i].decode_symbol(&mut the_context.models[i])?;
+                    let last_value = &mut last_bytes.bytes[i];
+                    let diff = self.decoders[i].decode_symbol(&mut the_context.models[i])?;
+                    let new_value = last_value.wrapping_add(diff as u8);
                     *last_value = new_value as u8;
                 }
             }
-            current_point.copy_from_slice(&the_context.last_bytes.bytes);
-            self.last_context_used = *context;
+            current_point.copy_from_slice(&last_bytes.bytes);
             Ok(())
         }
 
@@ -301,6 +312,8 @@ pub mod v3 {
         encoders: Vec<ArithmeticEncoder<Cursor<Vec<u8>>>>,
         has_byte_changed: Vec<bool>,
         contexts: Vec<ExtraBytesContext>,
+        // Last & contexts are separated for the same reasons as in v3::RGB
+        last_bytes: Vec<ExtraBytes>,
         num_extra_bytes: usize,
         last_context_used: usize,
     }
@@ -313,6 +326,7 @@ pub mod v3 {
                     .collect(),
                 has_byte_changed: vec![false; count],
                 contexts: (0..4).map(|_i| ExtraBytesContext::new(count)).collect(),
+                last_bytes: (0..4).map(|_i| ExtraBytes::new(count)).collect(),
                 num_extra_bytes: count,
                 last_context_used: 0,
             }
@@ -335,10 +349,9 @@ pub mod v3 {
             }
 
             dst.write_all(first_point)?;
-            let the_context = &mut self.contexts[*context];
-            the_context.last_bytes.bytes.copy_from_slice(first_point);
+            self.last_bytes[*context].bytes.copy_from_slice(first_point);
             self.last_context_used = *context;
-            the_context.unused = false;
+            self.contexts[*context].unused = false;
             Ok(())
         }
 
@@ -347,24 +360,30 @@ pub mod v3 {
             current_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
+            let mut last_bytes_ptr =
+                &mut self.last_bytes[self.last_context_used] as *mut ExtraBytes;
             if self.last_context_used != *context {
+                self.last_context_used = *context;
                 if self.contexts[*context].unused {
-                    let mut new_context = ExtraBytesContext::new(self.num_extra_bytes);
-                    new_context
-                        .last_bytes
-                        .bytes
-                        .copy_from_slice(&self.contexts[self.last_context_used].last_bytes.bytes);
+                    let last_bytes = unsafe { &mut *last_bytes_ptr };
+                    let new_context = ExtraBytesContext::new(last_bytes.bytes.len());
                     self.contexts[*context] = new_context;
+                    self.contexts[*context].unused = false;
+                    self.last_bytes[*context]
+                        .bytes
+                        .copy_from_slice(&last_bytes.bytes);
+                    last_bytes_ptr = &mut self.last_bytes[*context] as &mut _;
                 }
             }
-            let the_context = &mut self.contexts[*context];
 
+            let last_bytes = unsafe { &mut *last_bytes_ptr };
+            let the_context = &mut self.contexts[*context];
             for i in 0..self.num_extra_bytes {
-                let diff = current_point[i].wrapping_sub(the_context.last_bytes.bytes[i]);
+                let diff = current_point[i].wrapping_sub(last_bytes.bytes[i]);
                 self.encoders[i].encode_symbol(&mut the_context.models[i], u32::from(diff))?;
                 if diff != 0 {
                     self.has_byte_changed[i] = true;
-                    the_context.last_bytes.bytes[i] = current_point[i];
+                    last_bytes.bytes[i] = current_point[i];
                 }
             }
 
