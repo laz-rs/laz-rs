@@ -186,18 +186,17 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         self.rest.set_position(0);
         self.rest.get_mut().clear();
 
-        let chunk_of_point = (index / self.vlr.chunk_size() as u64) as usize;
-        if chunk_of_point >= self.chunk_table.len() {
-            let _ = self.source.seek(SeekFrom::End(0))?;
-            return Ok(());
-        }
-        // Seek to the start of the points chunk
-        // and read the chunk data
-        let start_of_chunk_pos = self.start_of_data
-            + self.chunk_table[..chunk_of_point]
-                .iter()
-                .map(|entry| entry.byte_count)
-                .sum::<u64>();
+        let chunk_info = self.chunk_table.chunk_of_point(index);
+
+        let (chunk_of_point, byte_offset) = match chunk_info {
+            Some(v) => v,
+            None => {
+                let _ = self.source.seek(SeekFrom::End(0))?;
+                return Ok(());
+            }
+        };
+
+        let start_of_chunk_pos = self.start_of_data + byte_offset;
         self.source.seek(SeekFrom::Start(start_of_chunk_pos))?;
         self.internal_buffer
             .resize(self.chunk_table[chunk_of_point].byte_count as usize, 0u8);

@@ -170,6 +170,42 @@ impl ChunkTable {
         Ok(chunk_table)
     }
 
+    /// Finds the chunk that the given point index belongs to.
+    ///
+    /// Returns `None` if the `point_index` does not belong to the chunk table.
+    /// Returns a tuple (chunk_index, byte_offset)
+    /// where byte_offset is the byte offset starting from the first chunk.
+    ///
+    /// # Warning
+    ///
+    /// In the case of Non variable chunk size, when the point falls into the last
+    /// chunk it does not mean the point actually exists.
+    ///
+    /// Eg with chunk_size 50_000 and a file with 75_000 points
+    /// point index 75_001 falls into the last chunk, but since we only know
+    /// that the chunk_size is 50_000, we cannot be sure at that point it exists.
+    ///
+    /// It is the responsibility of the caller to verify / handle that case.
+    pub(crate) fn chunk_of_point(&self, point_idx: u64) -> Option<(usize, u64)> {
+        let mut chunk_of_point = 0usize;
+        let mut start_of_chunk = 0;
+        let mut tmp_count = 0;
+        for entry in &self.0 {
+            tmp_count += entry.point_count;
+            if tmp_count > point_idx {
+                break;
+            }
+            start_of_chunk += entry.byte_count;
+            chunk_of_point += 1;
+        }
+
+        if point_idx >= tmp_count {
+            None
+        } else {
+            Some((chunk_of_point, start_of_chunk))
+        }
+    }
+
     fn write<W: Write>(&self, mut dst: &mut W, write_point_count: bool) -> std::io::Result<()> {
         // Write header
         dst.write_u32::<LittleEndian>(0)?;

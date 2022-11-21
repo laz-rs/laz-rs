@@ -225,6 +225,20 @@ fn test_parallel_seek() {
     las_file.read_exact(&mut buf).unwrap();
     assert_eq!(&buf, &decompression_buf);
 
+    let point_idx = 50;
+    las_file
+        .seek(SeekFrom::Start(
+            las_header.offset_to_points as u64 + (point_idx * point_size) as u64,
+        ))
+        .unwrap();
+    decompressor.seek(point_idx as u64).unwrap();
+
+    decompressor
+        .decompress_many(&mut decompression_buf)
+        .unwrap();
+    las_file.read_exact(&mut buf).unwrap();
+    assert_eq!(&buf, &decompression_buf);
+
     let point_idx = 496;
     las_file
         .seek(SeekFrom::Start(

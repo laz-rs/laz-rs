@@ -179,25 +179,9 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             chunk_table,
         } = self.seek_info.as_ref().ok_or(MissingChunkTable)?;
 
-        let chunk_info = {
-            let mut chunk_of_point = 0usize;
-            let mut start_of_chunk = *data_start;
-            let mut tmp_count = 0;
-            for entry in chunk_table {
-                tmp_count += entry.point_count;
-                if tmp_count > point_idx {
-                    break;
-                }
-                start_of_chunk += entry.byte_count;
-                chunk_of_point += 1;
-            }
-
-            if point_idx >= tmp_count {
-                None
-            } else {
-                Some((chunk_of_point, start_of_chunk))
-            }
-        };
+        let chunk_info = chunk_table
+            .chunk_of_point(point_idx)
+            .map(|(idx, offset)| (idx, offset + data_start));
 
         if let Some((chunk_of_point, start_of_chunk)) = chunk_info {
             self.current_chunk = chunk_of_point as usize;
