@@ -140,6 +140,20 @@ fn test_seek() {
     las_file.read_exact(&mut buf).unwrap();
     assert_eq!(&buf, &decompression_buf);
 
+    // Seek to a point that starts a chunk
+    // it's something we failed to support
+    let point_idx = 50;
+    las_file
+        .seek(SeekFrom::Start(
+            las_header.offset_to_points as u64 + (point_idx * POINT_SIZE) as u64,
+        ))
+        .unwrap();
+    decompressor.seek(point_idx as u64).unwrap();
+
+    decompressor.decompress_one(&mut decompression_buf).unwrap();
+    las_file.read_exact(&mut buf).unwrap();
+    assert_eq!(&buf, &decompression_buf);
+
     let point_idx = 496;
     las_file
         .seek(SeekFrom::Start(

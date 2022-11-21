@@ -185,14 +185,14 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             let mut tmp_count = 0;
             for entry in chunk_table {
                 tmp_count += entry.point_count;
-                if tmp_count >= point_idx {
+                if tmp_count > point_idx {
                     break;
                 }
                 start_of_chunk += entry.byte_count;
                 chunk_of_point += 1;
             }
 
-            if point_idx > tmp_count {
+            if point_idx >= tmp_count {
                 None
             } else {
                 Some((chunk_of_point, start_of_chunk))
