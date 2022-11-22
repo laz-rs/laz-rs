@@ -1,4 +1,10 @@
-# Unreleased
+# 0.7.0
+ - Changed the license from LGPL to Apache 2.0 as LASZip (the projects laz-rs derives from)
+   was re-licensed to Apache 2.0
+ - Fixed seeking to a point that is a multiple of chunk size.
+ - Fixed seeking in variable size chunk for `ParLasZipDecompressor`
+
+# 0.6.4
   - Fixed compression of RGB and NIR for point format >= 6 where the NIR/RBG was
     always the same value.
   - Fixed compression and decompression of extra bytes for point format >= 6.
