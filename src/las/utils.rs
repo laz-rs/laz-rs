@@ -154,6 +154,12 @@ pub fn i32_quantize(n: f32) -> i32 {
     }
 }
 
+/// Copies `num_bytes` from `src` into the `decoder`.
+///
+/// `num_bytes` should be the layer size.
+///
+/// if `is_requested` is false, the bytes will be seeked over (skipped).
+///
 #[inline]
 pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     is_requested: bool,

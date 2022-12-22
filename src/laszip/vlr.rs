@@ -4,8 +4,8 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::las::nir::Nir;
 use crate::las::pointtypes::RGB;
-use crate::las::{Point0, Point6};
 use crate::las::wavepacket::LasWavepacket;
+use crate::las::{Point0, Point6};
 use crate::LasZipError;
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
@@ -66,7 +66,8 @@ pub enum LazItemType {
     RGB14,
     /// RGB + Nir for LAS versions >= 1.4
     RGBNIR14,
-    //WavePacket14,
+    /// Wavepacket data for LAS Version >= 1.4 & point format == 9 || == 10
+    WavePacket14,
     /// ExtraBytes for LAS versions >= 1.4
     Byte14(u16),
 }
@@ -82,7 +83,7 @@ impl LazItemType {
             10 => Some(LazItemType::Point14),
             11 => Some(LazItemType::RGB14),
             12 => Some(LazItemType::RGBNIR14),
-            //13 => LazItemType::WavePacket14,
+            13 => Some(LazItemType::WavePacket14),
             14 => Some(LazItemType::Byte14(size)),
             _ => None,
         }
@@ -99,6 +100,7 @@ impl LazItemType {
             LazItemType::RGB14 => RGB::SIZE as u16,
             LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
             LazItemType::Byte14(size) => *size,
+            LazItemType::WavePacket14 => LasWavepacket::SIZE as u16,
         }
     }
 
@@ -113,6 +115,7 @@ impl LazItemType {
             LazItemType::RGB14 => 3,
             LazItemType::RGBNIR14 => 3,
             LazItemType::Byte14(_) => 3,
+            LazItemType::WavePacket14 => 3,
         }
     }
 }
@@ -128,7 +131,7 @@ impl From<LazItemType> for u16 {
             LazItemType::Point14 => 10,
             LazItemType::RGB14 => 11,
             LazItemType::RGBNIR14 => 12,
-            //LazItemType::WavePacket14 => 13,
+            LazItemType::WavePacket14 => 13,
             LazItemType::Byte14(_) => 14,
         }
     }

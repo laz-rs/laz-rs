@@ -369,6 +369,9 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
                     LazItemType::Byte14(count) => self.add_field_decompressor(
                         las::v3::LasExtraByteDecompressor::new(count as usize),
                     ),
+                    LazItemType::WavePacket14 => {
+                        self.add_field_decompressor(las::v3::LasWavepacketDecompressor::default())
+                    }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,
@@ -740,6 +743,9 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
                     }
                     LazItemType::Byte14(n) => {
                         self.add_field_compressor(las::v3::LasExtraByteCompressor::new(n as usize));
+                    }
+                    LazItemType::WavePacket14 => {
+                        self.add_field_compressor(las::v3::LasWavepacketCompressor::default());
                     }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(

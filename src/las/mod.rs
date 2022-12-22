@@ -51,4 +51,5 @@ pub mod v3 {
     pub use crate::las::nir::v3::{LasNIRCompressor, LasNIRDecompressor};
     pub use crate::las::point6::v3::{LasPoint6Compressor, LasPoint6Decompressor};
     pub use crate::las::rgb::v3::{LasRGBCompressor, LasRGBDecompressor};
+    pub use crate::las::wavepacket::v3::{LasWavepacketCompressor, LasWavepacketDecompressor};
 }

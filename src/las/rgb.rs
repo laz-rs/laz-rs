@@ -686,8 +686,11 @@ pub mod v3 {
         layer_size: u32,
         // The last_rgbs are not part of the decompression context
         // as when decompressing, if the current context index has changed since
-        // the last call, the index used for the last_rgb may not be the same as the
-        // rgb context, not sure if its truly intentional, or if its a 'bug' in laszip
+        // the last call (`self.last_context_used != context`), the `last_item`
+        // used when decompressing is only updated if `self.context[context].unused = true`
+        // As opposed to keeping the last_item in sync with the context index.
+        //
+        // Not sure if its truly intentional, or if its a 'bug' in laszip
         contexts: [LasDecompressionContextRGB; 4],
         last_rgbs: [RGB; 4],
 

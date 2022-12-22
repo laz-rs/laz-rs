@@ -25,9 +25,7 @@ impl Packable for LasWavepacket {
             "LasWavepacket::unpack_from expected buffer of {} bytes",
             LasWavepacket::SIZE
         );
-        unsafe {
-            Self::unpack_from_unchecked(input)
-        }
+        unsafe { Self::unpack_from_unchecked(input) }
     }
 
     fn pack_into(&self, output: &mut [u8]) {
@@ -36,9 +34,7 @@ impl Packable for LasWavepacket {
             "LasWavepacket::pack_into expected buffer of {} bytes",
             LasWavepacket::SIZE
         );
-        unsafe {
-            self.pack_into_unchecked(output)
-        }
+        unsafe { self.pack_into_unchecked(output) }
     }
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
@@ -90,9 +86,11 @@ pub mod v1 {
     const DY_CONTEXT: u32 = 1;
     const DZ_CONTEXT: u32 = 2;
 
-
     pub struct LasWavepacketDecompressor {
-        last_wavepacket: LasWavepacket,
+        // This needs to be pub crate
+        // for the v3 version to be implemented
+        // in a way that shares code.
+        pub(crate) last_wavepacket: LasWavepacket,
 
         last_offset_diff: i32,
         last_sym_offset_diff: u32,
@@ -175,8 +173,10 @@ pub mod v1 {
                     self.last_offset_diff =
                         self.idc_offset_diff
                             .decompress(decoder, self.last_offset_diff, 0)?;
-                    current_wavepacket.offset =
-                        self.last_wavepacket.offset.wrapping_add(self.last_offset_diff as u64);
+                    current_wavepacket.offset = self
+                        .last_wavepacket
+                        .offset
+                        .wrapping_add(self.last_offset_diff as u64);
                 }
                 _ => {
                     current_wavepacket.offset = decoder.read_int_64()?;
@@ -216,7 +216,10 @@ pub mod v1 {
     }
 
     pub struct LasWavepacketCompressor {
-        last_wavepacket: LasWavepacket,
+        // This needs to be pub crate
+        // for the v3 version to be implemented
+        // in a way that shares code.
+        pub(crate) last_wavepacket: LasWavepacket,
 
         last_offset_diff: i32,
         last_sym_offset_diff: u32,
@@ -355,3 +358,271 @@ pub mod v1 {
 
 /// Just re-export v1 as v2 as they are both the same implementation
 pub use v1 as v2;
+
+pub mod v3 {
+    use crate::decoders::ArithmeticDecoder;
+    use crate::encoders::ArithmeticEncoder;
+    use crate::las::utils::{
+        copy_bytes_into_decoder, copy_encoder_content_to, inner_buffer_len_of,
+    };
+    use crate::las::wavepacket::LasWavepacket;
+    use crate::packers::Packable;
+    use crate::record::{
+        FieldCompressor, FieldDecompressor, LayeredFieldCompressor, LayeredFieldDecompressor,
+    };
+    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+    use std::io::{Cursor, Read, Seek, Write};
+
+    struct LasDecompressionContextWavepacket {
+        decompressor: super::v1::LasWavepacketDecompressor,
+        unused: bool,
+    }
+
+    impl Default for LasDecompressionContextWavepacket {
+        fn default() -> Self {
+            Self {
+                decompressor: Default::default(),
+                unused: false,
+            }
+        }
+    }
+
+    pub struct LasWavepacketDecompressor {
+        /// Holds the compressed bytes of the layer
+        decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
+        /// Did the value change ?
+        has_changed: bool,
+        /// Did the user request to decompress wave packets ?
+        is_requested: bool,
+        /// Size in bytes of the compressed data
+        layer_size: u32,
+
+        /// See v3::LasRGBDecompressor to know why we also
+        /// keep `las_wavepacket` array even though the
+        /// `LasDecompressionContextWavepacket` holds one.
+        contexts: [LasDecompressionContextWavepacket; 4],
+        last_wavepackets: [LasWavepacket; 4],
+
+        last_context: usize,
+    }
+
+    impl Default for LasWavepacketDecompressor {
+        fn default() -> Self {
+            Self {
+                decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
+                has_changed: false,
+                is_requested: true,
+                layer_size: 0,
+                contexts: [
+                    LasDecompressionContextWavepacket::default(),
+                    LasDecompressionContextWavepacket::default(),
+                    LasDecompressionContextWavepacket::default(),
+                    LasDecompressionContextWavepacket::default(),
+                ],
+                last_wavepackets: [
+                    LasWavepacket::default(),
+                    LasWavepacket::default(),
+                    LasWavepacket::default(),
+                    LasWavepacket::default(),
+                ],
+                last_context: 0,
+            }
+        }
+    }
+
+    impl<R> LayeredFieldDecompressor<R> for LasWavepacketDecompressor
+    where
+        R: Read + Seek,
+    {
+        fn size_of_field(&self) -> usize {
+            LasWavepacket::SIZE
+        }
+
+        fn init_first_point(
+            &mut self,
+            src: &mut R,
+            first_point: &mut [u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
+            for context in &mut self.contexts {
+                context.unused = true;
+            }
+
+            self.contexts[*context]
+                .decompressor
+                .decompress_first(src, first_point)?;
+            self.contexts[*context].unused = false;
+            self.last_context = *context;
+            self.last_wavepackets[*context] = self.contexts[*context].decompressor.last_wavepacket;
+
+            Ok(())
+        }
+
+        fn decompress_field_with(
+            &mut self,
+            current_point: &mut [u8],
+            context_idx: &mut usize,
+        ) -> std::io::Result<()> {
+            let mut last_item = &mut self.last_wavepackets[self.last_context];
+
+            // If the context changed we may have to do an initialization
+            if self.last_context != *context_idx {
+                self.last_context = *context_idx;
+                if self.contexts[*context_idx].unused {
+                    self.last_wavepackets[*context_idx] = *last_item;
+                    self.contexts[*context_idx].unused = false;
+
+                    last_item = &mut self.last_wavepackets[*context_idx];
+                }
+            }
+
+            if self.has_changed {
+                let context = &mut self.contexts[self.last_context];
+                context.decompressor.last_wavepacket = *last_item;
+                context
+                    .decompressor
+                    .decompress_with(&mut self.decoder, current_point)?;
+                *last_item = LasWavepacket::unpack_from(current_point);
+            } else {
+                last_item.pack_into(current_point);
+            }
+
+            Ok(())
+        }
+
+        fn read_layers_sizes(&mut self, src: &mut R) -> std::io::Result<()> {
+            self.layer_size = src.read_u32::<LittleEndian>()?;
+            Ok(())
+        }
+
+        fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
+            self.has_changed = copy_bytes_into_decoder(
+                self.is_requested,
+                self.layer_size as usize,
+                &mut self.decoder,
+                src,
+            )?;
+            Ok(())
+        }
+    }
+
+    struct LasCompressionContextWavepacket {
+        compressor: super::v1::LasWavepacketCompressor,
+        unused: bool,
+    }
+
+    impl Default for LasCompressionContextWavepacket {
+        fn default() -> Self {
+            Self {
+                compressor: Default::default(),
+                unused: false,
+            }
+        }
+    }
+
+    pub struct LasWavepacketCompressor {
+        /// Holds the compressed bytes of the layer
+        encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
+        /// Did the value change ?
+        has_changed: bool,
+
+        /// See v3::LasRGBDecompressor to know why we also
+        /// keep `las_wavepacket` array even though the
+        /// `LasCompressionContextWavepacket` holds one.
+        contexts: [LasCompressionContextWavepacket; 4],
+        last_wavepackets: [LasWavepacket; 4],
+
+        last_context: usize,
+    }
+
+    impl Default for LasWavepacketCompressor {
+        fn default() -> Self {
+            Self {
+                encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
+                has_changed: false,
+                contexts: [
+                    LasCompressionContextWavepacket::default(),
+                    LasCompressionContextWavepacket::default(),
+                    LasCompressionContextWavepacket::default(),
+                    LasCompressionContextWavepacket::default(),
+                ],
+                last_wavepackets: [
+                    LasWavepacket::default(),
+                    LasWavepacket::default(),
+                    LasWavepacket::default(),
+                    LasWavepacket::default(),
+                ],
+                last_context: 0,
+            }
+        }
+    }
+
+    impl<W> LayeredFieldCompressor<W> for LasWavepacketCompressor
+    where
+        W: Write,
+    {
+        fn size_of_field(&self) -> usize {
+            LasWavepacket::SIZE
+        }
+
+        fn init_first_point(
+            &mut self,
+            dst: &mut W,
+            first_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
+            self.contexts[*context]
+                .compressor
+                .compress_first(dst, first_point)?;
+            self.last_wavepackets[*context] = self.contexts[*context].compressor.last_wavepacket;
+            self.contexts[*context].unused = false;
+            self.last_context = *context;
+            Ok(())
+        }
+
+        fn compress_field_with(
+            &mut self,
+            current_point: &[u8],
+            context: &mut usize,
+        ) -> std::io::Result<()> {
+            let current_wavepacket = LasWavepacket::unpack_from(current_point);
+            let mut last_wavepacket = &mut self.last_wavepackets[self.last_context];
+
+            if self.last_context != *context {
+                if self.contexts[*context].unused {
+                    self.last_wavepackets[*context] = *last_wavepacket;
+                    last_wavepacket = &mut self.last_wavepackets[*context];
+                    self.contexts[*context].unused = false;
+                }
+                self.last_context = *context;
+            }
+
+            if *last_wavepacket != current_wavepacket {
+                self.has_changed = true;
+            }
+
+            let ctx = &mut self.contexts[*context];
+            ctx.compressor.last_wavepacket = *last_wavepacket;
+            ctx.compressor
+                .compress_with(&mut self.encoder, current_point)?;
+            self.last_wavepackets[self.last_context] = ctx.compressor.last_wavepacket;
+
+            Ok(())
+        }
+
+        fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
+            if self.has_changed {
+                self.encoder.done()?;
+            }
+            dst.write_u32::<LittleEndian>(inner_buffer_len_of(&self.encoder) as u32)?;
+            Ok(())
+        }
+
+        fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
+            if self.has_changed {
+                copy_encoder_content_to(&mut self.encoder, dst)?;
+            }
+            Ok(())
+        }
+    }
+}
