@@ -73,7 +73,9 @@ pub trait LayeredFieldDecompressor<R: Read> {
     fn read_layers(&mut self, src: &mut R) -> std::io::Result<()>;
 }
 
-/// Trait describing the interface needed to _decompress_ a point record
+/// Trait describing the interface needed to _decompress_ a point record.
+///
+/// A point record consist of one or more field.
 pub trait RecordDecompressor<R> {
     /// Sets the field decompressors that matches the `laz_items`
     fn set_fields_from(&mut self, laz_items: &Vec<LazItem>) -> crate::Result<()>;
@@ -199,6 +201,9 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
                     LazItemType::Byte(_) => self.add_field_decompressor(
                         las::v1::LasExtraByteDecompressor::new(record_item.size as usize),
                     ),
+                    LazItemType::WavePacket13 => {
+                        self.add_field_decompressor(las::v1::LasWavepacketDecompressor::default())
+                    }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,
@@ -219,6 +224,9 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
                     LazItemType::Byte(_) => self.add_field_decompressor(
                         las::v2::LasExtraByteDecompressor::new(record_item.size as usize),
                     ),
+                    LazItemType::WavePacket13 => {
+                        self.add_field_decompressor(las::v1::LasWavepacketDecompressor::default())
+                    }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,
@@ -445,6 +453,7 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
 /***************************************************************************************************
                     Compression related Traits
 ***************************************************************************************************/
+
 /// Trait to be implemented by FieldCompressors
 pub trait FieldCompressor<W: Write> {
     /// size in bytes of the uncompressed field data
@@ -532,6 +541,7 @@ pub trait RecordCompressor<W> {
 /***************************************************************************************************
                     Record Compressors implementations
 ***************************************************************************************************/
+
 /// Compress points and store them sequentially
 pub struct SequentialPointRecordCompressor<'a, W: Write> {
     is_first_compression: bool,
@@ -586,6 +596,9 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
                     LazItemType::Byte(_) => self.add_field_compressor(
                         las::v1::LasExtraByteCompressor::new(record_item.size as usize),
                     ),
+                    LazItemType::WavePacket13 => {
+                        self.add_field_compressor(las::v1::LasWavepacketCompressor::default())
+                    }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,
@@ -606,6 +619,9 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
                     LazItemType::Byte(_) => self.add_field_compressor(
                         las::v2::LasExtraByteCompressor::new(record_item.size as usize),
                     ),
+                    LazItemType::WavePacket13 => {
+                        self.add_field_compressor(las::v2::LasWavepacketCompressor::default())
+                    }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(
                             record_item.item_type,

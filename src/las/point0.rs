@@ -198,7 +198,7 @@ impl LasPoint0 for Point0 {
 impl Packable for Point0 {
     fn unpack_from(input: &[u8]) -> Self {
         assert!(
-            input.len() >= 20,
+            input.len() >= Point0::SIZE,
             "Point10::unpack_from expected buffer of 20 bytes"
         );
         unsafe { Self::unpack_from_unchecked(input) }
@@ -206,7 +206,7 @@ impl Packable for Point0 {
 
     fn pack_into(&self, output: &mut [u8]) {
         assert!(
-            output.len() >= 20,
+            output.len() >= Point0::SIZE,
             "Point10::pack_into expected buffer of 20 bytes"
         );
         unsafe { self.pack_into_unchecked(output) }

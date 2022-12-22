@@ -5,6 +5,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::las::nir::Nir;
 use crate::las::pointtypes::RGB;
 use crate::las::{Point0, Point6};
+use crate::las::wavepacket::LasWavepacket;
 use crate::LasZipError;
 
 const DEFAULT_CHUNK_SIZE: usize = 50_000;
@@ -46,6 +47,7 @@ impl Default for Version {
 /// The different type of data / fields found in the definition of LAS points
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum LazItemType {
+    // => Below this point, the compressor version is 1 or 2
     /// ExtraBytes for LAS versions <= 1.3 & point format <= 5
     Byte(u16),
     /// Point10 is the Point format id 0 of LAS for versions <= 1.3 & point format <= 5
@@ -54,7 +56,10 @@ pub enum LazItemType {
     GpsTime,
     /// RGB for LAS versions <= 1.3 & point format <= 5
     RGB12,
-    //WavePacket13,
+    /// Wavepacket data for LAS Version >= 1.3 & point format == 4 || == 5
+    WavePacket13,
+
+    // => Below this point, the compressor version is 3 or 4
     /// Point14 is the Point format id 6 of LAS for versions >= 1.4 & point format >= 6
     Point14,
     /// RGB for LAS versions >= 1.4
@@ -73,7 +78,7 @@ impl LazItemType {
             6 => Some(LazItemType::Point10),
             7 => Some(LazItemType::GpsTime),
             8 => Some(LazItemType::RGB12),
-            //9 => LazItemType::WavePacket13,
+            9 => Some(LazItemType::WavePacket13),
             10 => Some(LazItemType::Point14),
             11 => Some(LazItemType::RGB14),
             12 => Some(LazItemType::RGBNIR14),
@@ -89,6 +94,7 @@ impl LazItemType {
             LazItemType::Point10 => Point0::SIZE as u16,
             LazItemType::GpsTime => std::mem::size_of::<f64>() as u16,
             LazItemType::RGB12 => RGB::SIZE as u16,
+            LazItemType::WavePacket13 => LasWavepacket::SIZE as u16,
             LazItemType::Point14 => Point6::SIZE as u16,
             LazItemType::RGB14 => RGB::SIZE as u16,
             LazItemType::RGBNIR14 => (RGB::SIZE + Nir::SIZE) as u16,
@@ -102,6 +108,7 @@ impl LazItemType {
             LazItemType::Point10 => 2,
             LazItemType::GpsTime => 2,
             LazItemType::RGB12 => 2,
+            LazItemType::WavePacket13 => 2,
             LazItemType::Point14 => 3,
             LazItemType::RGB14 => 3,
             LazItemType::RGBNIR14 => 3,
@@ -117,7 +124,7 @@ impl From<LazItemType> for u16 {
             LazItemType::Point10 => 6,
             LazItemType::GpsTime => 7,
             LazItemType::RGB12 => 8,
-            //LazItemType::WavePacket13 => 9,
+            LazItemType::WavePacket13 => 9,
             LazItemType::Point14 => 10,
             LazItemType::RGB14 => 11,
             LazItemType::RGBNIR14 => 12,

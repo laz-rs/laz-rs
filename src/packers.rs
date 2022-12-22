@@ -27,18 +27,68 @@
 #![doc(hidden)]
 //! Packing types from / to bytes
 
+use std::mem::size_of;
+
 /// Definition of the packing & unpacking trait
 ///
 /// Types that can be packed and unpacked from byte slices.
 ///
 /// This trait allows to have something that seems a bit faster
 /// that using a std::io::Cursor + the byteorder crate.
+///
+/// # Important
+///
+/// The byteorder is LittleEndian as this is the byte-order
+/// used throughout the LAS Standard.
 pub trait Packable {
     fn unpack_from(input: &[u8]) -> Self;
     fn pack_into(&self, output: &mut [u8]);
 
     unsafe fn unpack_from_unchecked(input: &[u8]) -> Self;
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]);
+}
+
+impl Packable for u64 {
+    #[inline]
+    fn unpack_from(input: &[u8]) -> Self {
+        assert!(
+            input.len() >= size_of::<Self>(),
+            "u64::unpack_from expected a slice of {} bytes",
+            size_of::<Self>()
+        );
+        unsafe { Self::unpack_from_unchecked(input) }
+    }
+
+    #[inline]
+    fn pack_into(&self, output: &mut [u8]) {
+        assert!(
+            output.len() >= size_of::<Self>(),
+            "u64::pack_into expected a slice of {} bytes",
+            size_of::<Self>()
+        );
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        let b1 = *input.get_unchecked(0);
+        let b2 = *input.get_unchecked(1);
+        let b3 = *input.get_unchecked(2);
+        let b4 = *input.get_unchecked(3);
+        let b5 = *input.get_unchecked(4);
+        let b6 = *input.get_unchecked(5);
+        let b7 = *input.get_unchecked(6);
+        let b8 = *input.get_unchecked(7);
+
+        u64::from_le_bytes([b1, b2, b3, b4, b5, b6, b7, b8])
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        output
+            .get_unchecked_mut(..8)
+            .copy_from_slice(&self.to_le_bytes())
+    }
 }
 
 impl Packable for u32 {
@@ -198,5 +248,42 @@ impl Packable for i8 {
     #[inline]
     unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
         *output.get_unchecked_mut(0) = (*self) as u8;
+    }
+}
+
+impl Packable for f32 {
+    #[inline]
+    fn unpack_from(input: &[u8]) -> Self {
+        assert!(
+            input.len() >= 4,
+            "f32::unpack_from expected a slice of 4 bytes"
+        );
+        unsafe { Self::unpack_from_unchecked(input) }
+    }
+
+    #[inline]
+    fn pack_into(&self, output: &mut [u8]) {
+        assert!(
+            output.len() >= 4,
+            "f32::pack_into expected a slice of 4 bytes"
+        );
+        unsafe { self.pack_into_unchecked(output) }
+    }
+
+    #[inline]
+    unsafe fn unpack_from_unchecked(input: &[u8]) -> Self {
+        let b1 = *input.get_unchecked(0);
+        let b2 = *input.get_unchecked(1);
+        let b3 = *input.get_unchecked(2);
+        let b4 = *input.get_unchecked(3);
+
+        f32::from_le_bytes([b1, b2, b3, b4])
+    }
+
+    #[inline]
+    unsafe fn pack_into_unchecked(&self, output: &mut [u8]) {
+        output
+            .get_unchecked_mut(..4)
+            .copy_from_slice(&self.to_le_bytes())
     }
 }

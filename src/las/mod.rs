@@ -22,6 +22,7 @@ pub mod file;
 pub mod gps;
 pub mod nir;
 pub mod rgb;
+pub mod wavepacket;
 
 pub mod v1 {
     //! This module only contains re exports of compressors / decompressors
@@ -30,6 +31,7 @@ pub mod v1 {
     pub use crate::las::gps::v1::{LasGpsTimeCompressor, LasGpsTimeDecompressor};
     pub use crate::las::point0::v1::{LasPoint0Compressor, LasPoint0Decompressor};
     pub use crate::las::rgb::v1::{LasRGBCompressor, LasRGBDecompressor};
+    pub use crate::las::wavepacket::v1::{LasWavepacketCompressor, LasWavepacketDecompressor};
 }
 
 pub mod v2 {
@@ -39,6 +41,7 @@ pub mod v2 {
     pub use crate::las::gps::v2::{GpsTimeCompressor, GpsTimeDecompressor};
     pub use crate::las::point0::v2::{LasPoint0Compressor, LasPoint0Decompressor};
     pub use crate::las::rgb::v2::{LasRGBCompressor, LasRGBDecompressor};
+    pub use crate::las::wavepacket::v2::{LasWavepacketCompressor, LasWavepacketDecompressor};
 }
 
 pub mod v3 {
