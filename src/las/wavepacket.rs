@@ -362,6 +362,7 @@ pub use v1 as v2;
 pub mod v3 {
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
+    use crate::las::selective::DecompressionSelection;
     use crate::las::utils::{
         copy_bytes_into_decoder, copy_encoder_content_to, inner_buffer_len_of,
     };
@@ -390,8 +391,10 @@ pub mod v3 {
     pub struct LasWavepacketDecompressor {
         /// Holds the compressed bytes of the layer
         decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
-        /// Did the value change ?
-        has_changed: bool,
+        /// True if the user requested to decompress and if
+        /// the compressed data changed (is not the same value for all
+        /// points)
+        should_decompress: bool,
         /// Did the user request to decompress wave packets ?
         is_requested: bool,
         /// Size in bytes of the compressed data
@@ -410,7 +413,7 @@ pub mod v3 {
         fn default() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
-                has_changed: false,
+                should_decompress: false,
                 is_requested: true,
                 layer_size: 0,
                 contexts: [
@@ -436,6 +439,10 @@ pub mod v3 {
     {
         fn size_of_field(&self) -> usize {
             LasWavepacket::SIZE
+        }
+
+        fn set_selection(&mut self, selection: DecompressionSelection) {
+            self.is_requested = selection.should_decompress_wavepacket();
         }
 
         fn init_first_point(
@@ -476,7 +483,7 @@ pub mod v3 {
                 }
             }
 
-            if self.has_changed {
+            if self.should_decompress {
                 let context = &mut self.contexts[self.last_context];
                 context.decompressor.last_wavepacket = *last_item;
                 context
@@ -496,7 +503,7 @@ pub mod v3 {
         }
 
         fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
-            self.has_changed = copy_bytes_into_decoder(
+            self.should_decompress = copy_bytes_into_decoder(
                 self.is_requested,
                 self.layer_size as usize,
                 &mut self.decoder,

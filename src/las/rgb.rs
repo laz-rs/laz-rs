@@ -657,6 +657,7 @@ pub mod v3 {
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
     use crate::las::rgb::RGB;
+    use crate::las::selective::DecompressionSelection;
     use crate::las::utils::{
         copy_bytes_into_decoder, copy_encoder_content_to, inner_buffer_len_of, read_and_unpack,
     };
@@ -681,8 +682,12 @@ pub mod v3 {
 
     pub struct LasRGBDecompressor {
         decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
-        changed_rgb: bool,
-        requested_rgb: bool,
+        /// True if the user requested to decompress and if
+        /// the compressed data changed (is not the same value for all
+        /// points)
+        should_decompress: bool,
+        /// Did the user request to decompress this data ?
+        is_requested: bool,
         layer_size: u32,
         // The last_rgbs are not part of the decompression context
         // as when decompressing, if the current context index has changed since
@@ -701,8 +706,8 @@ pub mod v3 {
         fn default() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
-                changed_rgb: false,
-                requested_rgb: true,
+                should_decompress: false,
+                is_requested: true,
                 layer_size: 0,
                 contexts: [
                     LasDecompressionContextRGB::default(),
@@ -719,6 +724,10 @@ pub mod v3 {
     impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasRGBDecompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<u16>() * 3
+        }
+
+        fn set_selection(&mut self, selection: DecompressionSelection) {
+            self.is_requested = selection.should_decompress_rgb();
         }
 
         fn init_first_point(
@@ -755,7 +764,7 @@ pub mod v3 {
                 }
             }
 
-            if self.changed_rgb {
+            if self.should_decompress {
                 let new = v2::decompress_rgb_using(
                     &mut self.decoder,
                     &mut self.contexts[self.last_context_used].models,
@@ -776,8 +785,8 @@ pub mod v3 {
         }
 
         fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
-            self.changed_rgb = copy_bytes_into_decoder(
-                self.requested_rgb,
+            self.should_decompress = copy_bytes_into_decoder(
+                self.is_requested,
                 self.layer_size as usize,
                 &mut self.decoder,
                 src,

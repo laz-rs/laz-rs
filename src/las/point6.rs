@@ -7,54 +7,6 @@ fn u32_zero_bit_0(n: u32) -> u32 {
     n & 0xFFFF_FFFE
 }
 
-pub struct DecompressionSelector(u32);
-
-impl DecompressionSelector {
-    pub fn decompress_all() -> Self {
-        Self { 0: 0xFFFF_FFFF }
-    }
-
-    pub fn channel_returns_xy_requested(&self) -> bool {
-        self.is_set(0x0000_0000)
-    }
-
-    pub fn z_requested(&self) -> bool {
-        self.is_set(0x0000_0001)
-    }
-
-    pub fn classification_requested(&self) -> bool {
-        self.is_set(0x0000_0002)
-    }
-
-    pub fn flags_requested(&self) -> bool {
-        self.is_set(0x0000_0004)
-    }
-
-    pub fn intensity_requested(&self) -> bool {
-        self.is_set(0x0000_0008)
-    }
-
-    pub fn scan_angle_requested(&self) -> bool {
-        self.is_set(0x0000_0010)
-    }
-
-    pub fn user_data_requested(&self) -> bool {
-        self.is_set(0x0000_0020)
-    }
-
-    pub fn point_source_requested(&self) -> bool {
-        self.is_set(0x0000_0040)
-    }
-
-    pub fn gps_time_requested(&self) -> bool {
-        self.is_set(0x0000_0080)
-    }
-
-    fn is_set(&self, mask: u32) -> bool {
-        self.0 & mask != 0
-    }
-}
-
 //TODO cleanup
 pub trait LasPoint6 {
     // Non mutable accessors
@@ -371,7 +323,8 @@ pub mod v3 {
     };
     use crate::encoders::ArithmeticEncoder;
     use crate::las::gps::{GpsTime, LasGpsTime};
-    use crate::las::point6::{u32_zero_bit_0, DecompressionSelector, LasPoint6, Point6};
+    use crate::las::point6::{u32_zero_bit_0, LasPoint6, Point6};
+    use crate::las::selective::DecompressionSelection;
     use crate::las::utils::{
         copy_bytes_into_decoder, copy_encoder_content_to, i32_quantize, read_and_unpack,
         StreamingMedian, NUMBER_RETURN_LEVEL_8CT, NUMBER_RETURN_MAP_6CTX,
@@ -447,6 +400,7 @@ pub mod v3 {
     /// has changed at least once.
     #[derive(Debug)]
     struct Point6FieldFlags {
+        //TODO ? xy_returns_channel: bool,
         z: bool,
         classification: bool,
         flags: bool,
@@ -460,14 +414,15 @@ pub mod v3 {
     impl Default for Point6FieldFlags {
         fn default() -> Self {
             Self {
-                z: false,
-                classification: false,
-                flags: false,
-                intensity: false,
-                scan_angle: false,
-                user_data: false,
-                point_source: false,
-                gps_time: false,
+                // xy_returns_channel: true,
+                z: true,
+                classification: true,
+                flags: true,
+                intensity: true,
+                scan_angle: true,
+                user_data: true,
+                point_source: true,
+                gps_time: true,
             }
         }
     }
@@ -673,8 +628,13 @@ pub mod v3 {
         decoders: Point6Decoders,
 
         layers_sizes: LayerSizes,
+        /// True if the user requested to decompress and if
+        /// the compressed data changed (is not the same value for all
+        /// points)
         should_decompress: Point6FieldFlags,
-        decompression_selector: DecompressionSelector,
+        /// Did the user request to decompress
+        /// that part of the point 6 data ?
+        is_requested: Point6FieldFlags,
 
         current_context: usize,
         contexts: [Point6DecompressionContext; 4],
@@ -682,18 +642,12 @@ pub mod v3 {
 
     impl Default for LasPoint6Decompressor {
         fn default() -> Self {
-            Self::selective(DecompressionSelector::decompress_all())
-        }
-    }
-
-    impl LasPoint6Decompressor {
-        pub fn selective(selector: DecompressionSelector) -> Self {
             let p = Point6::default();
             Self {
                 decoders: Point6Decoders::default(),
                 layers_sizes: Default::default(),
                 should_decompress: Point6FieldFlags::default(),
-                decompression_selector: selector,
+                is_requested: Point6FieldFlags::default(),
                 current_context: 0,
                 contexts: [
                     Point6DecompressionContext::from_last_point(&p),
@@ -703,7 +657,9 @@ pub mod v3 {
                 ],
             }
         }
+    }
 
+    impl LasPoint6Decompressor {
         fn read_gps_time(&mut self) -> std::io::Result<()> {
             let the_context = &mut self.contexts[self.current_context];
 
@@ -901,6 +857,20 @@ pub mod v3 {
     impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasPoint6Decompressor {
         fn size_of_field(&self) -> usize {
             Point6::SIZE
+        }
+
+        fn set_selection(&mut self, selection: DecompressionSelection) {
+            self.is_requested = Point6FieldFlags {
+                // xy_returns_channel: (selection.0 & DecompressionSelection::XY_RETURNS_CHANNEL) != 0,
+                z: selection.should_decompress_z(),
+                classification: selection.should_decompress_classification(),
+                flags: selection.should_decompress_flags(),
+                intensity: selection.should_decompress_intensity(),
+                scan_angle: selection.should_decompress_scan_angle(),
+                user_data: selection.should_decompress_user_data(),
+                point_source: selection.should_decompress_point_source_id(),
+                gps_time: selection.should_decompress_gps_time(),
+            };
         }
 
         fn init_first_point(
@@ -1163,62 +1133,62 @@ pub mod v3 {
             let num_bytes = &self.layers_sizes;
 
             copy_bytes_into_decoder(
-                true, // Always decode x,y,channel & returns,
+                true, // always decompress xy and scanner channel
                 num_bytes.channel_returns_xy,
                 &mut self.decoders.channel_returns_xy,
                 src,
             )?;
 
             self.should_decompress.z = copy_bytes_into_decoder(
-                self.decompression_selector.z_requested(),
+                self.is_requested.z,
                 num_bytes.z,
                 &mut self.decoders.z,
                 src,
             )?;
 
             self.should_decompress.classification = copy_bytes_into_decoder(
-                self.decompression_selector.classification_requested(),
+                self.is_requested.classification,
                 num_bytes.classification,
                 &mut self.decoders.classification,
                 src,
             )?;
 
             self.should_decompress.flags = copy_bytes_into_decoder(
-                self.decompression_selector.flags_requested(),
+                self.is_requested.flags,
                 num_bytes.flags,
                 &mut self.decoders.flags,
                 src,
             )?;
 
             self.should_decompress.intensity = copy_bytes_into_decoder(
-                self.decompression_selector.intensity_requested(),
+                self.is_requested.intensity,
                 num_bytes.intensity,
                 &mut self.decoders.intensity,
                 src,
             )?;
 
             self.should_decompress.scan_angle = copy_bytes_into_decoder(
-                self.decompression_selector.scan_angle_requested(),
+                self.is_requested.scan_angle,
                 num_bytes.scan_angle,
                 &mut self.decoders.scan_angle,
                 src,
             )?;
 
             self.should_decompress.user_data = copy_bytes_into_decoder(
-                self.decompression_selector.user_data_requested(),
+                self.is_requested.user_data,
                 num_bytes.user_data,
                 &mut self.decoders.user_data,
                 src,
             )?;
 
             self.should_decompress.point_source = copy_bytes_into_decoder(
-                self.decompression_selector.point_source_requested(),
+                self.is_requested.point_source,
                 num_bytes.point_source,
                 &mut self.decoders.point_source,
                 src,
             )?;
             self.should_decompress.gps_time = copy_bytes_into_decoder(
-                self.decompression_selector.gps_time_requested(),
+                self.is_requested.gps_time,
                 num_bytes.gps_time,
                 &mut self.decoders.gps_time,
                 src,

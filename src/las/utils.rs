@@ -160,6 +160,10 @@ pub fn i32_quantize(n: f32) -> i32 {
 ///
 /// if `is_requested` is false, the bytes will be seeked over (skipped).
 ///
+///
+/// Returns whether the data should be decompressed
+/// (either because it is empty as it did not change or the user
+/// requested not to decompress it)
 #[inline]
 pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     is_requested: bool,
@@ -180,7 +184,13 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
         }
     } else {
         if num_bytes > 0 {
-            src.seek(SeekFrom::Current(num_bytes as i64))?;
+            if let Err(_) = src.seek(SeekFrom::Current(num_bytes as i64)) {
+                // This is mainly to accommodate python bindings,
+                // where the stream might not be seekable and return an error
+                // so we instead try to read data to skip it
+                let mut unused_data = vec![0u8; num_bytes];
+                src.read_exact(unused_data.as_mut_slice())?;
+            }
         }
         Ok(false)
     }

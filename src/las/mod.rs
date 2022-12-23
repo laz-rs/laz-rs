@@ -22,6 +22,7 @@ pub mod file;
 pub mod gps;
 pub mod nir;
 pub mod rgb;
+pub mod selective;
 pub mod wavepacket;
 
 pub mod v1 {

@@ -29,6 +29,7 @@ pub mod v3 {
 
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
+    use crate::las::selective::DecompressionSelection;
     use crate::las::utils::copy_bytes_into_decoder;
     use crate::las::utils::{
         copy_encoder_content_to, lower_byte, lower_byte_changed, read_and_unpack, upper_byte,
@@ -56,10 +57,10 @@ pub mod v3 {
         }
     }
 
-    //TODO Selective
     pub struct LasNIRDecompressor {
         decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
-        changed_nir: bool,
+        is_requested: bool,
+        should_decompress: bool,
         layer_size: u32,
         last_context_used: usize,
         // Last & contexts are separated for the same reasons as in v3::RGB
@@ -77,10 +78,11 @@ pub mod v3 {
                     NirContext::default(),
                     NirContext::default(),
                 ],
-                changed_nir: false,
+                should_decompress: false,
                 layer_size: 0,
                 last_context_used: 0,
                 last_nirs: [0u16; 4],
+                is_requested: true,
             }
         }
     }
@@ -88,6 +90,10 @@ pub mod v3 {
     impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasNIRDecompressor {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<u16>()
+        }
+
+        fn set_selection(&mut self, selection: DecompressionSelection) {
+            self.is_requested = selection.should_decompress_nir();
         }
 
         fn init_first_point(
@@ -122,7 +128,7 @@ pub mod v3 {
             }
 
             let the_context = &mut self.contexts[self.last_context_used];
-            if self.changed_nir {
+            if self.should_decompress {
                 let mut new_nir: u16;
                 let sym = self
                     .decoder
@@ -160,8 +166,8 @@ pub mod v3 {
         }
 
         fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
-            self.changed_nir = copy_bytes_into_decoder(
-                true, //TODO
+            self.should_decompress = copy_bytes_into_decoder(
+                self.is_requested,
                 self.layer_size as usize,
                 &mut self.decoder,
                 src,

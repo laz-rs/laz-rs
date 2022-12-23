@@ -181,6 +181,7 @@ pub mod v3 {
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
     use crate::las::extra_bytes::ExtraBytes;
+    use crate::las::selective::DecompressionSelection;
     use crate::las::utils::{copy_bytes_into_decoder, copy_encoder_content_to};
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::record::{LayeredFieldCompressor, LayeredFieldDecompressor};
@@ -205,7 +206,8 @@ pub mod v3 {
         // Each extra bytes has is own layer, thus its own decoder
         decoders: Vec<ArithmeticDecoder<Cursor<Vec<u8>>>>,
         num_bytes_per_layer: Vec<u32>,
-        has_byte_changed: Vec<bool>,
+        is_requested: Vec<bool>,
+        should_load_bytes: Vec<bool>,
         contexts: Vec<ExtraBytesContext>,
         // Last & contexts are separated for the same reasons as in v3::RGB
         last_bytes: Vec<ExtraBytes>,
@@ -220,7 +222,8 @@ pub mod v3 {
                     .map(|_i| ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())))
                     .collect(),
                 num_bytes_per_layer: vec![0; count],
-                has_byte_changed: vec![false; count],
+                is_requested: vec![true; count],
+                should_load_bytes: vec![true; count],
                 contexts: (0..4).map(|_i| ExtraBytesContext::new(count)).collect(),
                 last_bytes: (0..4).map(|_| ExtraBytes::new(count)).collect(),
                 num_extra_bytes: count,
@@ -232,6 +235,11 @@ pub mod v3 {
     impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasExtraByteDecompressor {
         fn size_of_field(&self) -> usize {
             self.num_extra_bytes
+        }
+
+        fn set_selection(&mut self, selection: DecompressionSelection) {
+            self.is_requested
+                .fill(selection.should_decompress_extra_bytes());
         }
 
         fn init_first_point(
@@ -276,7 +284,7 @@ pub mod v3 {
             let last_bytes = unsafe { &mut *last_bytes_ptr };
             let the_context = &mut self.contexts[*context];
             for i in 0..self.num_extra_bytes {
-                if self.has_byte_changed[i] {
+                if self.should_load_bytes[i] {
                     let last_value = &mut last_bytes.bytes[i];
                     let diff = self.decoders[i].decode_symbol(&mut the_context.models[i])?;
                     let new_value = last_value.wrapping_add(diff as u8);
@@ -296,8 +304,8 @@ pub mod v3 {
 
         fn read_layers(&mut self, src: &mut R) -> std::io::Result<()> {
             for i in 0..self.num_extra_bytes {
-                self.has_byte_changed[i] = copy_bytes_into_decoder(
-                    true, // TODO requested bytes
+                self.should_load_bytes[i] = copy_bytes_into_decoder(
+                    self.is_requested[i],
                     self.num_bytes_per_layer[i] as usize,
                     &mut self.decoders[i],
                     src,

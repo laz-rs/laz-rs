@@ -3,6 +3,7 @@ use std::io::{Read, Seek, SeekFrom};
 use rayon::prelude::*;
 
 use crate::byteslice::ChunksIrregularMut;
+use crate::las::selective::DecompressionSelection;
 use crate::laszip::chunk_table::{ChunkTable, ChunkTableEntry};
 use crate::laszip::details::record_decompressor_from_laz_items;
 use crate::laszip::CompressorType;
@@ -29,6 +30,8 @@ pub struct ParLasZipDecompressor<R> {
     // the compressed data is much much smaller that uncompressed data.
     internal_buffer: Vec<u8>,
     source: R,
+    // Contains which fields the user wants to decompress or not
+    selection: DecompressionSelection,
 }
 
 #[cfg(feature = "parallel")]
@@ -36,7 +39,21 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
     /// Creates a new decompressor
     ///
     /// Fails if no chunk table could be found.
-    pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
+    ///
+    /// The created decompressor will decompress all data
+    pub fn new(source: R, vlr: LazVlr) -> crate::Result<Self> {
+        Self::selective(source, vlr, DecompressionSelection::all())
+    }
+
+    /// Creates a new decompressor, that will only decompress
+    /// fields that are selected by the `selection`.
+    ///
+    /// Fails if not chunk table could be found
+    pub fn selective(
+        mut source: R,
+        vlr: LazVlr,
+        selection: DecompressionSelection,
+    ) -> crate::Result<Self> {
         // Technically we could support PointWise compressor
         // But it's old and rare so not much point to do so
         if vlr.compressor != CompressorType::PointWiseChunked
@@ -63,6 +80,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             internal_buffer: vec![],
             last_chunk_read: -1,
             start_of_data,
+            selection,
         })
     }
 
@@ -141,18 +159,27 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         let (head_output, tail_output) =
             out_decompress.split_at_mut(num_points_in_head_chunks * point_size);
 
-        // These are to make the borrow checker happy self is not `Send`.
+        // These are to make the borrow checker happy, self is not `Send`.
         let rest = &mut self.rest;
         let vlr = &self.vlr;
+        let selection = self.selection;
         let chunk_table_len = self.chunk_table.len();
+
         let (res1, res2) = rayon::join(
             || -> crate::Result<()> {
-                par_decompress(head_chunks, head_output, &vlr, head_chunks_table)
+                par_decompress_selective(
+                    head_chunks,
+                    head_output,
+                    &vlr,
+                    head_chunks_table,
+                    selection,
+                )
             },
             || -> crate::Result<()> {
                 let mut last_src = std::io::Cursor::new(tail_chunk);
                 let mut decompressor =
                     record_decompressor_from_laz_items(&vlr.items(), &mut last_src)?;
+                decompressor.set_selection(selection);
                 // Decompress what we can in the caller's buffer
                 decompressor.decompress_many(tail_output)?;
                 // Then, decompress what we did not, into our rest buffer
@@ -300,11 +327,12 @@ pub fn par_decompress_buffer(
 ///
 /// The chunk table describes the chunks contained in the `compressed_points` buffer
 #[cfg(feature = "parallel")]
-pub fn par_decompress(
+pub fn par_decompress_selective(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],
     laz_vlr: &LazVlr,
     chunk_table: &[ChunkTableEntry],
+    selection: DecompressionSelection,
 ) -> crate::Result<()> {
     use crate::byteslice::ChunksIrregular;
     let sizes = chunk_table.iter().map(|entry| entry.byte_count as usize);
@@ -323,9 +351,26 @@ pub fn par_decompress(
         .map(|(chunk_in, chunk_out)| {
             let src = std::io::Cursor::new(chunk_in);
             let mut record_decompressor = record_decompressor_from_laz_items(laz_vlr.items(), src)?;
+            record_decompressor.set_selection(selection);
             record_decompressor.decompress_many(chunk_out)?;
             Ok(())
         })
         .collect::<crate::Result<()>>()?;
     Ok(())
+}
+
+#[cfg(feature = "parallel")]
+pub fn par_decompress(
+    compressed_points: &[u8],
+    decompressed_points: &mut [u8],
+    laz_vlr: &LazVlr,
+    chunk_table: &[ChunkTableEntry],
+) -> crate::Result<()> {
+    par_decompress_selective(
+        compressed_points,
+        decompressed_points,
+        laz_vlr,
+        chunk_table,
+        DecompressionSelection::all(),
+    )
 }

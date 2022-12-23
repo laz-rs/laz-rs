@@ -1,6 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::errors::LasZipError::MissingChunkTable;
+use crate::las::selective::DecompressionSelection;
 use crate::record::RecordDecompressor;
 use crate::LasZipError;
 
@@ -47,6 +48,8 @@ impl SeekInfo {
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
+    // Contains which fields the user wants to decompress or not
+    selection: DecompressionSelection,
     // Allowed to be None if the source was not seekable and
     // chunks are not of variable size
     seek_info: Option<SeekInfo>,
@@ -57,8 +60,20 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 
 impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
-    /// and the LazVlr describing the compressed data
-    pub fn new(mut source: R, vlr: LazVlr) -> crate::Result<Self> {
+    /// and the LazVlr describing the compressed data.
+    ///
+    /// The created decompressor will decompress all data
+    pub fn new(source: R, vlr: LazVlr) -> crate::Result<Self> {
+        Self::selective(source, vlr, DecompressionSelection::all())
+    }
+
+    /// Creates a new decompressor, that will only decompress
+    /// fields that are selected by the `selection`.
+    pub fn selective(
+        mut source: R,
+        vlr: LazVlr,
+        selection: DecompressionSelection,
+    ) -> crate::Result<Self> {
         // The chunk table is not always mandatory when just reading data.
         let seek_info = match vlr.compressor {
             CompressorType::PointWise => {
@@ -103,12 +118,14 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             }
         };
 
-        let record_decompressor =
+        let mut record_decompressor =
             details::record_decompressor_from_laz_items(&vlr.items(), source)?;
+        record_decompressor.set_selection(selection);
 
         Ok(Self {
             vlr,
             record_decompressor,
+            selection,
             seek_info,
             current_chunk: 0,
             chunk_points_read: 0,
@@ -266,6 +283,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         self.record_decompressor
             .set_fields_from(&self.vlr.items())
             .unwrap();
+        self.record_decompressor.set_selection(self.selection);
     }
 }
 

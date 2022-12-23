@@ -8,6 +8,7 @@ use crate::byteslice::{ChunksIrregular, ChunksIrregularMut};
 use crate::decoders;
 use crate::encoders;
 use crate::las;
+use crate::las::selective::DecompressionSelection;
 use crate::laszip::{LazItem, LazItemType};
 use crate::LasZipError;
 
@@ -48,6 +49,12 @@ pub trait LayeredFieldDecompressor<R: Read> {
     /// size in bytes of the decompressed field data
     fn size_of_field(&self) -> usize;
 
+    /// Whether the user actually wants to decompress the data
+    /// of this field.
+    ///
+    /// Will be called before any of the methods that are defined below.
+    fn set_selection(&mut self, selection: DecompressionSelection);
+
     /// Decompress the first point's field from the `src`, and pack it into the `first_point` slice
     ///
     /// The `first_point` slice will have a len of exactly `self_of_field()` bytes.
@@ -87,9 +94,19 @@ pub trait RecordDecompressor<R> {
     /// This is only meaningful for layered decompressors.
     ///
     /// 0 means the size is unknown.
+    ///
+    // TODO should this return Option<u64> ?
     fn record_count(&self) -> u64 {
         0
     }
+
+    /// Sets the selection of fields the user actually wants to decompress
+    ///
+    /// May be ignored by certain implementation of record decompressor
+    /// as not all of them supports selective decompression.
+    ///
+    /// Must be called before decompressing any points (otherwise it will be ignored)
+    fn set_selection(&mut self, selection: DecompressionSelection);
 
     /// Decompress the next point and pack the result in the `out` slice
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()>;
@@ -249,6 +266,10 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
         self.record_size
     }
 
+    fn set_selection(&mut self, _selection: DecompressionSelection) {
+        // We do nothing as sequential decompressor does not support selective decompression
+    }
+
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
         let decompressors_and_data =
             self.field_decompressors
@@ -388,6 +409,14 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
             }
         }
         Ok(())
+    }
+
+    fn set_selection(&mut self, selection: DecompressionSelection) {
+        if self.is_first_decompression == true {
+            for field_decompressor in &mut self.field_decompressors {
+                field_decompressor.set_selection(selection)
+            }
+        }
     }
 
     fn record_size(&self) -> usize {

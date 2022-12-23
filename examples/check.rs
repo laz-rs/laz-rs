@@ -146,7 +146,15 @@ where
             las_file.read_exact(expected_points)?;
             decompressor.decompress_many(our_points)?;
 
-            assert_eq!(our_points, expected_points);
+            assert_eq!(
+                our_points,
+                expected_points,
+                "point bytes are not equal (idx range:  {} -> {}), {:?} != {:?}",
+                las_header.num_points - num_points_left as u64,
+                (las_header.num_points - num_points_left as u64) + num_points_to_read as u64,
+                our_points,
+                expected_points
+            );
 
             num_points_left -= num_points_to_read;
             progress.inc(num_points_to_read as u64);

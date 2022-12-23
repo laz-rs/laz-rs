@@ -108,10 +108,11 @@
 //! - [`par_decompress_buffer`]
 
 pub use errors::LasZipError;
+pub use las::selective::DecompressionSelection;
 #[cfg(feature = "parallel")]
 pub use laszip::parallel::{
-    par_compress_buffer, par_decompress, par_decompress_buffer, ParLasZipCompressor,
-    ParLasZipDecompressor,
+    par_compress_buffer, par_decompress, par_decompress_buffer, par_decompress_selective,
+    ParLasZipCompressor, ParLasZipDecompressor,
 };
 pub use laszip::{compress_buffer, decompress_buffer};
 pub use laszip::{
