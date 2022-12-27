@@ -1,3 +1,10 @@
+# 0.8.0
+ - Added support for Wavepacket compression/decompression
+   for point format 4 & 5 (compressor version 1 & 2) and
+   point format 9 & 10 (compressor version 3)
+ - Added support for selective decompression, which enables to selectively decompress or not
+   some fields. Only works on layered fields (point format >= 6)
+
 # 0.7.0
  - Changed the license from LGPL to Apache 2.0 as LASZip (the projects laz-rs derives from)
    was re-licensed to Apache 2.0
