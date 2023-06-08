@@ -159,6 +159,12 @@ impl<T: Read> ArithmeticDecoder<T> {
         if !model.decoder_table.is_empty() {
             // use table look-up for faster decoding
             self.length >>= DM_LENGTH_SHIFT;
+            if self.length == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "ArithmeticDecoder length is zero",
+                ));
+            }
             let dv = self.value / self.length;
             let t = dv >> model.table_shift;
 
