@@ -1,3 +1,9 @@
+# 0.8.1
+ - Fixed potential division by zero on bad data.
+   A division by zero could sometimes happen in the arithmetic decoder
+   when decompressing invalid data, this would trigger a panic.
+   Now an End Of File error will be returned.
+
 # 0.8.0
  - Added support for Wavepacket compression/decompression
    for point format 4 & 5 (compressor version 1 & 2) and
