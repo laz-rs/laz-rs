@@ -5,6 +5,8 @@ pub use crate::las::point6::{LasPoint6, Point6};
 pub use crate::las::rgb::{LasRGB, RGB};
 use crate::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
 
+use super::wavepacket::LasWavepacket;
+
 pub trait Point0Based {
     fn point0(&self) -> &Point0;
     fn point0_mut(&mut self) -> &mut Point0;
@@ -303,6 +305,134 @@ impl DefaultVersion for Point3 {
 }
 
 /***************************************************************************************************
+                    Point Format 4
+***************************************************************************************************/
+
+#[derive(Default, Debug, PartialEq, Copy, Clone)]
+pub struct Point4 {
+    base: Point0,
+    gps_time: f64,
+    wavepacket: LasWavepacket,
+}
+
+impl Point0Based for Point4 {
+    fn point0(&self) -> &Point0 {
+        &self.base
+    }
+
+    fn point0_mut(&mut self) -> &mut Point0 {
+        &mut self.base
+    }
+}
+
+impl LasGpsTime for Point4 {
+    fn gps_time(&self) -> f64 {
+        self.gps_time
+    }
+
+    fn set_gps_time(&mut self, new_value: f64) {
+        self.gps_time = new_value;
+    }
+}
+
+impl Version2 for Point4 {
+    fn version_2(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 4,
+            version: 2,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime,
+            LazItemType::WavePacket13
+        )
+    }
+}
+
+impl Version1 for Point4 {
+    fn version_1(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 4,
+            version: 1,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime,
+            LazItemType::WavePacket13
+        )
+    }
+}
+
+impl DefaultVersion for Point4 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        <Self as Version2>::version_2(num_extra_bytes)
+    }
+}
+
+/***************************************************************************************************
+                    Point Format 5
+***************************************************************************************************/
+
+#[derive(Default, Debug, PartialEq, Copy, Clone)]
+pub struct Point5 {
+    base: Point0,
+    gps_time: f64,
+    wavepacket: LasWavepacket,
+}
+
+impl Point0Based for Point5 {
+    fn point0(&self) -> &Point0 {
+        &self.base
+    }
+
+    fn point0_mut(&mut self) -> &mut Point0 {
+        &mut self.base
+    }
+}
+
+impl LasGpsTime for Point5 {
+    fn gps_time(&self) -> f64 {
+        self.gps_time
+    }
+
+    fn set_gps_time(&mut self, new_value: f64) {
+        self.gps_time = new_value;
+    }
+}
+
+impl Version2 for Point5 {
+    fn version_2(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 5,
+            version: 2,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime,
+            LazItemType::RGB12,
+            LazItemType::WavePacket13
+        )
+    }
+}
+
+impl Version1 for Point5 {
+    fn version_1(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items!(
+            vec_capacity: 5,
+            version: 1,
+            extra_bytes_type: LazItemType::Byte(num_extra_bytes),
+            LazItemType::Point10,
+            LazItemType::GpsTime,
+            LazItemType::RGB12,
+            LazItemType::WavePacket13
+        )
+    }
+}
+
+impl DefaultVersion for Point5 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        <Self as Version2>::version_2(num_extra_bytes)
+    }
+}
+
+/***************************************************************************************************
                     Point Format 6
 ***************************************************************************************************/
 impl Version3 for Point6 {
@@ -410,6 +540,85 @@ impl Version3 for Point8 {
 }
 
 impl DefaultVersion for Point8 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        Self::version_3(num_extra_bytes)
+    }
+}
+
+/***************************************************************************************************
+                    Point Format 9
+***************************************************************************************************/
+
+#[derive(Default, Debug, PartialEq, Copy, Clone)]
+pub struct Point9 {
+    base: Point6,
+    wavepacket: LasWavepacket,
+}
+
+impl Point6Based for Point9 {
+    fn point6(&self) -> &Point6 {
+        &self.base
+    }
+
+    fn point6_mut(&mut self) -> &mut Point6 {
+        &mut self.base
+    }
+}
+
+impl Version3 for Point9 {
+    fn version_3(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 3,
+            version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::WavePacket14
+        ]
+    }
+}
+
+impl DefaultVersion for Point9 {
+    fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
+        Self::version_3(num_extra_bytes)
+    }
+}
+
+/***************************************************************************************************
+                    Point Format 10
+***************************************************************************************************/
+
+#[derive(Default, Debug, PartialEq, Copy, Clone)]
+pub struct Point10 {
+    base: Point6,
+    rgb: RGB,
+    nir: Nir,
+    wavepacket: LasWavepacket,
+}
+
+impl Point6Based for Point10 {
+    fn point6(&self) -> &Point6 {
+        &self.base
+    }
+
+    fn point6_mut(&mut self) -> &mut Point6 {
+        &mut self.base
+    }
+}
+
+impl Version3 for Point10 {
+    fn version_3(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 5,
+            version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::RGBNIR14,
+            LazItemType::WavePacket14
+        ]
+    }
+}
+
+impl DefaultVersion for Point10 {
     fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
         Self::version_3(num_extra_bytes)
     }

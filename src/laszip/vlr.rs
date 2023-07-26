@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::las::nir::Nir;
-use crate::las::pointtypes::RGB;
+use crate::las::pointtypes::{Point10, Point4, Point5, Point9, RGB};
 use crate::las::wavepacket::LasWavepacket;
 use crate::las::{Point0, Point6};
 use crate::LasZipError;
@@ -265,6 +265,12 @@ impl LazItemRecordBuilder {
             3 => Ok(LazItemRecordBuilder::default_version_of::<Point3>(
                 num_extra_bytes,
             )),
+            4 => Ok(LazItemRecordBuilder::default_version_of::<Point4>(
+                num_extra_bytes,
+            )),
+            5 => Ok(LazItemRecordBuilder::default_version_of::<Point5>(
+                num_extra_bytes,
+            )),
             6 => Ok(LazItemRecordBuilder::default_version_of::<Point6>(
                 num_extra_bytes,
             )),
@@ -272,6 +278,12 @@ impl LazItemRecordBuilder {
                 num_extra_bytes,
             )),
             8 => Ok(LazItemRecordBuilder::default_version_of::<Point8>(
+                num_extra_bytes,
+            )),
+            9 => Ok(LazItemRecordBuilder::default_version_of::<Point9>(
+                num_extra_bytes,
+            )),
+            10 => Ok(LazItemRecordBuilder::default_version_of::<Point10>(
                 num_extra_bytes,
             )),
             _ => Err(LasZipError::UnsupportedPointFormat(point_format_id)),
