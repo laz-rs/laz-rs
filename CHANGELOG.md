@@ -1,3 +1,7 @@
+# 0.8.2
+ - Fixed creation of LazVlr for point formats with Wavepacket
+ (id 4, 5, 9, 10).
+
 # 0.8.1
  - Fixed potential division by zero on bad data.
    A division by zero could sometimes happen in the arithmetic decoder

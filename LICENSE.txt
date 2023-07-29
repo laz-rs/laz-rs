@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------
 
-Copyright [2022] [Thomas Montaigu]
+Copyright [2023] [Thomas Montaigu]
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ limitations under the License.
 --------------------------------------------------------------------------
 
   COPYRIGHT:
-  (c) 2010 - 2022, Thomas Montaigu
+  (c) 2019 - 2023, Thomas Montaigu
   (c) 2007-2015, martin isenburg, rapidlasso - fast tools to catch reality
 
 --------------------------------------------------------------------------
