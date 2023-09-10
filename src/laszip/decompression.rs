@@ -203,17 +203,21 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         if let Some((chunk_of_point, start_of_chunk)) = chunk_info {
             self.current_chunk = chunk_of_point as usize;
             let delta = point_idx % chunk_table[self.current_chunk].point_count;
-            if chunk_of_point == (chunk_table.len() - 1) {
-                // the requested point fall into the last chunk,
-                // but that does not mean that the point exists
-                // so we have to be careful, we will do as we would normally,
-                // but if we reach the chunk_table_offset that means the requested
-                // point is out ouf bounds so will just seek to the end cf(the else in the if let below)
-                // we do this to avoid decompressing data (ie the chunk table) thinking its a record
+            let seeked_point_belong_to_last_chunk = chunk_of_point == (chunk_table.len() - 1);
+            // When the index of the point belongs to the last chunk
+            // we try to be careful as that point may not exist, and there may be a
+            // case where we would be reading the chunk table data as if it were point data.
+            //
+            // In layered chunked, this is not a potential issue as the record decompressor
+            // will first read in memory the chunk data (so only point data).
+            //
+            // This is a safeguard, but we expect caller to not do this mistake
+            // (They should have access to the number of points in the file, we don't)
+            if seeked_point_belong_to_last_chunk
+                && self.vlr.compressor != CompressorType::LayeredChunked
+            {
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
-                self.record_decompressor
-                    .get_mut()
-                    .seek(SeekFrom::Start(start_of_chunk))?;
+                self.get_mut().seek(SeekFrom::Start(start_of_chunk))?;
 
                 self.reset_for_new_chunk();
                 let offset_to_chunk_table = self
@@ -224,20 +228,15 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
 
                 for _i in 0..delta {
                     self.decompress_one(&mut tmp_out)?;
-                    let current_pos = self
-                        .record_decompressor
-                        .get_mut()
-                        .seek(SeekFrom::Current(0))?;
+                    let current_pos = self.get_mut().seek(SeekFrom::Current(0))?;
 
                     if current_pos >= offset_to_chunk_table {
-                        self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
+                        self.get_mut().seek(SeekFrom::End(0))?;
                         return Ok(());
                     }
                 }
             } else {
-                self.record_decompressor
-                    .get_mut()
-                    .seek(SeekFrom::Start(start_of_chunk))?;
+                self.get_mut().seek(SeekFrom::Start(start_of_chunk))?;
                 self.reset_for_new_chunk();
                 let mut tmp_out = vec![0u8; self.record_decompressor.record_size()];
 
