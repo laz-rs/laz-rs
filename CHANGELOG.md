@@ -1,3 +1,6 @@
+# 0.8.3
+ - Fixed seeking to a point (with format >= 6) that falls in the last chunk of a file.
+
 # 0.8.2
  - Fixed creation of LazVlr for point formats with Wavepacket
  (id 4, 5, 9, 10).
