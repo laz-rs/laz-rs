@@ -943,8 +943,8 @@ pub mod v3 {
             // Introduce a scope because we borrow &mut self
             // and later self.read_gps(also needs to borrow mut self
             {
-                let mut the_context = &mut self.contexts[self.current_context];
-                let mut last_point = &mut the_context.last_point;
+                let the_context = &mut self.contexts[self.current_context];
+                let last_point = &mut the_context.last_point;
                 //last_point.set_scanner_channel(self.current_context as u8);
 
                 // Get last return counts

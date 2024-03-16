@@ -112,11 +112,11 @@ pub use las::selective::DecompressionSelection;
 #[cfg(feature = "parallel")]
 pub use laszip::parallel::{
     par_compress_buffer, par_decompress, par_decompress_buffer, par_decompress_selective,
-    ParLasZipCompressor, ParLasZipDecompressor,
+    ParLasZipAppender, ParLasZipCompressor, ParLasZipDecompressor,
 };
 pub use laszip::{compress_buffer, decompress_buffer};
 pub use laszip::{
-    LasZipCompressor, LasZipDecompressor, LazCompressor, LazDecompressor, LazItem,
+    LasZipAppender, LasZipCompressor, LasZipDecompressor, LazCompressor, LazDecompressor, LazItem,
     LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 

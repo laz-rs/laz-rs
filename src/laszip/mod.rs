@@ -4,19 +4,19 @@
 //! It defines the LaszipCompressor & LaszipDecompressor
 //! as well as the Laszip VLr data  and how to build it
 pub use chunk_table::{ChunkTable, ChunkTableEntry};
-pub use compression::{compress_buffer, LasZipCompressor};
-pub use decompression::{decompress_buffer, LasZipDecompressor};
+pub use sequential::{
+    compress_buffer, decompress_buffer, LasZipAppender, LasZipCompressor, LasZipDecompressor,
+};
 pub use vlr::{
     CompressorType, DefaultVersion, LazItem, LazItemRecordBuilder, LazItemType, LazVlr,
     LazVlrBuilder, Version1, Version2, Version3,
 };
 
 mod chunk_table;
-mod compression;
-mod decompression;
 mod details;
 #[cfg(feature = "parallel")]
 pub mod parallel;
+mod sequential;
 mod vlr;
 
 #[deprecated(since = "0.6.0", note = "Please use laz::LazVlr::USER_ID")]
@@ -34,6 +34,8 @@ pub trait LazDecompressor {
 
 pub trait LazCompressor {
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()>;
+
+    fn reserve_offset_to_chunk_table(&mut self) -> crate::Result<()>;
 
     fn done(&mut self) -> crate::Result<()>;
 }

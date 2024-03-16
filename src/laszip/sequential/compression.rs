@@ -7,12 +7,12 @@ use crate::laszip::CompressorType;
 use crate::record::RecordCompressor;
 use crate::LasZipError;
 
-use super::{chunk_table, details, LazItem, LazVlr};
+use crate::laszip::{chunk_table, details, LazItem, LazVlr};
 
 /// Struct that handles the compression of the points into the given destination
 ///
 /// This supports both **variable-size** and **fixed-size** chunks.
-/// Its the [`LazVlr`] that controls which type of chunks you want to write.
+/// It's the [`LazVlr`] that controls which type of chunks you want to write.
 ///
 ///
 /// # Fixed-Size
@@ -88,7 +88,7 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     /// The data is written in the buffer is expected to be exactly
     /// as it would have been in a LAS File, that is:
     ///
-    /// - The fields/dimensions are in the same order than the LAS spec says
+    /// - The fields/dimensions are in the same order as the LAS spec says
     /// - The data in the buffer is in Little Endian order
     pub fn compress_one(&mut self, input: &[u8]) -> std::io::Result<()> {
         if self.chunk_start_pos == 0 {
@@ -200,6 +200,17 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
         self.record_compressor.get()
     }
 
+    /// Returns the position in the file where the offset to chunk
+    /// table is.
+    pub(crate) fn chunk_table_position_offset(&self) -> i64 {
+        self.start_pos as i64
+    }
+
+    /// Returns the current chunk table
+    pub(crate) fn chunk_table(&self) -> &ChunkTable {
+        &self.chunk_table
+    }
+
     #[inline]
     fn update_chunk_table(&mut self) -> std::io::Result<()> {
         let current_pos = self
@@ -225,9 +236,14 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     }
 }
 
-impl<'a, W: Write + Seek + Send + 'a> super::LazCompressor for LasZipCompressor<'a, W> {
+impl<'a, W: Write + Seek + Send + 'a> crate::LazCompressor for LasZipCompressor<'a, W> {
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
         self.compress_many(points)?;
+        Ok(())
+    }
+
+    fn reserve_offset_to_chunk_table(&mut self) -> crate::Result<()> {
+        self.reserve_offset_to_chunk_table()?;
         Ok(())
     }
 
@@ -240,7 +256,7 @@ impl<'a, W: Write + Seek + Send + 'a> super::LazCompressor for LasZipCompressor<
 /// Compresses all points
 ///
 /// The data written will be a standard LAZ file data
-/// that means its organized like this:
+/// that means it's organized like this:
 ///  1) offset to the chunk_table (i64)
 ///  2) the points data compressed
 ///  3) the chunk table

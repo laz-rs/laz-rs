@@ -9,7 +9,6 @@ use crate::laszip::details::record_decompressor_from_laz_items;
 use crate::laszip::CompressorType;
 use crate::{LasZipError, LazVlr};
 
-#[cfg(feature = "parallel")]
 /// Laszip decompressor, that can decompress data using multiple threads
 ///
 /// Supports both fixed-size and variable-size chunks.
@@ -27,14 +26,13 @@ pub struct ParLasZipDecompressor<R> {
     // Each thread will receive a chunk of this buffer to decompress it.
     // It makes the decompression io-free, which means no performance penalty.
     // And it is ok to have such an internal buffer as
-    // the compressed data is much much smaller that uncompressed data.
+    // the compressed data is much, much smaller that uncompressed data.
     internal_buffer: Vec<u8>,
     source: R,
     // Contains which fields the user wants to decompress or not
     selection: DecompressionSelection,
 }
 
-#[cfg(feature = "parallel")]
 impl<R: Read + Seek> ParLasZipDecompressor<R> {
     /// Creates a new decompressor
     ///
@@ -295,7 +293,6 @@ impl<R: Read + Seek> crate::laszip::LazDecompressor for ParLasZipDecompressor<R>
 /// fn with the addition that  the chunk table _IS_ mandatory
 ///
 /// [`decompress_buffer`]: fn.decompress_buffer.html
-#[cfg(feature = "parallel")]
 pub fn par_decompress_buffer(
     compressed_points_data: &[u8],
     decompressed_points: &mut [u8],
@@ -326,7 +323,6 @@ pub fn par_decompress_buffer(
 /// (so no offset, no chunk_table)
 ///
 /// The chunk table describes the chunks contained in the `compressed_points` buffer
-#[cfg(feature = "parallel")]
 pub fn par_decompress_selective(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],
@@ -359,7 +355,6 @@ pub fn par_decompress_selective(
     Ok(())
 }
 
-#[cfg(feature = "parallel")]
 pub fn par_decompress(
     compressed_points: &[u8],
     decompressed_points: &mut [u8],

@@ -14,7 +14,7 @@ use crate::{LasZipError, LazVlr};
 /// The method you need to call in order to compress data depends on which
 /// type of *sized* chunks you want to write.
 ///
-/// Its the [`LazVlr`] that controls which type of chunks you want to write.
+/// It's the [`LazVlr`] that controls which type of chunks you want to write.
 ///
 /// You must call [`done`] when you have compressed all the points you wanted.
 ///
@@ -35,7 +35,6 @@ use crate::{LasZipError, LazVlr};
 /// [`compress_many`]: Self::compress_many
 /// [`compress_chunks`]: Self::compress_chunks
 /// [`done`]: Self::done
-#[cfg(feature = "parallel")]
 pub struct ParLasZipCompressor<W> {
     vlr: LazVlr,
     /// Table of chunks written so far
@@ -51,9 +50,10 @@ pub struct ParLasZipCompressor<W> {
     dest: W,
 }
 
-#[cfg(feature = "parallel")]
 impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
+    ///
+    /// No i/o operation are performed
     pub fn new(dest: W, vlr: LazVlr) -> crate::Result<Self> {
         if vlr.compressor != CompressorType::PointWiseChunked
             && vlr.compressor != CompressorType::LayeredChunked
@@ -79,7 +79,8 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     /// updated when [done] is called.
     ///
     /// This method will automatically be called on the first point(s) being compressed,
-    /// but for some scenarios, manually calling this might be useful.
+    /// but for some scenarios, manually calling this might be useful as it allow storing
+    /// the position where the chunk table offset is.
     ///
     /// [done]: Self::done
     pub fn reserve_offset_to_chunk_table(&mut self) -> std::io::Result<()> {
@@ -202,7 +203,6 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
         }
         update_chunk_table_offset(&mut self.dest, SeekFrom::Start(self.table_offset as u64))?;
         self.chunk_table.write_to(&mut self.dest, &self.vlr)?;
-        // write_chunk_table(&mut self.dest, &self.chunk_table)?;
         Ok(())
     }
 
@@ -221,11 +221,27 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     pub fn get(&self) -> &W {
         &self.dest
     }
+
+    /// Returns the position in the file where the offset to chunk
+    /// table is.
+    pub(crate) fn chunk_table_position_offset(&self) -> i64 {
+        self.table_offset
+    }
+
+    /// Returns the current chunk table
+    pub(crate) fn chunk_table(&self) -> &ChunkTable {
+        &self.chunk_table
+    }
 }
 
 impl<W: Write + Seek + Send> crate::LazCompressor for ParLasZipCompressor<W> {
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
         self.compress_many(points)?;
+        Ok(())
+    }
+
+    fn reserve_offset_to_chunk_table(&mut self) -> crate::Result<()> {
+        self.reserve_offset_to_chunk_table()?;
         Ok(())
     }
 
@@ -244,7 +260,6 @@ impl<W: Write + Seek + Send> crate::LazCompressor for ParLasZipCompressor<W> {
 /// Point order [is conserved](https://github.com/rayon-rs/rayon/issues/551)
 ///
 /// [`compress_buffer`]: crate::compress_buffer
-#[cfg(feature = "parallel")]
 pub fn par_compress_buffer<W: Write + Seek>(
     dst: &mut W,
     uncompressed_points: &[u8],
@@ -268,7 +283,6 @@ pub fn par_compress_buffer<W: Write + Seek>(
 /// And does not write the chunk table
 ///
 /// Returns the size of each compressed chunk of point written
-#[cfg(feature = "parallel")]
 pub fn par_compress<W: Write>(
     dst: &mut W,
     uncompressed_points: &[u8],
@@ -348,7 +362,6 @@ mod test {
 
     use super::*;
 
-    #[cfg(feature = "parallel")]
     #[test]
     fn test_table_offset_one_point() {
         // Test that if we compress just one point using the Parallel compressor
@@ -367,7 +380,6 @@ mod test {
         assert_eq!(compressor.table_offset, 0);
     }
 
-    #[cfg(feature = "parallel")]
     #[test]
     fn test_table_offset_complete_chunk() {
         // Test that if we compress at least a chunk using the Parallel compressor

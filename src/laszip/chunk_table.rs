@@ -106,7 +106,10 @@ impl ChunkTable {
     /// `src` should be at the start of LAZ data.
     ///
     /// This function will leave the `src` wherever it read the correct offset.
-    fn read_offset<R: Read + Seek>(src: &mut R) -> std::io::Result<Option<(u64, u64)>> {
+    ///
+    /// Returns the position where the stream was before reading the offset
+    /// and the offset value itself
+    pub(crate) fn read_offset<R: Read + Seek>(src: &mut R) -> std::io::Result<Option<(u64, u64)>> {
         let current_pos = src.seek(SeekFrom::Current(0))?;
 
         let mut offset_to_chunk_table = src.read_i64::<LittleEndian>()?;
@@ -178,7 +181,7 @@ impl ChunkTable {
     ///
     /// # Warning
     ///
-    /// In the case of Non variable chunk size, when the point falls into the last
+    /// In the case of Non-variable chunk size, when the point falls into the last
     /// chunk it does not mean the point actually exists.
     ///
     /// Eg with chunk_size 50_000 and a file with 75_000 points
@@ -206,7 +209,31 @@ impl ChunkTable {
         }
     }
 
-    fn write<W: Write>(&self, mut dst: &mut W, write_point_count: bool) -> std::io::Result<()> {
+    /// Returns the position one must seek to, to reach the beginning of
+    /// the given chunk index.
+    ///
+    /// This position is relative to the where the points actually start
+    /// (i.e. after the chunk_table offset)
+    ///
+    /// Returns None if the chunk does not exist.
+    pub(crate) fn chunk_position(&self, chunk_index: usize) -> Option<u64> {
+        if chunk_index > self.len() {
+            None
+        } else {
+            Some(
+                self.0[0..chunk_index]
+                    .iter()
+                    .map(|entry| entry.byte_count)
+                    .sum(),
+            )
+        }
+    }
+
+    pub(crate) fn write<W: Write>(
+        &self,
+        mut dst: &mut W,
+        write_point_count: bool,
+    ) -> std::io::Result<()> {
         // Write header
         dst.write_u32::<LittleEndian>(0)?;
         dst.write_u32::<LittleEndian>(self.len() as u32)?;
@@ -239,9 +266,7 @@ impl ChunkTable {
         encoder.done()?;
         Ok(())
     }
-}
 
-impl ChunkTable {
     pub fn with_capacity(capacity: usize) -> Self {
         let vec = Vec::<ChunkTableEntry>::with_capacity(capacity);
         Self { 0: vec }
@@ -255,12 +280,14 @@ impl ChunkTable {
         self.0.len()
     }
 
-    #[cfg(feature = "parallel")]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    #[cfg(feature = "parallel")]
+    pub fn pop(&mut self) -> Option<ChunkTableEntry> {
+        self.0.pop()
+    }
+
     pub fn extend(&mut self, other: &ChunkTable) {
         self.0.extend(&other.0)
     }

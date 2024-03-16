@@ -5,8 +5,8 @@ use crate::las::selective::DecompressionSelection;
 use crate::record::RecordDecompressor;
 use crate::LasZipError;
 
-use super::chunk_table::ChunkTable;
-use super::{details, CompressorType, LazVlr};
+use crate::laszip::chunk_table::ChunkTable;
+use crate::laszip::{details, CompressorType, LazVlr};
 
 /// SeekInfo aggregates the two information needed to be able to seek
 /// to a point in a las file.
@@ -286,7 +286,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     }
 }
 
-impl<'a, R: Read + Seek + Send + 'a> super::LazDecompressor for LasZipDecompressor<'a, R> {
+impl<'a, R: Read + Seek + Send + 'a> crate::LazDecompressor for LasZipDecompressor<'a, R> {
     fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()> {
         self.decompress_many(points)?;
         Ok(())
