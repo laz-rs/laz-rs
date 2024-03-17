@@ -11,6 +11,7 @@ use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 fn progress_style() -> ProgressStyle {
     ProgressStyle::default_bar()
         .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {percent} {msg}")
+        .unwrap()
         .progress_chars("##-")
 }
 
@@ -122,7 +123,7 @@ where
     assert_eq!(las_header.num_points, laz_header.num_points);
 
     let progress = ProgressBar::new(las_header.num_points as u64);
-    progress.set_draw_delta(las_header.num_points as u64 / 100);
+    progress.inc(las_header.num_points as u64 / 100);
     progress.set_style(progress_style());
 
     assert!(args.num_points_per_iter.unwrap() > 0);
