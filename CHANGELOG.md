@@ -1,3 +1,7 @@
+# 0.9.0
+- Add LasZipAppender & ParLasZipAppender, structs that allow to easily append points to 
+  LAZ data
+
 # 0.8.3
  - Fixed seeking to a point (with format >= 6) that falls in the last chunk of a file.
 
