@@ -272,6 +272,10 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 }
 
 impl<R: Read + Seek> crate::laszip::LazDecompressor for ParLasZipDecompressor<R> {
+    fn decompress_one(&mut self, point: &mut [u8]) -> crate::Result<()> {
+        self.decompress_many(point)
+    }
+
     fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()> {
         self.decompress_many(points)
     }

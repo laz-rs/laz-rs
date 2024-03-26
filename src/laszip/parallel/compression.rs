@@ -235,6 +235,11 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
 }
 
 impl<W: Write + Seek + Send> crate::LazCompressor for ParLasZipCompressor<W> {
+    fn compress_one(&mut self, point: &[u8]) -> crate::Result<()> {
+        self.compress_many(point)?;
+        Ok(())
+    }
+
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
         self.compress_many(points)?;
         Ok(())

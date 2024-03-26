@@ -1,3 +1,7 @@
+# 0.9.1
+ - Add `decompress_one` to LazDecompressor trait
+ - Add `compress_one` to LazCompressor trait
+
 # 0.9.0
 - Add LasZipAppender & ParLasZipAppender, structs that allow to easily append points to 
   LAZ data

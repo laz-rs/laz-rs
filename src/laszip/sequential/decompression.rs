@@ -287,6 +287,11 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
 }
 
 impl<'a, R: Read + Seek + Send + 'a> crate::LazDecompressor for LasZipDecompressor<'a, R> {
+    fn decompress_one(&mut self, point: &mut [u8]) -> crate::Result<()> {
+        self.decompress_one(point)?;
+        Ok(())
+    }
+
     fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()> {
         self.decompress_many(points)?;
         Ok(())

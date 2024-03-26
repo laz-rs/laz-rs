@@ -27,12 +27,16 @@ pub const LASZIP_RECORD_ID: u16 = LazVlr::RECORD_ID;
 pub const LASZIP_DESCRIPTION: &str = LazVlr::DESCRIPTION;
 
 pub trait LazDecompressor {
+    fn decompress_one(&mut self, point: &mut [u8]) -> crate::Result<()>;
+
     fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()>;
 
     fn seek(&mut self, index: u64) -> crate::Result<()>;
 }
 
 pub trait LazCompressor {
+    fn compress_one(&mut self, point: &[u8]) -> crate::Result<()>;
+
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()>;
 
     fn reserve_offset_to_chunk_table(&mut self) -> crate::Result<()>;
