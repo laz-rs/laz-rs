@@ -94,7 +94,7 @@ use crate::decoders::AC_MIN_LENGTH;
 use crate::models;
 use crate::models::DM_LENGTH_SHIFT;
 
-const AC_BUFFER_SIZE: usize = 1024;
+const AC_BUFFER_SIZE: usize = 4096;
 
 pub struct ArithmeticEncoder<T: Write> {
     out_buffer: Vec<u8>,
