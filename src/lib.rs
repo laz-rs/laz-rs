@@ -120,12 +120,12 @@ pub use laszip::{
     LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 
-pub(crate) mod compressors;
-pub(crate) mod decoders;
-pub(crate) mod decompressors;
-pub(crate) mod encoders;
+pub mod compressors;
+pub mod decoders;
+pub mod decompressors;
+pub mod encoders;
 pub mod laszip;
-pub(crate) mod models;
+pub mod models;
 pub mod packers;
 pub mod record;
 
