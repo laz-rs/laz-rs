@@ -87,17 +87,16 @@
 //                                                                           -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-use std::io::Write;
-
 use crate::decoders;
 use crate::decoders::AC_MIN_LENGTH;
 use crate::models;
 use crate::models::DM_LENGTH_SHIFT;
+use std::io::Write;
 
 const AC_BUFFER_SIZE: usize = 4096;
 
 pub struct ArithmeticEncoder<T: Write> {
-    out_buffer: Vec<u8>,
+    out_buffer: Box<[u8]>,
 
     out_byte: *mut u8,
     end_byte: *const u8,
@@ -110,10 +109,11 @@ pub struct ArithmeticEncoder<T: Write> {
 
 impl<T: Write> ArithmeticEncoder<T> {
     pub fn new(out_stream: T) -> Self {
-        let mut out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
-        let out_byte = out_buffer.as_mut_ptr();
+        let mut out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE].into_boxed_slice();
 
-        let end_byte = unsafe { out_buffer.as_ptr().add(2 * AC_BUFFER_SIZE) };
+        let out_byte = out_buffer.as_mut_ptr_range().start;
+        let end_byte = out_buffer.as_mut_ptr_range().end;
+
         Self {
             out_buffer,
             out_byte,
@@ -124,12 +124,17 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
     }
 
+    #[inline]
+    fn end_of_buffer(&self) -> *const u8 {
+        self.out_buffer.as_ptr_range().end
+    }
+
     pub fn reset(&mut self) {
         self.base = 0;
         self.length = decoders::AC_MAX_LENGTH;
-        self.out_buffer = vec![0u8; 2 * AC_BUFFER_SIZE];
+        self.out_buffer.fill(0);
         self.out_byte = self.out_buffer.as_mut_ptr();
-        self.end_byte = unsafe { self.out_buffer.as_ptr().add(2 * AC_BUFFER_SIZE) };
+        self.end_byte = self.end_of_buffer();
     }
 
     pub fn done(&mut self) -> std::io::Result<()> {
@@ -155,18 +160,18 @@ impl<T: Write> ArithmeticEncoder<T> {
         }
         self.renorm_enc_interval()?;
 
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
-        if self.end_byte != endbuffer {
-            unsafe {
-                debug_assert!(
-                    (self.out_byte as *const u8) < self.out_buffer.as_ptr().add(AC_BUFFER_SIZE)
-                );
-                let slc: &[u8] = std::slice::from_raw_parts(
-                    self.out_buffer.as_ptr().add(AC_BUFFER_SIZE),
+        if self.end_byte != self.end_of_buffer() {
+            debug_assert!(
+                (self.out_byte.cast_const())
+                    < self.out_buffer.as_ptr().wrapping_add(AC_BUFFER_SIZE)
+            );
+            let slc = unsafe {
+                std::slice::from_raw_parts(
+                    self.out_buffer.as_ptr().wrapping_add(AC_BUFFER_SIZE),
                     AC_BUFFER_SIZE,
-                );
-                self.out_stream.write_all(&slc)?;
-            }
+                )
+            };
+            self.out_stream.write_all(&slc)?;
         }
 
         let buffer_size = self.out_byte as isize - self.out_buffer.as_ptr() as isize;
@@ -236,7 +241,6 @@ impl<T: Write> ArithmeticEncoder<T> {
             self.length >>= DM_LENGTH_SHIFT;
             x = model.distribution[sym as usize] * self.length;
             self.base = self.base.wrapping_add(x);
-            //self.base += x;
             self.length = model.distribution[(sym + 1) as usize] * self.length - x;
         }
 
@@ -361,69 +365,63 @@ impl<T: Write> ArithmeticEncoder<T> {
     }
 
     fn propagate_carry(&mut self) {
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
-        let mut b = if self.out_byte as *const u8 == self.out_buffer.as_ptr() {
-            unsafe { endbuffer.offset(-1) }
+        let mut p = if self.out_byte.cast_const() == self.out_buffer.as_ptr() {
+            self.end_of_buffer().wrapping_sub(1).cast_mut()
         } else {
-            unsafe { self.out_byte.offset(-1) }
+            self.out_byte.wrapping_sub(1)
         };
 
         unsafe {
-            while *b == 0xFFu8 {
-                *b = 0;
-                if b as *const u8 == self.out_buffer.as_ptr() {
-                    b = self
-                        .out_buffer
-                        .as_mut_ptr()
-                        .add(2 * AC_BUFFER_SIZE)
-                        .offset(-1);
+            while *p == 0xFFu8 {
+                *p = 0;
+                if p.cast_const() == self.out_buffer.as_ptr() {
+                    p = self.end_of_buffer().wrapping_sub(1).cast_mut()
                 } else {
-                    b = b.offset(-1);
+                    p = p.wrapping_sub(1);
                 }
-                debug_assert!(self.out_buffer.as_ptr() <= b);
-                debug_assert!(b < endbuffer);
-                debug_assert!(self.out_byte < endbuffer);
+                debug_assert!(self.out_buffer.as_ptr() <= p);
+                debug_assert!(p.cast_const() < self.end_of_buffer());
+                debug_assert!(self.out_byte.cast_const() < self.end_of_buffer());
             }
-            *b += 1;
+            *p += 1;
         }
     }
 
     fn renorm_enc_interval(&mut self) -> std::io::Result<()> {
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
         loop {
             debug_assert!(self.out_buffer.as_ptr() <= self.out_byte);
-            debug_assert!(self.out_byte < endbuffer);
-            debug_assert!((self.out_byte as *const u8) < self.end_byte);
+            debug_assert!(self.out_byte.cast_const() < self.end_of_buffer());
+            debug_assert!(self.out_byte.cast_const() < self.end_byte);
             unsafe {
                 *self.out_byte = (self.base >> 24) as u8;
-                self.out_byte = self.out_byte.offset(1);
+            }
+            self.out_byte = self.out_byte.wrapping_add(1);
 
-                if self.out_byte as *const u8 == self.end_byte {
-                    self.manage_out_buffer()?;
-                }
-                self.base <<= 8;
-                self.length <<= 8; // length multiplied by 256
-                if self.length >= AC_MIN_LENGTH {
-                    break;
-                }
+            if self.out_byte.cast_const() == self.end_byte {
+                self.manage_out_buffer()?;
+            }
+            self.base <<= 8;
+            self.length <<= 8; // length multiplied by 256
+            if self.length >= AC_MIN_LENGTH {
+                break;
             }
         }
         Ok(())
     }
 
     fn manage_out_buffer(&mut self) -> std::io::Result<()> {
-        let endbuffer = unsafe { self.out_buffer.as_mut_ptr().add(2 * AC_BUFFER_SIZE) };
-        if self.out_byte == endbuffer {
+        debug_assert!(self.out_byte.cast_const() == self.end_byte);
+
+        if self.out_byte.cast_const() == self.end_of_buffer() {
             self.out_byte = self.out_buffer.as_mut_ptr();
         }
-        unsafe {
-            let slc: &[u8] = std::slice::from_raw_parts(self.out_byte, AC_BUFFER_SIZE);
-            self.out_stream.write_all(&slc)?;
-            self.end_byte = self.out_byte.add(AC_BUFFER_SIZE);
 
-            debug_assert!(self.end_byte > self.out_byte);
-            debug_assert!(self.out_byte < endbuffer);
-        }
+        let slc = unsafe { std::slice::from_raw_parts(self.out_byte, AC_BUFFER_SIZE) };
+        self.out_stream.write_all(slc)?;
+        self.end_byte = self.out_byte.wrapping_add(AC_BUFFER_SIZE);
+
+        debug_assert!(self.end_byte > self.out_byte);
+        debug_assert!(self.out_byte.cast_const() < self.end_of_buffer());
         Ok(())
     }
 }
