@@ -233,7 +233,12 @@ impl<'a> ArithmeticModelBuilder<'a> {
         }
     }
 
-    pub fn build(self) -> ArithmeticModel {
+    pub fn with_compression(&mut self, state: bool) -> &'_ mut Self {
+        self.compress = state;
+        self
+    }
+
+    pub fn build(&self) -> ArithmeticModel {
         ArithmeticModel::new(self.symbols, self.compress, self.init_table)
     }
 }

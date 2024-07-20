@@ -411,6 +411,21 @@ pub mod v3 {
         gps_time: bool,
     }
 
+    impl Point6FieldFlags {
+        fn default_for_compression() -> Self {
+            Self {
+                z: false,
+                classification: false,
+                flags: false,
+                intensity: false,
+                scan_angle: false,
+                user_data: false,
+                point_source: false,
+                gps_time: false,
+            }
+        }
+    }
+
     impl Default for Point6FieldFlags {
         fn default() -> Self {
             Self {
@@ -1315,7 +1330,7 @@ pub mod v3 {
         fn default() -> Self {
             Self {
                 encoders: Point6Encoders::default(),
-                has_changed: Point6FieldFlags::default(),
+                has_changed: Point6FieldFlags::default_for_compression(),
                 current_context: 0,
                 contexts: [
                     Point6CompressionContext::default(),
@@ -1822,9 +1837,12 @@ pub mod v3 {
             if last_point.user_data != current_point.user_data {
                 self.has_changed.user_data = true;
             }
-
             let model = the_context.models.user_data[last_point.user_data as usize / 4]
-                .get_or_insert_with(|| ArithmeticModelBuilder::new(256).build());
+                .get_or_insert_with(|| {
+                    ArithmeticModelBuilder::new(256)
+                        .with_compression(true)
+                        .build()
+                });
             self.encoders
                 .user_data
                 .encode_symbol(model, u32::from(current_point.user_data))?;
@@ -1890,6 +1908,7 @@ pub mod v3 {
                 point_source: return_len_if_has_changed_else_0!(point_source),
                 gps_time: return_len_if_has_changed_else_0!(gps_time),
             };
+
             sizes.write_to(dst)?;
             Ok(())
         }
