@@ -1,3 +1,18 @@
+# 0.9.2
+ - Fixed Initialization of booleans that tracked whether a field
+   changed when compressing fields from point format 6 (so some fields of 
+   point format 7, 8, 9, 10 also affected). 
+   This only occurred if the fields values did not change AND where not all 0,
+   i.e:
+      point_source_id.iter().all(|value| value == 0) -> no problem
+      point_source_id.iter().all(|value| value == 1) -> problem
+
+ - Fixed the AC_BUFFER_SIZE value from 1024 to 4096.
+   4096 is the value used in LASZip and if we don't use this value
+   some of the compressed values won't be correct.
+   This only seemed to affect the user_data field in point format >= 6
+
+
 # 0.9.1
  - Add `decompress_one` to LazDecompressor trait
  - Add `compress_one` to LazCompressor trait
