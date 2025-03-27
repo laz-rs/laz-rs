@@ -60,6 +60,14 @@ where
     pub fn get_mut(&mut self) -> &mut W {
         self.compressor.get_mut()
     }
+
+    pub fn get(&self) -> &W {
+        self.compressor.get()
+    }
+
+    pub fn into_inner(self) -> W {
+        self.compressor.into_inner()
+    }
 }
 
 impl<W> ParLasZipAppender<W>
