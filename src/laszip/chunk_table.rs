@@ -140,6 +140,10 @@ impl ChunkTable {
         let _version = src.read_u32::<LittleEndian>()?;
         let number_of_chunks = src.read_u32::<LittleEndian>()?;
 
+        if number_of_chunks == 0 {
+            return Ok(Self::default());
+        }
+
         let mut decompressor = IntegerDecompressorBuilder::new()
             .bits(32)
             .contexts(2)
@@ -237,6 +241,10 @@ impl ChunkTable {
         // Write header
         dst.write_u32::<LittleEndian>(0)?;
         dst.write_u32::<LittleEndian>(self.len() as u32)?;
+
+        if self.is_empty() {
+            return Ok(());
+        }
 
         let mut encoder = ArithmeticEncoder::new(&mut dst);
         let mut compressor = IntegerCompressorBuilder::new()
