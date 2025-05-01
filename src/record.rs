@@ -119,8 +119,9 @@ pub trait RecordDecompressor<R> {
         Ok(())
     }
 
-    /// Decompresss data until reaching end of file, returning how many points were
-    /// decompressed
+    /// Decompresss data until reaching end of file,
+    ///
+    /// Returns how many bytes are valid in the output
     #[inline]
     fn decompress_until_end_of_file(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         for (i, point) in out.chunks_exact_mut(self.record_size()).enumerate() {

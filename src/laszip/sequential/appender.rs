@@ -26,7 +26,8 @@ where
     let start_of_data = data.seek(SeekFrom::Current(0))?;
     let mut chunk_table = ChunkTable::read_from(&mut data, &vlr)?;
 
-    let compressor = if !vlr.uses_variable_size_chunks() && !chunk_table.is_empty() {
+    let mut data_to_recompress = vec![];
+    if !vlr.uses_variable_size_chunks() && !chunk_table.is_empty() {
         // In PointWiseChunked, we don't know if the last chunk is complete or not
         // so we read it, rewrite it so the compressor is in the right state to append points
         let size_of_all_other_chunks = chunk_table.chunk_position(chunk_table.len() - 1).unwrap(); // We know the chunk table is not empty
@@ -41,35 +42,34 @@ where
         let mut decompressor =
             record_decompressor_from_laz_items(vlr.items(), &mut last_chunk_data)?;
 
-        let mut last_chunk_decompressed_data =
-            vec![0u8; (chunk_table[chunk_table.len() - 1].point_count * vlr.items_size()) as usize];
+        data_to_recompress.resize(
+            (chunk_table[chunk_table.len() - 1].point_count * vlr.items_size()) as usize,
+            0,
+        );
 
         // We cannot trust the point count of the chunk entry
-        let i = decompressor.decompress_until_end_of_file(&mut last_chunk_decompressed_data)?;
-        let to_be_recompressed = &last_chunk_decompressed_data[..i];
+        // so we use that to get the point count
+        let byte_len = decompressor.decompress_until_end_of_file(&mut data_to_recompress)?;
+        data_to_recompress.resize(byte_len, 0);
 
-        // seek to beginning of data, so that the compressor can be properly initialized
-        data.seek(SeekFrom::Start(start_of_data))?;
-        let mut compressor = compressor_creator(data, vlr)?;
-        // Explicitly reserve the offset so that the compressor knows where the
-        // offset is.
-        compressor.reserve_offset_to_chunk_table()?;
-
-        // rewrite the last chunk
-        get_mut_dest_of_compressor(&mut compressor).seek(SeekFrom::Current(last_chunk_pos))?;
-        compressor.compress_many(to_be_recompressed)?;
+        // The last chunk is going to be rewritten, and will be completed later
         let _ = chunk_table.pop();
-        compressor
-    } else {
-        // Variable size chunks -> we don't need to re-read the last chunk since each chunk can have
-        // its own size
-        //
-        // This branch also handles empty chunk table
-        if let Some(end_of_last_chunk) = chunk_table.chunk_position(chunk_table.len()) {
-            data.seek(SeekFrom::Start(end_of_last_chunk))?;
-        }
-        compressor_creator(data, vlr)?
-    };
+    }
+    // For variable size chunks, we don't need to re-read the last chunk since
+    // each chunk can have its own size
+
+    // Seek to beginning of data, so that the compressor can be properly initialized
+    data.seek(SeekFrom::Start(start_of_data))?;
+    let mut compressor = compressor_creator(data, vlr)?;
+    // Explicitly reserve the offset so that the compressor knows where the
+    // offset is.
+    compressor.reserve_offset_to_chunk_table()?;
+    // Rewrite the last chunk
+    let last_chunk_pos = chunk_table.chunk_position(chunk_table.len()).unwrap();
+    get_mut_dest_of_compressor(&mut compressor).seek(SeekFrom::Current(last_chunk_pos as i64))?;
+    if !data_to_recompress.is_empty() {
+        compressor.compress_many(&data_to_recompress)?;
+    }
 
     Ok((compressor, chunk_table))
 }
