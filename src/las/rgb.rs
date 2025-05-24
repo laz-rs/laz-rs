@@ -860,10 +860,14 @@ pub mod v3 {
         }
 
         fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
-            if self.rgb_has_changed {
+            let num_bytes = if self.rgb_has_changed {
                 self.encoder.done()?;
-            }
-            dst.write_u32::<LittleEndian>(inner_buffer_len_of(&self.encoder) as u32)?;
+                inner_buffer_len_of(&self.encoder) as u32
+            } else {
+                0
+            };
+            dst.write_u32::<LittleEndian>(num_bytes)?;
+
             Ok(())
         }
 

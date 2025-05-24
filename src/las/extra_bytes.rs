@@ -400,16 +400,32 @@ pub mod v3 {
         }
 
         fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
-            for encoder in &mut self.encoders {
+            for (encoder, has_changed) in self
+                .encoders
+                .iter_mut()
+                .zip(self.has_byte_changed.iter().copied())
+            {
                 encoder.done()?;
-                dst.write_u32::<LittleEndian>(encoder.get_mut().get_ref().len() as u32)?;
+                let num_bytes = if has_changed {
+                    encoder.get_mut().get_ref().len() as u32
+                } else {
+                    0
+                };
+                dst.write_u32::<LittleEndian>(num_bytes)?;
             }
+
             Ok(())
         }
 
         fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
-            for encoder in &mut self.encoders {
-                copy_encoder_content_to(encoder, dst)?;
+            for (encoder, has_changed) in self
+                .encoders
+                .iter_mut()
+                .zip(self.has_byte_changed.iter().copied())
+            {
+                if has_changed {
+                    copy_encoder_content_to(encoder, dst)?;
+                }
             }
             Ok(())
         }
