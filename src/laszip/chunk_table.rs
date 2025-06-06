@@ -299,6 +299,10 @@ impl ChunkTable {
     pub fn extend(&mut self, other: &ChunkTable) {
         self.0.extend(&other.0)
     }
+
+    pub fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
 }
 
 impl AsRef<[ChunkTableEntry]> for ChunkTable {

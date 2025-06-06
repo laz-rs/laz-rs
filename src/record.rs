@@ -119,7 +119,8 @@ pub trait RecordDecompressor<R> {
         Ok(())
     }
 
-    /// Decompresss data until reaching end of file,
+    /// Decompresss data until either end of file is reached
+    /// of the `out` buffer has been completely filled
     ///
     /// Returns how many bytes are valid in the output
     #[inline]

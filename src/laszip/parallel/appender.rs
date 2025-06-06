@@ -15,10 +15,11 @@ where
     W: Read + Write + Seek + Send,
 {
     /// data must be positioned at the start of point data
-    pub fn new(data: W, vlr: LazVlr) -> crate::Result<Self> {
+    pub fn new(data: W, vlr: LazVlr, point_count: u64) -> crate::Result<Self> {
         let (compressor, chunk_table) = prepare_compressor_for_appending(
             data,
             vlr,
+            point_count,
             ParLasZipCompressor::new,
             ParLasZipCompressor::get_mut,
         )?;
