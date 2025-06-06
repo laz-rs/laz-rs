@@ -1,3 +1,12 @@
+# 0.10.0
+
+- Fixed the has_changed tracking of point fmt >= 6 not being completely respected
+  leading to files potentially a bit bigger than laszip (But no impact on the data it self)
+
+- LasZipAppender requires the point count, as it is a safer alternative to the appender trying to guess
+  it, when in reality the caller should know it. Without this some file could have a (few?) weird point being
+  appended.
+
 # 0.9.3
 
 - Fixed Initialization of LasZipAppender when the input file is empty (no points)
