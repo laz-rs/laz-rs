@@ -140,7 +140,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 
         // Read the necessary compressed bytes into our internal buffer
         self.internal_buffer.resize(num_bytes_to_read, 0u8);
-        self.source.read(&mut self.internal_buffer)?;
+        self.source.read_exact(&mut self.internal_buffer)?;
 
         // 3. Decompress
         // The idea is that if we have `n` chunks to decompress
