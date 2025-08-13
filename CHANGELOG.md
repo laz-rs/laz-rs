@@ -1,3 +1,8 @@
+# 0.10.1
+
+- Fixed ParLasZipDecompressor when the source is a BufReader with a non default buffer size that is
+  greater than the chunk size.
+
 # 0.10.0
 
 - Fixed the has_changed tracking of point fmt >= 6 not being completely respected
