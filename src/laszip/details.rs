@@ -6,10 +6,10 @@ use crate::record::{
 };
 use crate::{LasZipError, LazItem};
 
-pub(super) fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>(
+pub(super) fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + Sync + 'a>(
     items: &Vec<LazItem>,
     input: R,
-) -> crate::Result<Box<dyn RecordDecompressor<R> + Send + 'a>> {
+) -> crate::Result<Box<dyn RecordDecompressor<R> + Send + Sync + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordDecompressor");
@@ -17,11 +17,11 @@ pub(super) fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>
     let mut decompressor = match first_item.version {
         1 | 2 => {
             let decompressor = SequentialPointRecordDecompressor::new(input);
-            Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send>
+            Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send + Sync>
         }
         3 | 4 => {
             let decompressor = LayeredPointRecordDecompressor::new(input);
-            Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send>
+            Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send + Sync>
         }
         _ => {
             return Err(LasZipError::UnsupportedLazItemVersion(
@@ -35,10 +35,10 @@ pub(super) fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + 'a>
     Ok(decompressor)
 }
 
-pub(super) fn record_compressor_from_laz_items<'a, W: Write + Send + 'a>(
+pub(super) fn record_compressor_from_laz_items<'a, W: Write + Send + Sync + 'a>(
     items: &Vec<LazItem>,
     output: W,
-) -> crate::Result<Box<dyn RecordCompressor<W> + Send + 'a>> {
+) -> crate::Result<Box<dyn RecordCompressor<W> + Send + Sync + 'a>> {
     let first_item = items
         .get(0)
         .expect("There should be at least one LazItem to be able to create a RecordCompressor");
@@ -46,11 +46,11 @@ pub(super) fn record_compressor_from_laz_items<'a, W: Write + Send + 'a>(
     let mut compressor = match first_item.version {
         1 | 2 => {
             let compressor = SequentialPointRecordCompressor::new(output);
-            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send>
+            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send + Sync>
         }
         3 | 4 => {
             let compressor = LayeredPointRecordCompressor::new(output);
-            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send>
+            Box::new(compressor) as Box<dyn RecordCompressor<W> + Send + Sync>
         }
         _ => {
             return Err(LasZipError::UnsupportedLazItemVersion(

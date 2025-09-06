@@ -40,7 +40,7 @@ use crate::laszip::{chunk_table, details, LazItem, LazVlr};
 pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
     vlr: LazVlr,
     /// Compressor used for the current chunk
-    record_compressor: Box<dyn RecordCompressor<W> + Send + 'a>,
+    record_compressor: Box<dyn RecordCompressor<W> + Send + Sync + 'a>,
     /// Position where LasZipCompressor started
     start_pos: u64,
     /// Table of chunks written so far
@@ -52,7 +52,7 @@ pub struct LasZipCompressor<'a, W: Write + Send + 'a> {
     chunk_start_pos: u64,
 }
 
-impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
+impl<'a, W: Write + Seek + Send + Sync + 'a> LasZipCompressor<'a, W> {
     /// Creates a compressor using the provided vlr.
     pub fn new(output: W, vlr: LazVlr) -> crate::Result<Self> {
         if vlr.compressor != CompressorType::PointWiseChunked
@@ -236,24 +236,24 @@ impl<'a, W: Write + Seek + Send + 'a> LasZipCompressor<'a, W> {
     }
 }
 
-impl<'a, W: Write + Seek + Send + 'a> crate::LazCompressor for LasZipCompressor<'a, W> {
+impl<'a, W: Write + Seek + Send + Sync + 'a> crate::LazCompressor for LasZipCompressor<'a, W> {
     fn compress_one(&mut self, point: &[u8]) -> crate::Result<()> {
-        self.compress_one(point)?;
+        LasZipCompressor::compress_one(self, point)?;
         Ok(())
     }
 
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
-        self.compress_many(points)?;
+        LasZipCompressor::compress_many(self, points)?;
         Ok(())
     }
 
     fn reserve_offset_to_chunk_table(&mut self) -> crate::Result<()> {
-        self.reserve_offset_to_chunk_table()?;
+        LasZipCompressor::reserve_offset_to_chunk_table(self)?;
         Ok(())
     }
 
     fn done(&mut self) -> crate::Result<()> {
-        self.done()?;
+        LasZipCompressor::done(self)?;
         Ok(())
     }
 }
@@ -269,7 +269,7 @@ impl<'a, W: Write + Seek + Send + 'a> crate::LazCompressor for LasZipCompressor<
 /// `dst`: Where the compressed data will be written
 ///
 /// `uncompressed_points`: byte slice of the uncompressed points to be compressed
-pub fn compress_buffer<W: Write + Seek + Send>(
+pub fn compress_buffer<W: Write + Seek + Send + Sync>(
     dst: &mut W,
     uncompressed_points: &[u8],
     laz_vlr: LazVlr,

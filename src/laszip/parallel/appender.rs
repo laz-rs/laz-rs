@@ -12,7 +12,7 @@ pub struct ParLasZipAppender<W> {
 
 impl<W> ParLasZipAppender<W>
 where
-    W: Read + Write + Seek + Send,
+    W: Read + Write + Seek + Send + Sync,
 {
     /// data must be positioned at the start of point data
     pub fn new(data: W, vlr: LazVlr, point_count: u64) -> crate::Result<Self> {
@@ -73,7 +73,7 @@ where
 
 impl<W> ParLasZipAppender<W>
 where
-    W: Write + Seek + Send,
+    W: Write + Seek + Send + Sync,
 {
     /// Compresses many points using multiple threads.
     ///

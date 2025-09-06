@@ -427,3 +427,6 @@ impl<T: Write> ArithmeticEncoder<T> {
 }
 
 unsafe impl<T: Write + Send> Send for ArithmeticEncoder<T> {}
+/// SAFETY: *u8 is not Sync by default, however the way its used here
+/// it is safe to use it as Sync.
+unsafe impl<T: Write + Sync> Sync for ArithmeticEncoder<T> {}

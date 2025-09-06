@@ -33,7 +33,7 @@ mod details {
 
     pub struct SimpleDecompressorCreator;
 
-    impl<'a, R: Read + Seek + Send + 'a> super::DecompressorCreator<'a, R>
+    impl<'a, R: Read + Seek + Send + Sync + 'a> super::DecompressorCreator<'a, R>
         for SimpleDecompressorCreator
     {
         type Decompressor = laz::LasZipDecompressor<'a, &'a mut R>;
@@ -45,7 +45,9 @@ mod details {
 
     pub struct SimpleCompressorCreator;
 
-    impl<'a, R: Write + Seek + Send + 'a> super::CompressorCreator<'a, R> for SimpleCompressorCreator {
+    impl<'a, R: Write + Seek + Send + Sync + 'a> super::CompressorCreator<'a, R>
+        for SimpleCompressorCreator
+    {
         type Compressor = laz::LasZipCompressor<'a, &'a mut R>;
 
         fn create(source: &'a mut R, vlr: laz::LazVlr) -> Self::Compressor {
@@ -60,7 +62,9 @@ mod details {
 
     pub struct ParDecompressorCreator;
 
-    impl<'a, R: Read + Seek + Send + 'a> super::DecompressorCreator<'a, R> for ParDecompressorCreator {
+    impl<'a, R: Read + Seek + Send + Sync + 'a> super::DecompressorCreator<'a, R>
+        for ParDecompressorCreator
+    {
         type Decompressor = laz::ParLasZipDecompressor<&'a mut R>;
 
         fn create(source: &'a mut R, vlr: laz::LazVlr) -> Self::Decompressor {
@@ -70,7 +74,9 @@ mod details {
 
     pub struct ParCompressorCreator;
 
-    impl<'a, R: Write + Seek + Send + 'a> super::CompressorCreator<'a, R> for ParCompressorCreator {
+    impl<'a, R: Write + Seek + Send + Sync + 'a> super::CompressorCreator<'a, R>
+        for ParCompressorCreator
+    {
         type Compressor = laz::ParLasZipCompressor<&'a mut R>;
 
         fn create(source: &'a mut R, vlr: laz::LazVlr) -> Self::Compressor {

@@ -50,7 +50,7 @@ pub struct ParLasZipCompressor<W> {
     dest: W,
 }
 
-impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
+impl<W: Write + Seek + Send + Sync> ParLasZipCompressor<W> {
     /// Creates a new ParLasZipCompressor
     ///
     /// No i/o operation are performed
@@ -234,24 +234,24 @@ impl<W: Write + Seek + Send> ParLasZipCompressor<W> {
     }
 }
 
-impl<W: Write + Seek + Send> crate::LazCompressor for ParLasZipCompressor<W> {
+impl<W: Write + Seek + Send + Sync> crate::LazCompressor for ParLasZipCompressor<W> {
     fn compress_one(&mut self, point: &[u8]) -> crate::Result<()> {
-        self.compress_many(point)?;
+        ParLasZipCompressor::compress_many(self, point)?;
         Ok(())
     }
 
     fn compress_many(&mut self, points: &[u8]) -> crate::Result<()> {
-        self.compress_many(points)?;
+        ParLasZipCompressor::compress_many(self, points)?;
         Ok(())
     }
 
     fn reserve_offset_to_chunk_table(&mut self) -> crate::Result<()> {
-        self.reserve_offset_to_chunk_table()?;
+        ParLasZipCompressor::reserve_offset_to_chunk_table(self)?;
         Ok(())
     }
 
     fn done(&mut self) -> crate::Result<()> {
-        self.done()?;
+        ParLasZipCompressor::done(self)?;
         Ok(())
     }
 }
@@ -346,7 +346,7 @@ where
     Ok(chunk_table)
 }
 
-fn compress_one_chunk<W: Write + Seek + Send>(
+fn compress_one_chunk<W: Write + Seek + Send + Sync>(
     chunk_data: &[u8],
     vlr: &LazVlr,
     mut dest: &mut W,

@@ -23,7 +23,7 @@ pub(crate) fn prepare_compressor_for_appending<W, F, F2, Compressor>(
     get_mut_dest_of_compressor: F2,
 ) -> crate::Result<(Compressor, ChunkTable)>
 where
-    W: Write + Read + Seek,
+    W: Write + Read + Seek + Sync,
     F: FnOnce(W, LazVlr) -> crate::Result<Compressor>,
     F2: FnOnce(&mut Compressor) -> &mut W,
     Compressor: LazCompressor,
@@ -116,7 +116,7 @@ pub struct LasZipAppender<'a, W: Write + Send + 'a> {
 
 impl<'a, W> LasZipAppender<'a, W>
 where
-    W: Read + Write + Seek + Send + 'a,
+    W: Read + Write + Seek + Send + Sync + 'a,
 {
     /// data must be positioned at the start of point data
     pub fn new(data: W, vlr: LazVlr, point_count: u64) -> crate::Result<Self> {
@@ -177,7 +177,7 @@ where
 
 impl<'a, W> LasZipAppender<'a, W>
 where
-    W: Write + Seek + Send + 'a,
+    W: Write + Seek + Send + Sync + 'a,
 {
     /// Compress the point and write the compressed data to the destination given when
     /// the compressor was constructed

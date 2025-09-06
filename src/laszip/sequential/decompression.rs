@@ -47,7 +47,7 @@ impl SeekInfo {
 /// Supports both **fixed-size** and **variable-size** chunks.
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     vlr: LazVlr,
-    record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
+    record_decompressor: Box<dyn RecordDecompressor<R> + Send + Sync + 'a>,
     // Contains which fields the user wants to decompress or not
     selection: DecompressionSelection,
     // Allowed to be None if the source was not seekable and
@@ -58,7 +58,7 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     num_points_in_chunk: u64,
 }
 
-impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
+impl<'a, R: Read + Seek + Send + Sync + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data.
     ///
@@ -286,19 +286,19 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     }
 }
 
-impl<'a, R: Read + Seek + Send + 'a> crate::LazDecompressor for LasZipDecompressor<'a, R> {
+impl<'a, R: Read + Seek + Send + Sync + 'a> crate::LazDecompressor for LasZipDecompressor<'a, R> {
     fn decompress_one(&mut self, point: &mut [u8]) -> crate::Result<()> {
-        self.decompress_one(point)?;
+        LasZipDecompressor::decompress_one(self, point)?;
         Ok(())
     }
 
     fn decompress_many(&mut self, points: &mut [u8]) -> crate::Result<()> {
-        self.decompress_many(points)?;
+        LasZipDecompressor::decompress_many(self, points)?;
         Ok(())
     }
 
     fn seek(&mut self, index: u64) -> crate::Result<()> {
-        self.seek(index)?;
+        LasZipDecompressor::seek(self, index)?;
         Ok(())
     }
 }
