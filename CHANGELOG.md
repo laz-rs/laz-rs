@@ -1,3 +1,8 @@
+# 0.11.0
+
+- Add `Sync` requirement to generic types of reader and writer.
+  This is required for the laz-rs-python crate
+
 # 0.10.1
 
 - Fixed ParLasZipDecompressor when the source is a BufReader with a non default buffer size that is
