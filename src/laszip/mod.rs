@@ -12,6 +12,9 @@ pub use vlr::{
     LazVlrBuilder, Version1, Version2, Version3,
 };
 
+#[cfg(feature = "parallel")]
+pub(crate) use vlr::DecompressedChunkSize;
+
 mod chunk_table;
 mod details;
 #[cfg(feature = "parallel")]

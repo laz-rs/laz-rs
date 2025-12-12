@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 use crate::laszip::chunk_table::{update_chunk_table_offset, ChunkTable, ChunkTableEntry};
 use crate::laszip::details::record_compressor_from_laz_items;
-use crate::laszip::CompressorType;
+use crate::laszip::{CompressorType, DecompressedChunkSize};
 use crate::{LasZipError, LazVlr};
 
 /// LasZip compressor that compresses using multiple threads
@@ -62,8 +62,8 @@ impl<W: Write + Seek + Send + Sync> ParLasZipCompressor<W> {
         }
 
         let mut rest = Vec::<u8>::new();
-        if !vlr.uses_variable_size_chunks() {
-            rest.reserve(vlr.num_bytes_in_decompressed_chunk() as usize);
+        if let DecompressedChunkSize::Fixed { num_bytes } = vlr.num_bytes_in_decompressed_chunk() {
+            rest.reserve(num_bytes);
         }
 
         Ok(Self {
@@ -189,7 +189,6 @@ impl<W: Write + Seek + Send + Sync> ParLasZipCompressor<W> {
     /// - update the offset to the chunk_table
     pub fn done(&mut self) -> crate::Result<()> {
         if self.rest.len() != 0 {
-            debug_assert!(self.rest.len() <= self.vlr.num_bytes_in_decompressed_chunk() as usize);
             let last_chunk_size = compress_one_chunk(&self.rest, &self.vlr, &mut self.dest)?;
             self.chunk_table.push(ChunkTableEntry {
                 point_count: self.vlr.chunk_size() as u64,
@@ -395,7 +394,7 @@ mod test {
                 .build(),
         );
 
-        let points = vec![0u8; vlr.num_bytes_in_decompressed_chunk() as usize];
+        let points = vec![0u8; vlr.num_bytes_in_decompressed_chunk().fixed().unwrap() as usize];
         let mut compressor =
             ParLasZipCompressor::new(std::io::Cursor::new(Vec::<u8>::new()), vlr).unwrap();
         assert_eq!(compressor.table_offset, -1);

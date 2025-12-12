@@ -228,9 +228,13 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         self.source.read(&mut self.internal_buffer)?;
 
         // Completely decompress the chunk
-        self.rest
-            .get_mut()
-            .resize(self.vlr.num_bytes_in_decompressed_chunk() as usize, 0u8);
+        let num_bytes = match self.vlr.num_bytes_in_decompressed_chunk() {
+            crate::laszip::vlr::DecompressedChunkSize::Fixed { num_bytes } => num_bytes,
+            crate::laszip::vlr::DecompressedChunkSize::Variable {
+                num_bytes_per_point,
+            } => num_bytes_per_point * self.chunk_table[chunk_of_point].point_count as usize,
+        };
+        self.rest.get_mut().resize(num_bytes, 0u8);
         let mut decompressor = record_decompressor_from_laz_items(
             self.vlr.items(),
             std::io::Cursor::new(&self.internal_buffer),
