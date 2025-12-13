@@ -1,3 +1,7 @@
+# 0.11.1
+
+- Fix ParLasZipDecompressor::seek in a file using variable chunk size (such as COPC files)
+
 # 0.11.0
 
 - Add `Sync` requirement to generic types of reader and writer.
