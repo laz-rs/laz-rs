@@ -258,6 +258,22 @@ impl<'a, W: Write + Seek + Send + Sync + 'a> crate::LazCompressor for LasZipComp
     }
 }
 
+impl<'a, W: Write + Seek + Send + Sync + 'a> crate::LazCompressorOwned<W>
+    for LasZipCompressor<'a, W>
+{
+    fn into_inner(self) -> W {
+        self.into_inner()
+    }
+
+    fn inner(&self) -> &W {
+        self.get()
+    }
+
+    fn inner_mut(&mut self) -> &mut W {
+        self.get_mut()
+    }
+}
+
 /// Compresses all points
 ///
 /// The data written will be a standard LAZ file data

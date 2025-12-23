@@ -47,6 +47,14 @@ pub trait LazCompressor {
     fn done(&mut self) -> crate::Result<()>;
 }
 
+pub trait LazCompressorOwned<W>: LazCompressor {
+    fn into_inner(self) -> W;
+
+    fn inner(&self) -> &W;
+
+    fn inner_mut(&mut self) -> &mut W;
+}
+
 #[cfg(test)]
 mod test {
     use std::io::{Cursor, Seek, SeekFrom};

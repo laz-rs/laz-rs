@@ -255,6 +255,20 @@ impl<W: Write + Seek + Send + Sync> crate::LazCompressor for ParLasZipCompressor
     }
 }
 
+impl<W: Write + Seek + Send + Sync> crate::LazCompressorOwned<W> for ParLasZipCompressor<W> {
+    fn into_inner(self) -> W {
+        self.into_inner()
+    }
+
+    fn inner(&self) -> &W {
+        self.get()
+    }
+
+    fn inner_mut(&mut self) -> &mut W {
+        self.get_mut()
+    }
+}
+
 /// Compresses all points in parallel
 ///
 /// Just like [`compress_buffer`] but the compression is done in multiple threads

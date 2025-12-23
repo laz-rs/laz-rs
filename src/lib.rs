@@ -116,8 +116,8 @@ pub use laszip::parallel::{
 };
 pub use laszip::{compress_buffer, decompress_buffer};
 pub use laszip::{
-    LasZipAppender, LasZipCompressor, LasZipDecompressor, LazCompressor, LazDecompressor, LazItem,
-    LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
+    LasZipAppender, LasZipCompressor, LasZipDecompressor, LazCompressor, LazCompressorOwned,
+    LazDecompressor, LazItem, LazItemRecordBuilder, LazItemType, LazVlr, LazVlrBuilder,
 };
 
 pub mod compressors;
