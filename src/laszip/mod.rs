@@ -47,6 +47,26 @@ pub trait LazCompressor {
     fn done(&mut self) -> crate::Result<()>;
 }
 
+/// Extension trait for [`LazCompressor`] that provides access to the underlying writer.
+///
+/// This trait is useful when you need to work with compressors generically
+/// while still being able to access or recover the underlying destination.
+pub trait LazCompressorWithInner<W>: LazCompressor {
+    /// Consumes the compressor and returns the underlying writer.
+    ///
+    /// # Note
+    ///
+    /// You should call [`LazCompressor::done`] before calling this method
+    /// to ensure all compressed data is properly written and finalized.
+    fn into_inner(self) -> W;
+
+    /// Returns a reference to the underlying writer.
+    fn inner(&self) -> &W;
+
+    /// Returns a mutable reference to the underlying writer.
+    fn inner_mut(&mut self) -> &mut W;
+}
+
 #[cfg(test)]
 mod test {
     use std::io::{Cursor, Seek, SeekFrom};
