@@ -1,3 +1,7 @@
+# 0.12.0
+
+- Add `LazCompressorWithInner` trait to access the underlying writer from compressors
+
 # 0.11.1
 
 - Fix ParLasZipDecompressor::seek in a file using variable chunk size (such as COPC files)
