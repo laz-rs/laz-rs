@@ -477,7 +477,7 @@ impl LazVlr {
     #[inline]
     /// Returns whether the chunk size is variable.
     pub fn uses_variable_size_chunks(&self) -> bool {
-        self.chunk_size == Self::VARIABLE_CHUNK_SIZE
+        self.chunk_size == Self::VARIABLE_CHUNK_SIZE || self.chunk_size == 0
     }
 
     /// Returns the chunk size, that is, the number of points in each chunk.

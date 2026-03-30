@@ -96,7 +96,7 @@ impl<'a, W: Write + Seek + Send + Sync + 'a> LasZipCompressor<'a, W> {
         }
 
         // Since in variable-size chunks mode the vlr.chunk_size() is
-        // u32::max this should not interfere.
+        // u32::max or 0 this should not interfere.
         if self.current_chunk_entry.point_count == self.vlr.chunk_size() as u64 {
             self.finish_current_chunk_impl()?;
         }
