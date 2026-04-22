@@ -447,7 +447,10 @@ impl LazVlr {
             coder: src.read_u16::<LittleEndian>()?,
             version: Version::read_from(&mut src)?,
             options: src.read_u32::<LittleEndian>()?,
-            chunk_size: src.read_u32::<LittleEndian>()?,
+            chunk_size: match src.read_u32::<LittleEndian>()? {
+                0 => Self::VARIABLE_CHUNK_SIZE,
+                v => v,
+            },
             number_of_special_evlrs: src.read_i64::<LittleEndian>()?,
             offset_to_special_evlrs: src.read_i64::<LittleEndian>()?,
             items: read_laz_items_from(&mut src)?,
@@ -625,5 +628,29 @@ impl LazVlrBuilder {
     #[deprecated(since = "0.6.0", note = "Please use LazVlrBuilder::new(laz_items)")]
     pub fn from_laz_items(laz_items: Vec<LazItem>) -> Self {
         Self::new(laz_items)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_size_zero_on_disk_is_read_as_variable() {
+        let vlr = LazVlrBuilder::default()
+            .with_point_format(0, 0)
+            .unwrap()
+            .with_fixed_chunk_size(1234)
+            .build();
+        let mut buffer = Vec::new();
+        vlr.write_to(&mut buffer).unwrap();
+
+        // chunk_size is a u32 field at byte offset 12 of the record_data
+        // (u16 compressor + u16 coder + 4-byte version + u32 options = 12).
+        buffer[12..16].copy_from_slice(&0u32.to_le_bytes());
+
+        let parsed = LazVlr::read_from(buffer.as_slice()).unwrap();
+        assert!(parsed.uses_variable_size_chunks());
+        assert_eq!(parsed.chunk_size(), LazVlr::VARIABLE_CHUNK_SIZE);
     }
 }
