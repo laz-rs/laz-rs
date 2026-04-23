@@ -1,3 +1,7 @@
+# 0.12.1
+
+- Fix support for chunk_size == 0 being used to indicate variable chunk size
+
 # 0.12.0
 
 - Add `LazCompressorWithInner` trait to access the underlying writer from compressors
