@@ -133,6 +133,13 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         }
         let end_index = start_index + num_chunks_to_decompress;
 
+        if num_chunks_to_decompress == 0 {
+            return Err(LasZipError::IoError(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "no chunks available in chunk table",
+            )));
+        }
+
         debug_assert!(num_chunks_to_decompress >= 1);
         debug_assert!(num_points >= num_requested_points_left);
         // TODO if num_points >= num_requested_points_left then the user ask to decompress more points
