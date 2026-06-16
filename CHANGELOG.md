@@ -1,3 +1,7 @@
+# 0.12.2
+
+- Fix out of bound access when chunk table is empty for parallel decompressor
+
 # 0.12.1
 
 - Fix support for chunk_size == 0 being used to indicate variable chunk size
