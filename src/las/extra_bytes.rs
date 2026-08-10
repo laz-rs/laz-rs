@@ -169,11 +169,16 @@ pub mod v1 {
     }
 }
 
-pub mod v3 {
-    //! The algorithm is similar to v1 (& v2), the changes are
-    //! that compressor / decompressor uses contexts (4)
-    //! and each byte of the extra bytes is encoded in its own layer
-    //! with its own encoder
+mod v3_v4 {
+    //! Implementation shared by the version 3 and version 4 of the extra bytes
+    //! compression / decompression.
+    //!
+    //! Both versions run the same algorithm, they only differ in which
+    //! 'last item' is used as prediction when the context index changed:
+    //! version 3 only switches to the last item of the new context if that
+    //! context was not yet initialized, version 4 always switches.
+    //!
+    //! The version 3 behaviour looks like a bug in LASzip, which version 4 fixes.
     use std::io::{Cursor, Read, Seek, Write};
 
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -202,20 +207,21 @@ pub mod v3 {
         }
     }
 
-    pub struct LasExtraByteDecompressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasExtraByteDecompressorImpl<const VERSION: usize> {
         // Each extra bytes has is own layer, thus its own decoder
         decoders: Vec<ArithmeticDecoder<Cursor<Vec<u8>>>>,
         num_bytes_per_layer: Vec<u32>,
         is_requested: Vec<bool>,
         should_load_bytes: Vec<bool>,
         contexts: Vec<ExtraBytesContext>,
-        // Last & contexts are separated for the same reasons as in v3::RGB
+        // Last & contexts are separated for the same reasons as in v3_v4::RGB
         last_bytes: Vec<ExtraBytes>,
         num_extra_bytes: usize,
         last_context_used: usize,
     }
 
-    impl LasExtraByteDecompressor {
+    impl<const VERSION: usize> LasExtraByteDecompressorImpl<VERSION> {
         pub fn new(count: usize) -> Self {
             Self {
                 decoders: (0..count)
@@ -232,7 +238,9 @@ pub mod v3 {
         }
     }
 
-    impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasExtraByteDecompressor {
+    impl<const VERSION: usize, R: Read + Seek> LayeredFieldDecompressor<R>
+        for LasExtraByteDecompressorImpl<VERSION>
+    {
         fn size_of_field(&self) -> usize {
             self.num_extra_bytes
         }
@@ -265,23 +273,25 @@ pub mod v3 {
             current_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
-            let mut last_bytes_ptr =
-                &mut self.last_bytes[self.last_context_used] as *mut ExtraBytes;
+            // Index of the last item used as prediction
+            let mut last_idx = self.last_context_used;
+
             if self.last_context_used != *context {
                 self.last_context_used = *context;
                 if self.contexts[*context].unused {
-                    let last_bytes = unsafe { &mut *last_bytes_ptr };
-                    let new_context = ExtraBytesContext::new(last_bytes.bytes.len());
-                    self.contexts[*context] = new_context;
+                    let num_bytes = self.last_bytes[last_idx].bytes.len();
+                    self.contexts[*context] = ExtraBytesContext::new(num_bytes);
                     self.contexts[*context].unused = false;
-                    self.last_bytes[*context]
-                        .bytes
-                        .copy_from_slice(&last_bytes.bytes);
-                    last_bytes_ptr = &mut self.last_bytes[*context] as &mut _;
+                    let (src, dst) = index_two_mut(&mut self.last_bytes, last_idx, *context);
+                    dst.bytes.copy_from_slice(&src.bytes);
+                    last_idx = *context;
+                }
+                if VERSION == 4 {
+                    last_idx = *context;
                 }
             }
 
-            let last_bytes = unsafe { &mut *last_bytes_ptr };
+            let last_bytes = &mut self.last_bytes[last_idx];
             let the_context = &mut self.contexts[*context];
             for i in 0..self.num_extra_bytes {
                 if self.should_load_bytes[i] {
@@ -315,18 +325,19 @@ pub mod v3 {
         }
     }
 
-    pub struct LasExtraByteCompressor {
-        // Each extra bytes has is own layer, thus its own decoder
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasExtraByteCompressorImpl<const VERSION: usize> {
+        // Each extra bytes has is own layer, thus its own encoder
         encoders: Vec<ArithmeticEncoder<Cursor<Vec<u8>>>>,
         has_byte_changed: Vec<bool>,
         contexts: Vec<ExtraBytesContext>,
-        // Last & contexts are separated for the same reasons as in v3::RGB
+        // Last & contexts are separated for the same reasons as in v3_v4::RGB
         last_bytes: Vec<ExtraBytes>,
         num_extra_bytes: usize,
         last_context_used: usize,
     }
 
-    impl LasExtraByteCompressor {
+    impl<const VERSION: usize> LasExtraByteCompressorImpl<VERSION> {
         pub fn new(count: usize) -> Self {
             Self {
                 encoders: (0..count)
@@ -341,7 +352,9 @@ pub mod v3 {
         }
     }
 
-    impl<W: Write> LayeredFieldCompressor<W> for LasExtraByteCompressor {
+    impl<const VERSION: usize, W: Write> LayeredFieldCompressor<W>
+        for LasExtraByteCompressorImpl<VERSION>
+    {
         fn size_of_field(&self) -> usize {
             self.num_extra_bytes
         }
@@ -368,23 +381,25 @@ pub mod v3 {
             current_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
-            let mut last_bytes_ptr =
-                &mut self.last_bytes[self.last_context_used] as *mut ExtraBytes;
+            // Index of the last item used as prediction
+            let mut last_idx = self.last_context_used;
+
             if self.last_context_used != *context {
                 self.last_context_used = *context;
                 if self.contexts[*context].unused {
-                    let last_bytes = unsafe { &mut *last_bytes_ptr };
-                    let new_context = ExtraBytesContext::new(last_bytes.bytes.len());
-                    self.contexts[*context] = new_context;
+                    let num_bytes = self.last_bytes[last_idx].bytes.len();
+                    self.contexts[*context] = ExtraBytesContext::new(num_bytes);
                     self.contexts[*context].unused = false;
-                    self.last_bytes[*context]
-                        .bytes
-                        .copy_from_slice(&last_bytes.bytes);
-                    last_bytes_ptr = &mut self.last_bytes[*context] as &mut _;
+                    let (src, dst) = index_two_mut(&mut self.last_bytes, last_idx, *context);
+                    dst.bytes.copy_from_slice(&src.bytes);
+                    last_idx = *context;
+                }
+                if VERSION == 4 {
+                    last_idx = *context;
                 }
             }
 
-            let last_bytes = unsafe { &mut *last_bytes_ptr };
+            let last_bytes = &mut self.last_bytes[last_idx];
             let the_context = &mut self.contexts[*context];
             for i in 0..self.num_extra_bytes {
                 let diff = current_point[i].wrapping_sub(last_bytes.bytes[i]);
@@ -430,4 +445,32 @@ pub mod v3 {
             Ok(())
         }
     }
+
+    /// Returns mutable references to two _different_ elements of the slice.
+    fn index_two_mut<T>(slice: &mut [T], first: usize, second: usize) -> (&mut T, &mut T) {
+        assert_ne!(first, second, "indices must be different");
+        if first < second {
+            let (head, tail) = slice.split_at_mut(second);
+            (&mut head[first], &mut tail[0])
+        } else {
+            let (head, tail) = slice.split_at_mut(first);
+            (&mut tail[0], &mut head[second])
+        }
+    }
+}
+
+pub mod v3 {
+    //! Contains the implementation for the Version 3 of the extra bytes
+    //! Compression / Decompression
+    pub type LasExtraByteDecompressor = super::v3_v4::LasExtraByteDecompressorImpl<3>;
+    pub type LasExtraByteCompressor = super::v3_v4::LasExtraByteCompressorImpl<3>;
+}
+
+pub mod v4 {
+    //! Contains the implementation for the Version 4 of the extra bytes
+    //! Compression / Decompression
+    //!
+    //! See [`super::v3_v4`] for the difference between the version 3 and the version 4.
+    pub type LasExtraByteDecompressor = super::v3_v4::LasExtraByteDecompressorImpl<4>;
+    pub type LasExtraByteCompressor = super::v3_v4::LasExtraByteCompressorImpl<4>;
 }

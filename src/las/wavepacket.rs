@@ -359,7 +359,16 @@ pub mod v1 {
 /// Just re-export v1 as v2 as they are both the same implementation
 pub use v1 as v2;
 
-pub mod v3 {
+mod v3_v4 {
+    //! Implementation shared by the version 3 and version 4 of the wave packet
+    //! compression / decompression.
+    //!
+    //! Both versions run the same algorithm, they only differ in which
+    //! 'last item' is used as prediction when the context index changed:
+    //! version 3 only switches to the last item of the new context if that
+    //! context was not yet initialized, version 4 always switches.
+    //!
+    //! The version 3 behaviour looks like a bug in LASzip, which version 4 fixes.
     use crate::decoders::ArithmeticDecoder;
     use crate::encoders::ArithmeticEncoder;
     use crate::las::selective::DecompressionSelection;
@@ -388,7 +397,8 @@ pub mod v3 {
         }
     }
 
-    pub struct LasWavepacketDecompressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasWavepacketDecompressorImpl<const VERSION: usize> {
         /// Holds the compressed bytes of the layer
         decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
         /// True if the user requested to decompress and if
@@ -400,8 +410,8 @@ pub mod v3 {
         /// Size in bytes of the compressed data
         layer_size: u32,
 
-        /// See v3::LasRGBDecompressor to know why we also
-        /// keep `las_wavepacket` array even though the
+        /// See v3_v4::LasRGBDecompressorImpl to know why we also
+        /// keep `last_wavepackets` array even though the
         /// `LasDecompressionContextWavepacket` holds one.
         contexts: [LasDecompressionContextWavepacket; 4],
         last_wavepackets: [LasWavepacket; 4],
@@ -409,7 +419,7 @@ pub mod v3 {
         last_context: usize,
     }
 
-    impl Default for LasWavepacketDecompressor {
+    impl<const VERSION: usize> Default for LasWavepacketDecompressorImpl<VERSION> {
         fn default() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
@@ -433,7 +443,7 @@ pub mod v3 {
         }
     }
 
-    impl<R> LayeredFieldDecompressor<R> for LasWavepacketDecompressor
+    impl<const VERSION: usize, R> LayeredFieldDecompressor<R> for LasWavepacketDecompressorImpl<VERSION>
     where
         R: Read + Seek,
     {
@@ -470,28 +480,32 @@ pub mod v3 {
             current_point: &mut [u8],
             context_idx: &mut usize,
         ) -> std::io::Result<()> {
-            let mut last_item = &mut self.last_wavepackets[self.last_context];
+            // Index of the last item used as prediction
+            let mut last_idx = self.last_context;
 
             // If the context changed we may have to do an initialization
             if self.last_context != *context_idx {
                 self.last_context = *context_idx;
                 if self.contexts[*context_idx].unused {
-                    self.last_wavepackets[*context_idx] = *last_item;
+                    self.last_wavepackets[*context_idx] = self.last_wavepackets[last_idx];
                     self.contexts[*context_idx].unused = false;
 
-                    last_item = &mut self.last_wavepackets[*context_idx];
+                    last_idx = *context_idx;
+                }
+                if VERSION == 4 {
+                    last_idx = *context_idx;
                 }
             }
 
             if self.should_decompress {
                 let context = &mut self.contexts[self.last_context];
-                context.decompressor.last_wavepacket = *last_item;
+                context.decompressor.last_wavepacket = self.last_wavepackets[last_idx];
                 context
                     .decompressor
                     .decompress_with(&mut self.decoder, current_point)?;
-                *last_item = LasWavepacket::unpack_from(current_point);
+                self.last_wavepackets[last_idx] = LasWavepacket::unpack_from(current_point);
             } else {
-                last_item.pack_into(current_point);
+                self.last_wavepackets[last_idx].pack_into(current_point);
             }
 
             Ok(())
@@ -527,14 +541,15 @@ pub mod v3 {
         }
     }
 
-    pub struct LasWavepacketCompressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasWavepacketCompressorImpl<const VERSION: usize> {
         /// Holds the compressed bytes of the layer
         encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
         /// Did the value change ?
         has_changed: bool,
 
-        /// See v3::LasRGBDecompressor to know why we also
-        /// keep `las_wavepacket` array even though the
+        /// See v3_v4::LasRGBDecompressorImpl to know why we also
+        /// keep `last_wavepackets` array even though the
         /// `LasCompressionContextWavepacket` holds one.
         contexts: [LasCompressionContextWavepacket; 4],
         last_wavepackets: [LasWavepacket; 4],
@@ -542,7 +557,7 @@ pub mod v3 {
         last_context: usize,
     }
 
-    impl Default for LasWavepacketCompressor {
+    impl<const VERSION: usize> Default for LasWavepacketCompressorImpl<VERSION> {
         fn default() -> Self {
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
@@ -564,7 +579,7 @@ pub mod v3 {
         }
     }
 
-    impl<W> LayeredFieldCompressor<W> for LasWavepacketCompressor
+    impl<const VERSION: usize, W> LayeredFieldCompressor<W> for LasWavepacketCompressorImpl<VERSION>
     where
         W: Write,
     {
@@ -593,26 +608,30 @@ pub mod v3 {
             context: &mut usize,
         ) -> std::io::Result<()> {
             let current_wavepacket = LasWavepacket::unpack_from(current_point);
-            let mut last_wavepacket = &mut self.last_wavepackets[self.last_context];
+            // Index of the last item used as prediction
+            let mut last_idx = self.last_context;
 
             if self.last_context != *context {
                 if self.contexts[*context].unused {
-                    self.last_wavepackets[*context] = *last_wavepacket;
-                    last_wavepacket = &mut self.last_wavepackets[*context];
+                    self.last_wavepackets[*context] = self.last_wavepackets[last_idx];
+                    last_idx = *context;
                     self.contexts[*context].unused = false;
                 }
                 self.last_context = *context;
+                if VERSION == 4 {
+                    last_idx = *context;
+                }
             }
 
-            if *last_wavepacket != current_wavepacket {
+            if self.last_wavepackets[last_idx] != current_wavepacket {
                 self.has_changed = true;
             }
 
             let ctx = &mut self.contexts[*context];
-            ctx.compressor.last_wavepacket = *last_wavepacket;
+            ctx.compressor.last_wavepacket = self.last_wavepackets[last_idx];
             ctx.compressor
                 .compress_with(&mut self.encoder, current_point)?;
-            self.last_wavepackets[self.last_context] = ctx.compressor.last_wavepacket;
+            self.last_wavepackets[last_idx] = ctx.compressor.last_wavepacket;
 
             Ok(())
         }
@@ -635,4 +654,20 @@ pub mod v3 {
             Ok(())
         }
     }
+}
+
+pub mod v3 {
+    //! Contains the implementation for the Version 3 of the wave packet
+    //! Compression / Decompression
+    pub type LasWavepacketDecompressor = super::v3_v4::LasWavepacketDecompressorImpl<3>;
+    pub type LasWavepacketCompressor = super::v3_v4::LasWavepacketCompressorImpl<3>;
+}
+
+pub mod v4 {
+    //! Contains the implementation for the Version 4 of the wave packet
+    //! Compression / Decompression
+    //!
+    //! See [`super::v3_v4`] for the difference between the version 3 and the version 4.
+    pub type LasWavepacketDecompressor = super::v3_v4::LasWavepacketDecompressorImpl<4>;
+    pub type LasWavepacketCompressor = super::v3_v4::LasWavepacketCompressorImpl<4>;
 }

@@ -407,6 +407,30 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
                         ));
                     }
                 },
+                4 => match record_item.item_type {
+                    LazItemType::Point14 => {
+                        self.add_field_decompressor(las::v4::LasPoint6Decompressor::default())
+                    }
+                    LazItemType::RGB14 => {
+                        self.add_field_decompressor(las::v4::LasRGBDecompressor::default())
+                    }
+                    LazItemType::RGBNIR14 => {
+                        self.add_field_decompressor(las::v4::LasRGBDecompressor::default());
+                        self.add_field_decompressor(las::v4::LasNIRDecompressor::default());
+                    }
+                    LazItemType::Byte14(count) => self.add_field_decompressor(
+                        las::v4::LasExtraByteDecompressor::new(count as usize),
+                    ),
+                    LazItemType::WavePacket14 => {
+                        self.add_field_decompressor(las::v4::LasWavepacketDecompressor::default())
+                    }
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            record_item.item_type,
+                            record_item.version,
+                        ));
+                    }
+                },
                 _ => {
                     return Err(LasZipError::UnsupportedLazItemVersion(
                         record_item.item_type,
@@ -785,6 +809,30 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
                     }
                     LazItemType::WavePacket14 => {
                         self.add_field_compressor(las::v3::LasWavepacketCompressor::default());
+                    }
+                    _ => {
+                        return Err(LasZipError::UnsupportedLazItemVersion(
+                            item.item_type,
+                            item.version,
+                        ));
+                    }
+                },
+                4 => match item.item_type {
+                    LazItemType::Point14 => {
+                        self.add_field_compressor(las::v4::LasPoint6Compressor::default())
+                    }
+                    LazItemType::RGB14 => {
+                        self.add_field_compressor(las::v4::LasRGBCompressor::default())
+                    }
+                    LazItemType::RGBNIR14 => {
+                        self.add_field_compressor(las::v4::LasRGBCompressor::default());
+                        self.add_field_compressor(las::v4::LasNIRCompressor::default());
+                    }
+                    LazItemType::Byte14(n) => {
+                        self.add_field_compressor(las::v4::LasExtraByteCompressor::new(n as usize));
+                    }
+                    LazItemType::WavePacket14 => {
+                        self.add_field_compressor(las::v4::LasWavepacketCompressor::default());
                     }
                     _ => {
                         return Err(LasZipError::UnsupportedLazItemVersion(

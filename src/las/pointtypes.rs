@@ -3,7 +3,7 @@ use crate::las::nir::Nir;
 pub use crate::las::point0::{LasPoint0, Point0};
 pub use crate::las::point6::{LasPoint6, Point6};
 pub use crate::las::rgb::{LasRGB, RGB};
-use crate::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3};
+use crate::laszip::{DefaultVersion, LazItem, LazItemType, Version1, Version2, Version3, Version4};
 
 use super::wavepacket::LasWavepacket;
 
@@ -446,6 +446,17 @@ impl Version3 for Point6 {
     }
 }
 
+impl Version4 for Point6 {
+    fn version_4(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 2,
+            version: 4,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14
+        ]
+    }
+}
+
 impl DefaultVersion for Point6 {
     fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
         Self::version_3(num_extra_bytes)
@@ -510,6 +521,18 @@ impl Version3 for Point7 {
     }
 }
 
+impl Version4 for Point7 {
+    fn version_4(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 3,
+            version: 4,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::RGB14
+        ]
+    }
+}
+
 impl DefaultVersion for Point7 {
     fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
         Self::version_3(num_extra_bytes)
@@ -532,6 +555,18 @@ impl Version3 for Point8 {
         vec_of_laz_items![
             vec_capacity: 3,
             version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::RGBNIR14
+        ]
+    }
+}
+
+impl Version4 for Point8 {
+    fn version_4(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 3,
+            version: 4,
             extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
             LazItemType::Point14,
             LazItemType::RGBNIR14
@@ -577,6 +612,18 @@ impl Version3 for Point9 {
     }
 }
 
+impl Version4 for Point9 {
+    fn version_4(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 3,
+            version: 4,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::WavePacket14
+        ]
+    }
+}
+
 impl DefaultVersion for Point9 {
     fn default_version(num_extra_bytes: u16) -> Vec<LazItem> {
         Self::version_3(num_extra_bytes)
@@ -610,6 +657,19 @@ impl Version3 for Point10 {
         vec_of_laz_items![
             vec_capacity: 5,
             version: 3,
+            extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
+            LazItemType::Point14,
+            LazItemType::RGBNIR14,
+            LazItemType::WavePacket14
+        ]
+    }
+}
+
+impl Version4 for Point10 {
+    fn version_4(num_extra_bytes: u16) -> Vec<LazItem> {
+        vec_of_laz_items![
+            vec_capacity: 4,
+            version: 4,
             extra_bytes_type: LazItemType::Byte14(num_extra_bytes),
             LazItemType::Point14,
             LazItemType::RGBNIR14,

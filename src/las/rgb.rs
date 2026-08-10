@@ -642,14 +642,20 @@ pub mod v2 {
     }
 }
 
-pub mod v3 {
-    //! Contains the implementation for the Version 3 of the RGB Compression / Decompression
+mod v3_v4 {
+    //! Implementation shared by the version 3 and version 4 of the RGB
+    //! compression / decompression.
     //!
-    //! The version 3 of the compression / decompression algorithm
-    //! is the same as the version 2, but with the support for the contexts system
+    //! A v3 / v4 decompressor / compressor owns 4 contexts which are just
+    //! rgb::v2 compressor or decompressors and it forwards the compression /
+    //! decompression to the right context.
     //!
-    //! A V3 decompressor / compressor owns 4 contexts which are just rgb::v2 compressor or decompressors
-    //! and it forwards the compression / decompression to the right context.
+    //! Both versions run the same algorithm, they only differ in which
+    //! 'last item' is used as prediction when the context index changed:
+    //! version 3 only switches to the last item of the new context if that
+    //! context was not yet initialized, version 4 always switches.
+    //!
+    //! The version 3 behaviour looks like a bug in LASzip, which version 4 fixes.
     use std::io::{Cursor, Read, Seek, Write};
 
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -680,7 +686,8 @@ pub mod v3 {
         }
     }
 
-    pub struct LasRGBDecompressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasRGBDecompressorImpl<const VERSION: usize> {
         decoder: ArithmeticDecoder<Cursor<Vec<u8>>>,
         /// True if the user requested to decompress and if
         /// the compressed data changed (is not the same value for all
@@ -690,19 +697,15 @@ pub mod v3 {
         is_requested: bool,
         layer_size: u32,
         // The last_rgbs are not part of the decompression context
-        // as when decompressing, if the current context index has changed since
-        // the last call (`self.last_context_used != context`), the `last_item`
-        // used when decompressing is only updated if `self.context[context].unused = true`
-        // As opposed to keeping the last_item in sync with the context index.
-        //
-        // Not sure if its truly intentional, or if its a 'bug' in laszip
+        // as the index of the last item used when decompressing does not
+        // always follow the context index, see the module documentation.
         contexts: [LasDecompressionContextRGB; 4],
         last_rgbs: [RGB; 4],
 
         last_context_used: usize,
     }
 
-    impl Default for LasRGBDecompressor {
+    impl<const VERSION: usize> Default for LasRGBDecompressorImpl<VERSION> {
         fn default() -> Self {
             Self {
                 decoder: ArithmeticDecoder::new(Cursor::new(Vec::<u8>::new())),
@@ -721,7 +724,9 @@ pub mod v3 {
         }
     }
 
-    impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasRGBDecompressor {
+    impl<const VERSION: usize, R: Read + Seek> LayeredFieldDecompressor<R>
+        for LasRGBDecompressorImpl<VERSION>
+    {
         fn size_of_field(&self) -> usize {
             std::mem::size_of::<u16>() * 3
         }
@@ -751,16 +756,20 @@ pub mod v3 {
             current_point: &mut [u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
-            let mut last_item = &mut self.last_rgbs[self.last_context_used];
+            // Index of the last item used as prediction
+            let mut last_idx = self.last_context_used;
 
             // If the context changed we may have to do an initialization
             if self.last_context_used != *context {
                 self.last_context_used = *context;
                 if self.contexts[*context].unused {
-                    self.last_rgbs[*context] = *last_item;
+                    self.last_rgbs[*context] = self.last_rgbs[last_idx];
                     self.contexts[*context].unused = false;
 
-                    last_item = &mut self.last_rgbs[*context];
+                    last_idx = *context;
+                }
+                if VERSION == 4 {
+                    last_idx = *context;
                 }
             }
 
@@ -768,12 +777,12 @@ pub mod v3 {
                 let new = v2::decompress_rgb_using(
                     &mut self.decoder,
                     &mut self.contexts[self.last_context_used].models,
-                    last_item,
+                    &self.last_rgbs[last_idx],
                 )?;
                 new.pack_into(current_point);
-                *last_item = new;
+                self.last_rgbs[last_idx] = new;
             } else {
-                last_item.pack_into(current_point);
+                self.last_rgbs[last_idx].pack_into(current_point);
             }
 
             Ok(())
@@ -795,7 +804,8 @@ pub mod v3 {
         }
     }
 
-    pub struct LasRGBCompressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasRGBCompressorImpl<const VERSION: usize> {
         encoder: ArithmeticEncoder<Cursor<Vec<u8>>>,
         rgb_has_changed: bool,
         contexts: [Option<v2::RGBModels>; 4],
@@ -803,7 +813,7 @@ pub mod v3 {
         last_context_used: usize,
     }
 
-    impl Default for LasRGBCompressor {
+    impl<const VERSION: usize> Default for LasRGBCompressorImpl<VERSION> {
         fn default() -> Self {
             Self {
                 encoder: ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())),
@@ -815,14 +825,14 @@ pub mod v3 {
         }
     }
 
-    impl<R: Write> LayeredFieldCompressor<R> for LasRGBCompressor {
+    impl<const VERSION: usize, W: Write> LayeredFieldCompressor<W> for LasRGBCompressorImpl<VERSION> {
         fn size_of_field(&self) -> usize {
             RGB::SIZE
         }
 
         fn init_first_point(
             &mut self,
-            dst: &mut R,
+            dst: &mut W,
             first_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
@@ -835,31 +845,35 @@ pub mod v3 {
 
         fn compress_field_with(&mut self, buf: &[u8], context: &mut usize) -> std::io::Result<()> {
             let current_point = RGB::unpack_from(buf);
-            let mut last_rgb = self.last_rgbs[self.last_context_used]
-                .as_mut()
-                .expect("internal error: last value is not initialized");
+            // Index of the last item used as prediction
+            let mut last_idx = self.last_context_used;
 
             if self.last_context_used != *context {
                 if self.contexts[*context].is_none() {
                     self.contexts[*context] = Some(v2::RGBModels::default());
-                    self.last_rgbs[*context] = Some(*last_rgb);
-                    last_rgb = self.last_rgbs[*context].as_mut().unwrap();
+                    self.last_rgbs[*context] = self.last_rgbs[last_idx];
+                    last_idx = *context;
                 }
                 self.last_context_used = *context;
+                if VERSION == 4 {
+                    last_idx = *context;
+                }
             }
 
-            if *last_rgb != current_point {
+            let last_rgb =
+                self.last_rgbs[last_idx].expect("internal error: last value is not initialized");
+            if last_rgb != current_point {
                 self.rgb_has_changed = true;
             }
             let models = self.contexts[self.last_context_used]
                 .as_mut()
                 .expect("internal error: context is not initialized");
-            v2::compress_rgb_using(&mut self.encoder, models, &current_point, last_rgb)?;
-            *last_rgb = current_point;
+            v2::compress_rgb_using(&mut self.encoder, models, &current_point, &last_rgb)?;
+            self.last_rgbs[last_idx] = Some(current_point);
             Ok(())
         }
 
-        fn write_layers_sizes(&mut self, dst: &mut R) -> std::io::Result<()> {
+        fn write_layers_sizes(&mut self, dst: &mut W) -> std::io::Result<()> {
             let num_bytes = if self.rgb_has_changed {
                 self.encoder.done()?;
                 inner_buffer_len_of(&self.encoder) as u32
@@ -871,13 +885,31 @@ pub mod v3 {
             Ok(())
         }
 
-        fn write_layers(&mut self, dst: &mut R) -> std::io::Result<()> {
+        fn write_layers(&mut self, dst: &mut W) -> std::io::Result<()> {
             if self.rgb_has_changed {
                 copy_encoder_content_to(&mut self.encoder, dst)?;
             }
             Ok(())
         }
     }
+}
+
+pub mod v3 {
+    //! Contains the implementation for the Version 3 of the RGB Compression / Decompression
+    //!
+    //! The version 3 of the compression / decompression algorithm
+    //! is the same as the version 2, but with the support for the contexts system
+    pub type LasRGBDecompressor = super::v3_v4::LasRGBDecompressorImpl<3>;
+    pub type LasRGBCompressor = super::v3_v4::LasRGBCompressorImpl<3>;
+}
+
+pub mod v4 {
+    //! Contains the implementation for the Version 4 of the RGB Compression / Decompression
+    //!
+    //! The version 4 is the same as the version 3, see [`super::v3_v4`] for
+    //! the difference between the two.
+    pub type LasRGBDecompressor = super::v3_v4::LasRGBDecompressorImpl<4>;
+    pub type LasRGBCompressor = super::v3_v4::LasRGBCompressorImpl<4>;
 }
 
 #[cfg(test)]
