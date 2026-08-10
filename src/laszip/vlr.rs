@@ -215,6 +215,7 @@ define_trait_for_version!(DefaultVersion, default_version);
 define_trait_for_version!(Version1, version_1);
 define_trait_for_version!(Version2, version_2);
 define_trait_for_version!(Version3, version_3);
+define_trait_for_version!(Version4, version_4);
 
 pub struct LazItemRecordBuilder {
     items: Vec<LazItemType>,
@@ -245,6 +246,17 @@ impl LazItemRecordBuilder {
 
     pub fn version_3_of<PointFormat: Version3>(num_extra_bytes: u16) -> Vec<LazItem> {
         PointFormat::version_3(num_extra_bytes)
+    }
+
+    ///```
+    /// let items = laz::LazItemRecordBuilder::version_4_of::<laz::las::Point6>(0);
+    ///```
+    ///
+    /// ```compile_fail
+    /// let items = laz::LazItemRecordBuilder::version_4_of::<laz::las::Point0>(0);
+    /// ```
+    pub fn version_4_of<PointFormat: Version4>(num_extra_bytes: u16) -> Vec<LazItem> {
+        PointFormat::version_4(num_extra_bytes)
     }
 
     pub fn default_for_point_format_id(

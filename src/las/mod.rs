@@ -54,3 +54,13 @@ pub mod v3 {
     pub use crate::las::rgb::v3::{LasRGBCompressor, LasRGBDecompressor};
     pub use crate::las::wavepacket::v3::{LasWavepacketCompressor, LasWavepacketDecompressor};
 }
+
+pub mod v4 {
+    //! This module only contains re exports of compressors / decompressors
+    //! of the corresponding version for easier access
+    pub use crate::las::extra_bytes::v4::{LasExtraByteCompressor, LasExtraByteDecompressor};
+    pub use crate::las::nir::v4::{LasNIRCompressor, LasNIRDecompressor};
+    pub use crate::las::point6::v4::{LasPoint6Compressor, LasPoint6Decompressor};
+    pub use crate::las::rgb::v4::{LasRGBCompressor, LasRGBDecompressor};
+    pub use crate::las::wavepacket::v4::{LasWavepacketCompressor, LasWavepacketDecompressor};
+}

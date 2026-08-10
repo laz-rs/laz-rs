@@ -9,7 +9,7 @@ pub use sequential::{
 };
 pub use vlr::{
     CompressorType, DefaultVersion, LazItem, LazItemRecordBuilder, LazItemType, LazVlr,
-    LazVlrBuilder, Version1, Version2, Version3,
+    LazVlrBuilder, Version1, Version2, Version3, Version4,
 };
 
 #[cfg(feature = "parallel")]

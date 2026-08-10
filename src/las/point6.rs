@@ -309,7 +309,17 @@ mod test {
     }
 }
 
-pub mod v3 {
+mod v3_v4 {
+    //! Implementation shared by the version 3 and version 4 of the point 6
+    //! compression / decompression.
+    //!
+    //! Both versions run the same algorithm, they only differ in when the
+    //! context index given by the caller is updated to the context of the
+    //! current point: version 3 updates it as soon as the scanner channel
+    //! changed, version 4 only updates it once the new context is fully
+    //! initialized.
+    //!
+    //! The version 3 behaviour looks like a bug in LASzip, which version 4 fixes.
     use std::io::{Cursor, Read, Seek, Write};
 
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -639,7 +649,8 @@ pub mod v3 {
         }
     }
 
-    pub struct LasPoint6Decompressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasPoint6DecompressorImpl<const VERSION: usize> {
         decoders: Point6Decoders,
 
         layers_sizes: LayerSizes,
@@ -655,7 +666,7 @@ pub mod v3 {
         contexts: [Point6DecompressionContext; 4],
     }
 
-    impl Default for LasPoint6Decompressor {
+    impl<const VERSION: usize> Default for LasPoint6DecompressorImpl<VERSION> {
         fn default() -> Self {
             let p = Point6::default();
             Self {
@@ -674,7 +685,7 @@ pub mod v3 {
         }
     }
 
-    impl LasPoint6Decompressor {
+    impl<const VERSION: usize> LasPoint6DecompressorImpl<VERSION> {
         fn read_gps_time(&mut self) -> std::io::Result<()> {
             let the_context = &mut self.contexts[self.current_context];
 
@@ -869,7 +880,9 @@ pub mod v3 {
         }
     }
 
-    impl<R: Read + Seek> LayeredFieldDecompressor<R> for LasPoint6Decompressor {
+    impl<const VERSION: usize, R: Read + Seek> LayeredFieldDecompressor<R>
+        for LasPoint6DecompressorImpl<VERSION>
+    {
         fn size_of_field(&self) -> usize {
             Point6::SIZE
         }
@@ -938,7 +951,9 @@ pub mod v3 {
 
                 // Switch context to current channel
                 self.current_context = scanner_channel;
-                *context = self.current_context;
+                if VERSION == 3 {
+                    *context = self.current_context;
+                }
 
                 self.contexts[self.current_context]
                     .last_point
@@ -949,6 +964,9 @@ pub mod v3 {
                         .scanner_channel(),
                     scanner_channel as u8
                 );
+            }
+            if VERSION == 4 {
+                *context = self.current_context;
             }
 
             let point_source_changed = is_nth_bit_set!(changed_values, 5);
@@ -1317,7 +1335,8 @@ pub mod v3 {
         }
     }
 
-    pub struct LasPoint6Compressor {
+    // Here VERSION refers to the las compression version, so either 3 or 4
+    pub struct LasPoint6CompressorImpl<const VERSION: usize> {
         encoders: Point6Encoders,
         has_changed: Point6FieldFlags,
 
@@ -1326,7 +1345,7 @@ pub mod v3 {
         last_values: [Point6; 4],
     }
 
-    impl Default for LasPoint6Compressor {
+    impl<const VERSION: usize> Default for LasPoint6CompressorImpl<VERSION> {
         fn default() -> Self {
             Self {
                 encoders: Point6Encoders::default(),
@@ -1348,7 +1367,7 @@ pub mod v3 {
         }
     }
 
-    impl LasPoint6Compressor {
+    impl<const VERSION: usize> LasPoint6CompressorImpl<VERSION> {
         fn compress_gps_time(&mut self, gps_time: GpsTime) -> std::io::Result<()> {
             let the_context = &mut self.contexts[self.current_context];
             if the_context.gps_sequences.last_gps_diffs[the_context.gps_sequences.last] == 0 {
@@ -1601,7 +1620,9 @@ pub mod v3 {
         }
     }
 
-    impl<W: Write> LayeredFieldCompressor<W> for LasPoint6Compressor {
+    impl<const VERSION: usize, W: Write> LayeredFieldCompressor<W>
+        for LasPoint6CompressorImpl<VERSION>
+    {
         fn size_of_field(&self) -> usize {
             Point6::SIZE
         }
@@ -1690,8 +1711,14 @@ pub mod v3 {
                     last_point = &mut self.last_values[scanner_channel as usize];
                 }
                 self.current_context = scanner_channel as usize;
+                if VERSION == 3 {
+                    *context = self.current_context;
+                }
+            }
+            if VERSION == 4 {
                 *context = self.current_context;
             }
+
             let the_context = &mut self.contexts[self.current_context];
 
             // if number of returns is different we compress it
@@ -1962,4 +1989,20 @@ pub mod v3 {
             assert_eq!(r_sizes, sizes);
         }
     }
+}
+
+pub mod v3 {
+    //! Contains the implementation for the Version 3 of the Point 6
+    //! Compression / Decompression
+    pub type LasPoint6Decompressor = super::v3_v4::LasPoint6DecompressorImpl<3>;
+    pub type LasPoint6Compressor = super::v3_v4::LasPoint6CompressorImpl<3>;
+}
+
+pub mod v4 {
+    //! Contains the implementation for the Version 4 of the Point 6
+    //! Compression / Decompression
+    //!
+    //! See [`super::v3_v4`] for the difference between the version 3 and the version 4.
+    pub type LasPoint6Decompressor = super::v3_v4::LasPoint6DecompressorImpl<4>;
+    pub type LasPoint6Compressor = super::v3_v4::LasPoint6CompressorImpl<4>;
 }

@@ -38,7 +38,7 @@ struct RawPointsData {
 }
 
 impl RawPointsData {
-    fn cycling_iterator(&self) -> std::iter::Cycle<std::slice::ChunksExact<u8>> {
+    fn cycling_iterator(&self) -> std::iter::Cycle<std::slice::ChunksExact<'_, u8>> {
         self.points_data.chunks_exact(self.point_size).cycle()
     }
 }
