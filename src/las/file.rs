@@ -36,7 +36,7 @@ impl QuickHeader {
         let num_vlrs = src.read_u32::<LittleEndian>()?;
         let point_format_id = src.read_u8()?;
         let point_size = src.read_u16::<LittleEndian>()?;
-        let num_points = if major == 1 && minor == 4 {
+        let num_points = if major == 1 && minor >= 4 {
             src.seek(SeekFrom::Start(247))?;
             src.read_u64::<LittleEndian>()?
         } else {
