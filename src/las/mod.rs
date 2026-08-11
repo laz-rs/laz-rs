@@ -2,7 +2,9 @@
 //! LAS data compressors & decompressors as well as
 //! the definition of the point types.
 
-pub use pointtypes::{Point0, Point1, Point2, Point3, Point6, Point7, Point8};
+pub use pointtypes::{
+    Point0, Point1, Point10, Point2, Point3, Point4, Point5, Point6, Point7, Point8, Point9,
+};
 
 #[macro_use]
 mod utils;

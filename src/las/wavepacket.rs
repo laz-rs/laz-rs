@@ -595,6 +595,10 @@ mod v3_v4 {
             first_point: &[u8],
             context: &mut usize,
         ) -> std::io::Result<()> {
+            for context in &mut self.contexts {
+                context.unused = true;
+            }
+
             self.contexts[*context]
                 .compressor
                 .compress_first(dst, first_point)?;
