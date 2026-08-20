@@ -1,3 +1,9 @@
+# 0.13.0
+
+- Fix context reset in wavepacket decompression
+- Add support for compressing / decompressing in LAZ format version 4 (fmt id >= 6)
+  that is now used by default by LASzip for LAS version >= 1.5
+
 # 0.12.2
 
 - Fix out of bound access when chunk table is empty for parallel decompressor
