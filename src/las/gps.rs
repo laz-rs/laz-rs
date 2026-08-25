@@ -578,12 +578,12 @@ pub mod v2 {
                             // the difference is huge
                             // maybe the double belongs to another time sequence
                             for i in 1..4 {
-                                let other_gps_time_diff_64 = this_val.value
-                                    - self
-                                        .common
+                                let other_gps_time_diff_64 = this_val.value.wrapping_sub(
+                                    self.common
                                         .last_gps_times
                                         .get_unchecked((self.common.last + i) & 3)
-                                        .value;
+                                        .value,
+                                );
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == i64::from(other_gps_time_diff_32) {
