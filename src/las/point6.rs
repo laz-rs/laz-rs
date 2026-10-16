@@ -685,8 +685,24 @@ mod v3_v4 {
         }
     }
 
+    /// The most "switch to another sequence" codes followed in a row before a time
+    /// is read. An encoder switches only to a sequence the time fits, so a valid
+    /// stream has at most one; more than there are sequences is corrupt, and following
+    /// it would recurse until the stack overflows.
+    const MAX_SEQUENCE_SWITCHES: u8 = 4;
+
     impl<const VERSION: usize> LasPoint6DecompressorImpl<VERSION> {
         fn read_gps_time(&mut self) -> std::io::Result<()> {
+            self.read_gps_time_after(0)
+        }
+
+        fn read_gps_time_after(&mut self, switches: u8) -> std::io::Result<()> {
+            if switches > MAX_SEQUENCE_SWITCHES {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "gps time: more consecutive sequence switches than there are sequences",
+                ));
+            }
             let the_context = &mut self.contexts[self.current_context];
 
             let mut multi: i32;
@@ -736,7 +752,7 @@ mod v3_v4 {
                     // We switch to another sequence
                     the_context.gps_sequences.last =
                         (the_context.gps_sequences.last + multi as usize - 1) & 3;
-                    self.read_gps_time()?;
+                    self.read_gps_time_after(switches + 1)?;
                 }
             } else {
                 multi = self
@@ -873,7 +889,7 @@ mod v3_v4 {
                         + multi as usize
                         - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
                         & 3;
-                    self.read_gps_time()?;
+                    self.read_gps_time_after(switches + 1)?;
                 }
             }
             Ok(())
@@ -1987,6 +2003,25 @@ mod v3_v4 {
 
             let r_sizes = LayerSizes::read_from(&mut dst).unwrap();
             assert_eq!(r_sizes, sizes);
+        }
+
+        /// A gps time layer of nothing but "switch to another sequence" codes. The
+        /// decoder used to follow each one by recursing, until the stack overflowed.
+        #[test]
+        fn endless_gps_sequence_switches_are_an_error() {
+            let mut model = ArithmeticModelBuilder::new(5).build();
+            let mut encoder = ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new()));
+            for _ in 0..100_000 {
+                encoder.encode_symbol(&mut model, 2).unwrap();
+            }
+            encoder.done().unwrap();
+
+            let mut decompressor = LasPoint6DecompressorImpl::<3>::default();
+            decompressor.decoders.gps_time =
+                ArithmeticDecoder::new(Cursor::new(encoder.into_inner().into_inner()));
+            decompressor.decoders.gps_time.read_init_bytes().unwrap();
+            let err = decompressor.read_gps_time().unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         }
     }
 }
