@@ -348,3 +348,37 @@ fn test_gps_time_v1_crossing_zero() {
 fn test_gps_time_v2_crossing_zero() {
     check_gps_time_roundtrip(GpsTimeCompressor::default(), GpsTimeDecompressor::default());
 }
+
+/// A valid arithmetic stream always starts with a value below the
+/// decoder's initial length (`0xFFFF_FFFF`). A malformed chunk whose
+/// first 4 bytes are all `0xFF` must be reported as an error,
+/// not lead to an out of bounds panic later in `decode_symbol`.
+#[test]
+fn test_layered_init_bytes_not_below_length() {
+    use crate::las::v3::{LasPoint6Compressor, LasPoint6Decompressor};
+    use crate::record::{LayeredPointRecordCompressor, LayeredPointRecordDecompressor};
+
+    const POINT_SIZE: usize = 30;
+    const NUM_POINTS: usize = 50;
+
+    let mut compressor = LayeredPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    compressor.add_field_compressor(LasPoint6Compressor::default());
+    let mut point = [0u8; POINT_SIZE];
+    for i in 0..NUM_POINTS {
+        for (j, byte) in point.iter_mut().enumerate() {
+            *byte = (i * 31 + j * 7) as u8;
+        }
+        compressor.compress_next(&point).unwrap();
+    }
+    compressor.done().unwrap();
+    let mut chunk = compressor.into_inner().into_inner();
+
+    // first point, point count, then the 9 layer sizes of point6
+    let first_layer_start = POINT_SIZE + 4 + 9 * 4;
+    chunk[first_layer_start..first_layer_start + 4].fill(0xFF);
+
+    let mut decompressor = LayeredPointRecordDecompressor::new(Cursor::new(chunk));
+    decompressor.add_field_decompressor(LasPoint6Decompressor::default());
+    let result = (0..NUM_POINTS).try_for_each(|_| decompressor.decompress_next(&mut point));
+    assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+}

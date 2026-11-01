@@ -125,6 +125,13 @@ impl<T: Read> ArithmeticDecoder<T> {
 
         self.value =
             u32::from(v[0]) << 24 | u32::from(v[1]) << 16 | u32::from(v[2]) << 8 | u32::from(v[3]);
+        self.length = AC_MAX_LENGTH;
+        if self.value >= self.length {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "ArithmeticDecoder value is not below its length",
+            ));
+        }
         Ok(())
     }
 
