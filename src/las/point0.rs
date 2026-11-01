@@ -431,8 +431,8 @@ pub mod v1 {
             let median_x = median_diff(&self.last_x_diffs);
             let median_y = median_diff(&self.last_y_diffs);
 
-            let x_diff = current_point.x() - self.last_point.x();
-            let y_diff = current_point.y() - self.last_point.y();
+            let x_diff = current_point.x().wrapping_sub(self.last_point.x());
+            let y_diff = current_point.y().wrapping_sub(self.last_point.y());
 
             self.ic_dx
                 .compress(encoder, median_x, x_diff, DEFAULT_COMPRESS_CONTEXTS)?;
@@ -545,7 +545,7 @@ pub mod v1 {
             let x_diff =
                 self.ic_dx
                     .decompress(&mut decoder, median_x, DEFAULT_DECOMPRESS_CONTEXTS)?;
-            self.last_point.x += x_diff;
+            self.last_point.x = self.last_point.x.wrapping_add(x_diff);
             // we use the number k of bits corrector bits to switch contexts
             let k_bits = self.ic_dx.k();
             let y_diff = self.ic_dy.decompress(
@@ -553,7 +553,7 @@ pub mod v1 {
                 median_y,
                 if k_bits < 19 { k_bits } else { 19 },
             )?;
-            self.last_point.y += y_diff;
+            self.last_point.y = self.last_point.y.wrapping_add(y_diff);
             let k_bits = (k_bits + self.ic_dy.k()) / 2;
             self.last_point.z = self.ic_dz.decompress(
                 &mut decoder,

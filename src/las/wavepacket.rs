@@ -166,8 +166,10 @@ pub mod v1 {
                     current_wavepacket.offset = self.last_wavepacket.offset;
                 }
                 1 => {
-                    current_wavepacket.offset =
-                        self.last_wavepacket.offset + u64::from(self.last_wavepacket.size);
+                    current_wavepacket.offset = self
+                        .last_wavepacket
+                        .offset
+                        .wrapping_add(u64::from(self.last_wavepacket.size));
                 }
                 2 => {
                     self.last_offset_diff =
@@ -283,7 +285,8 @@ pub mod v1 {
                 u32::from(current_item.descriptor_index),
             )?;
 
-            let offset_diff_64 = current_item.offset as i64 - self.last_wavepacket.offset as i64;
+            let offset_diff_64 =
+                (current_item.offset as i64).wrapping_sub(self.last_wavepacket.offset as i64);
             let offset_diff_32 = offset_diff_64 as i32;
 
             if offset_diff_64 == offset_diff_32 as i64 {

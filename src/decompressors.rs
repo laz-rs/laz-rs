@@ -156,7 +156,7 @@ impl IntegerDecompressor {
                         if c >= (1u32 << (self.k - 1)) as i32 {
                             // if c is in the interval [ 2^(k-1)  ...  + 2^k - 1 ]
                             // so we translate c back into the interval [ 2^(k-1) + 1  ...  2^k ] by adding 1
-                            c += 1;
+                            c = c.wrapping_add(1);
                         } else {
                             // otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
                             // so we translate c back into the interval [ - (2^k - 1)  ...  - (2^(k-1)) ] by subtracting (2^k - 1)
@@ -193,7 +193,7 @@ impl IntegerDecompressor {
                         // translate c back into its correct interval
                         if c >= (1u32 << (self.k - 1)) as i32 {
                             // so we translate c back into the interval [ 2^(k-1) + 1  ...  2^k ] by adding 1
-                            c += 1;
+                            c = c.wrapping_add(1);
                         } else {
                             // otherwise c is in the interval [ 0 ...  + 2^(k-1) - 1 ]
                             // so we translate c back into the interval [ - (2^k - 1)  ...  - (2^(k-1)) ] by subtracting (2^k - 1)
