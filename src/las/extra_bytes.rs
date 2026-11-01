@@ -230,7 +230,7 @@ mod v3_v4 {
                 num_bytes_per_layer: vec![0; count],
                 is_requested: vec![true; count],
                 should_load_bytes: vec![true; count],
-                contexts: (0..4).map(|_i| ExtraBytesContext::new(count)).collect(),
+                contexts: (0..4).map(|_i| ExtraBytesContext::new(0)).collect(),
                 last_bytes: (0..4).map(|_| ExtraBytes::new(count)).collect(),
                 num_extra_bytes: count,
                 last_context_used: 0,
@@ -264,6 +264,7 @@ mod v3_v4 {
             self.last_bytes[*context].bytes.copy_from_slice(first_point);
 
             self.last_context_used = *context;
+            self.contexts[*context] = ExtraBytesContext::new(self.num_extra_bytes);
             self.contexts[*context].unused = false;
             Ok(())
         }
@@ -346,7 +347,8 @@ mod v3_v4 {
                     .map(|_i| ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new())))
                     .collect(),
                 has_byte_changed: vec![false; count],
-                contexts: (0..4).map(|_i| ExtraBytesContext::new(count)).collect(),
+                // Like in LASzip, the models of a context are created when it is first used
+                contexts: (0..4).map(|_i| ExtraBytesContext::new(0)).collect(),
                 last_bytes: (0..4).map(|_i| ExtraBytes::new(count)).collect(),
                 num_extra_bytes: count,
                 last_context_used: 0,
@@ -374,6 +376,7 @@ mod v3_v4 {
             dst.write_all(first_point)?;
             self.last_bytes[*context].bytes.copy_from_slice(first_point);
             self.last_context_used = *context;
+            self.contexts[*context] = ExtraBytesContext::new(self.num_extra_bytes);
             self.contexts[*context].unused = false;
             Ok(())
         }
