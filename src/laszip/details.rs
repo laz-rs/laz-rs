@@ -10,9 +10,7 @@ pub(super) fn record_decompressor_from_laz_items<'a, R: Read + Seek + Send + Syn
     items: &Vec<LazItem>,
     input: R,
 ) -> crate::Result<Box<dyn RecordDecompressor<R> + Send + Sync + 'a>> {
-    let first_item = items
-        .get(0)
-        .expect("There should be at least one LazItem to be able to create a RecordDecompressor");
+    let first_item = items.first().ok_or(LasZipError::InvalidPointSize(0))?;
 
     let mut decompressor = match first_item.version {
         1 | 2 => {
@@ -39,9 +37,7 @@ pub(super) fn record_compressor_from_laz_items<'a, W: Write + Send + Sync + 'a>(
     items: &Vec<LazItem>,
     output: W,
 ) -> crate::Result<Box<dyn RecordCompressor<W> + Send + Sync + 'a>> {
-    let first_item = items
-        .get(0)
-        .expect("There should be at least one LazItem to be able to create a RecordCompressor");
+    let first_item = items.first().ok_or(LasZipError::InvalidPointSize(0))?;
 
     let mut compressor = match first_item.version {
         1 | 2 => {
