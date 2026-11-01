@@ -151,7 +151,8 @@ impl ChunkTable {
         let mut decoder = ArithmeticDecoder::new(&mut src);
         decoder.read_init_bytes()?;
 
-        let mut chunk_table = ChunkTable::with_capacity(number_of_chunks as usize);
+        // Chunk table len is untrusted, so we dont pre-reserve
+        let mut chunk_table = ChunkTable::default();
         let mut previous_entry = ChunkTableEntry::default();
         for _ in 1..=number_of_chunks {
             let mut current_entry = ChunkTableEntry {
@@ -171,6 +172,7 @@ impl ChunkTable {
                 BYTE_COUNT_CONTEXT,
             )? as u64);
 
+            chunk_table.0.try_reserve(1)?;
             chunk_table.0.push(current_entry);
             previous_entry = current_entry;
         }

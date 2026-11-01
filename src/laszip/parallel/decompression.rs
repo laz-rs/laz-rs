@@ -2,6 +2,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use rayon::prelude::*;
 
+use crate::buffer::{buffer_len, read_exact_into_vec, try_resize};
 use crate::byteslice::ChunksIrregularMut;
 use crate::las::selective::DecompressionSelection;
 use crate::laszip::chunk_table::{ChunkTable, ChunkTableEntry};
@@ -61,20 +62,12 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         }
         let chunk_table = ChunkTable::read_from(&mut source, &vlr)?;
         let start_of_data = source.seek(SeekFrom::Current(0))?;
-        let biggest_chunk = chunk_table
-            .as_ref()
-            .into_iter()
-            .map(|entry| entry.point_count)
-            .max()
-            .unwrap_or(0);
-        let vec = Vec::<u8>::with_capacity(biggest_chunk as usize);
-        let rest = std::io::Cursor::new(vec);
 
         Ok(Self {
             source,
             vlr,
             chunk_table,
-            rest,
+            rest: std::io::Cursor::new(vec![]),
             internal_buffer: vec![],
             last_chunk_read: -1,
             start_of_data,
@@ -146,8 +139,11 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         //      than there are
 
         // Read the necessary compressed bytes into our internal buffer
-        self.internal_buffer.resize(num_bytes_to_read, 0u8);
-        self.source.read_exact(&mut self.internal_buffer)?;
+        read_exact_into_vec(
+            &mut self.source,
+            &mut self.internal_buffer,
+            num_bytes_to_read,
+        )?;
 
         // 3. Decompress
         // The idea is that if we have `n` chunks to decompress
@@ -188,17 +184,17 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
                 // Decompress what we can in the caller's buffer
                 decompressor.decompress_many(tail_output)?;
                 // Then, decompress what we did not, into our rest buffer
-                let num_bytes_left =
-                    (tail_chunk_entry.point_count as usize * point_size) - tail_output.len();
+                let num_bytes_left = buffer_len(tail_chunk_entry.point_count, point_size as u64)?
+                    .saturating_sub(tail_output.len());
                 if !vlr.uses_variable_size_chunks() && end_index == chunk_table_len {
                     // When fixed-size chunks are used, for the last chunk, the number of point
                     // is unknown, so we have to decompress it until an end of file appears
-                    rest.get_mut().resize(num_bytes_left, 0u8);
+                    try_resize(rest.get_mut(), num_bytes_left)?;
                     let num_actually_decompressed =
                         decompressor.decompress_until_end_of_file(rest.get_mut())?;
                     rest.get_mut().resize(num_actually_decompressed, 0u8);
                 } else {
-                    rest.get_mut().resize(num_bytes_left, 0u8);
+                    try_resize(rest.get_mut(), num_bytes_left)?;
                     decompressor.decompress_many(rest.get_mut())?;
                 }
                 rest.set_position(0);
@@ -230,18 +226,23 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 
         let start_of_chunk_pos = self.start_of_data + byte_offset;
         self.source.seek(SeekFrom::Start(start_of_chunk_pos))?;
-        self.internal_buffer
-            .resize(self.chunk_table[chunk_of_point].byte_count as usize, 0u8);
-        self.source.read(&mut self.internal_buffer)?;
+        read_exact_into_vec(
+            &mut self.source,
+            &mut self.internal_buffer,
+            self.chunk_table[chunk_of_point].byte_count as usize,
+        )?;
 
         // Completely decompress the chunk
-        let num_bytes = match self.vlr.num_bytes_in_decompressed_chunk() {
+        let num_bytes = match self.vlr.num_bytes_in_decompressed_chunk()? {
             crate::laszip::vlr::DecompressedChunkSize::Fixed { num_bytes } => num_bytes,
             crate::laszip::vlr::DecompressedChunkSize::Variable {
                 num_bytes_per_point,
-            } => num_bytes_per_point * self.chunk_table[chunk_of_point].point_count as usize,
+            } => buffer_len(
+                self.chunk_table[chunk_of_point].point_count,
+                num_bytes_per_point as u64,
+            )?,
         };
-        self.rest.get_mut().resize(num_bytes, 0u8);
+        try_resize(self.rest.get_mut(), num_bytes)?;
         let mut decompressor = record_decompressor_from_laz_items(
             self.vlr.items(),
             std::io::Cursor::new(&self.internal_buffer),

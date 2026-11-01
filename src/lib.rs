@@ -129,6 +129,7 @@ pub mod models;
 pub mod packers;
 pub mod record;
 
+mod buffer;
 mod byteslice;
 pub mod errors;
 pub mod las;

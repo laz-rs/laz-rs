@@ -1,3 +1,4 @@
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::fs::File;
 use std::io::Cursor;
 use std::io::{Read, Seek, SeekFrom};
@@ -13,6 +14,32 @@ use crate::record::{
     LayeredPointRecordDecompressor, RecordCompressor, RecordDecompressor,
     SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
+
+/// Allocator that fails any allocation bigger than [`MAX_ALLOCATION`].
+///
+/// Corrupted data can claim sizes (chunk sizes, layer sizes, number of chunks...)
+/// much bigger than what can be allocated. With this allocator, trying to allocate
+/// such a size aborts the test binary, independently of how much memory
+/// the machine running the tests has, while fallible allocations get an error.
+struct LimitedAllocator;
+
+const MAX_ALLOCATION: usize = 1 << 30;
+
+unsafe impl GlobalAlloc for LimitedAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.size() > MAX_ALLOCATION {
+            return std::ptr::null_mut();
+        }
+        System.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        System.dealloc(ptr, layout)
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: LimitedAllocator = LimitedAllocator;
 
 #[test]
 fn test_compression_decompression_of_point_10() {
@@ -457,4 +484,120 @@ fn test_layered_init_bytes_not_below_length() {
     decompressor.add_field_decompressor(LasPoint6Decompressor::default());
     let result = (0..NUM_POINTS).try_for_each(|_| decompressor.decompress_next(&mut point));
     assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+}
+
+/// The number of chunks of the chunk table comes from the data,
+/// memory must not be reserved for chunks that are not there.
+#[test]
+fn test_chunk_table_huge_number_of_chunks() {
+    use crate::laszip::{ChunkTable, ChunkTableEntry};
+
+    let mut chunk_table = ChunkTable::default();
+    for _ in 0..3 {
+        chunk_table.push(ChunkTableEntry {
+            point_count: 50_000,
+            byte_count: 1234,
+        });
+    }
+    let mut data = Vec::<u8>::new();
+    chunk_table.write(&mut data, false).unwrap();
+    // version, then number of chunks
+    data[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    let err = ChunkTable::read(&mut Cursor::new(data), false).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+/// The size of each layer comes from the data,
+/// memory must not be allocated for bytes that are not there.
+#[test]
+fn test_layered_huge_layer_size() {
+    use crate::las::v3::{LasPoint6Compressor, LasPoint6Decompressor};
+
+    const POINT_SIZE: usize = 30;
+    const NUM_POINTS: usize = 50;
+
+    let mut compressor = LayeredPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    compressor.add_field_compressor(LasPoint6Compressor::default());
+    let mut point = [0u8; POINT_SIZE];
+    for i in 0..NUM_POINTS {
+        for (j, byte) in point.iter_mut().enumerate() {
+            *byte = (i * 31 + j * 7) as u8;
+        }
+        compressor.compress_next(&point).unwrap();
+    }
+    compressor.done().unwrap();
+    let mut chunk = compressor.into_inner().into_inner();
+
+    // first point, point count, then the first layer size
+    let first_layer_size_start = POINT_SIZE + 4;
+    chunk[first_layer_size_start..first_layer_size_start + 4]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+
+    let mut decompressor = LayeredPointRecordDecompressor::new(Cursor::new(chunk));
+    decompressor.add_field_decompressor(LasPoint6Decompressor::default());
+    let err = decompressor.decompress_next(&mut point).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+}
+
+/// A point is at most `u16::MAX` bytes, decompressors allocate memory
+/// according to the size of the items, so bigger points must be refused.
+#[test]
+fn test_laz_vlr_point_size_too_large() {
+    use crate::laszip::{LazItemRecordBuilder, LazItemType, LazVlr};
+    use crate::LasZipError;
+
+    let items = LazItemRecordBuilder::new()
+        .add_item(LazItemType::Byte(40_000))
+        .add_item(LazItemType::Byte(40_000))
+        .build();
+    let mut data = Vec::<u8>::new();
+    LazVlr::from_laz_items(items).write_to(&mut data).unwrap();
+
+    let result = LazVlr::read_from(data.as_slice());
+    assert!(
+        matches!(result, Err(LasZipError::PointSizeTooLarge(80_000))),
+        "{result:?}"
+    );
+}
+
+/// The chunk size comes from the vlr, which comes from the data.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_par_huge_chunk_size() {
+    use crate::laszip::LazVlrBuilder;
+    use crate::{LasZipCompressor, LasZipError, ParLasZipCompressor, ParLasZipDecompressor};
+
+    fn is_out_of_memory<T>(result: crate::Result<T>) -> bool {
+        matches!(result, Err(LasZipError::IoError(e)) if e.kind() == std::io::ErrorKind::OutOfMemory)
+    }
+
+    let vlr = LazVlrBuilder::default()
+        .with_point_format(0, 0)
+        .unwrap()
+        .build();
+    let point_size = vlr.items_size() as usize;
+    let mut compressor = LasZipCompressor::new(Cursor::new(Vec::<u8>::new()), vlr).unwrap();
+    compressor
+        .compress_many(&vec![0u8; 10 * point_size])
+        .unwrap();
+    compressor.done().unwrap();
+    let data = compressor.into_inner().into_inner();
+
+    let hostile_vlr = LazVlrBuilder::default()
+        .with_point_format(0, 0)
+        .unwrap()
+        .with_fixed_chunk_size(u32::MAX - 1)
+        .build();
+
+    let result = ParLasZipCompressor::new(Cursor::new(Vec::<u8>::new()), hostile_vlr.clone());
+    assert!(is_out_of_memory(result));
+
+    let mut point = vec![0u8; point_size];
+    let mut decompressor =
+        ParLasZipDecompressor::new(Cursor::new(data.clone()), hostile_vlr.clone()).unwrap();
+    assert!(is_out_of_memory(decompressor.decompress_many(&mut point)));
+
+    let mut decompressor = ParLasZipDecompressor::new(Cursor::new(data), hostile_vlr).unwrap();
+    assert!(is_out_of_memory(decompressor.seek(0)));
 }

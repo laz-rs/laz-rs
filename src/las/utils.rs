@@ -29,6 +29,7 @@ use std::ops::{BitAnd, BitXor};
 
 use num_traits::Zero;
 
+use crate::buffer::{read_exact_into_vec, skip_exact};
 use crate::decoders::ArithmeticDecoder;
 use crate::encoders::ArithmeticEncoder;
 use crate::packers::Packable;
@@ -174,8 +175,7 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
     let inner_vec = decoder.get_mut().get_mut();
     if is_requested {
         if num_bytes > 0 {
-            inner_vec.resize(num_bytes, 0);
-            src.read_exact(&mut inner_vec[..num_bytes])?;
+            read_exact_into_vec(src, inner_vec, num_bytes)?;
             decoder.read_init_bytes()?;
             Ok(true)
         } else {
@@ -188,8 +188,7 @@ pub(crate) fn copy_bytes_into_decoder<R: Read + Seek>(
                 // This is mainly to accommodate python bindings,
                 // where the stream might not be seekable and return an error
                 // so we instead try to read data to skip it
-                let mut unused_data = vec![0u8; num_bytes];
-                src.read_exact(unused_data.as_mut_slice())?;
+                skip_exact(src, num_bytes as u64)?;
             }
         }
         Ok(false)

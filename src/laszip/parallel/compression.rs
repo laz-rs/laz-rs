@@ -62,8 +62,9 @@ impl<W: Write + Seek + Send + Sync> ParLasZipCompressor<W> {
         }
 
         let mut rest = Vec::<u8>::new();
-        if let DecompressedChunkSize::Fixed { num_bytes } = vlr.num_bytes_in_decompressed_chunk() {
-            rest.reserve(num_bytes);
+        if let DecompressedChunkSize::Fixed { num_bytes } = vlr.num_bytes_in_decompressed_chunk()? {
+            rest.try_reserve_exact(num_bytes)
+                .map_err(std::io::Error::from)?;
         }
 
         Ok(Self {
@@ -408,7 +409,8 @@ mod test {
                 .build(),
         );
 
-        let points = vec![0u8; vlr.num_bytes_in_decompressed_chunk().fixed().unwrap() as usize];
+        let num_bytes = vlr.num_bytes_in_decompressed_chunk().unwrap().fixed();
+        let points = vec![0u8; num_bytes.unwrap()];
         let mut compressor =
             ParLasZipCompressor::new(std::io::Cursor::new(Vec::<u8>::new()), vlr).unwrap();
         assert_eq!(compressor.table_offset, -1);

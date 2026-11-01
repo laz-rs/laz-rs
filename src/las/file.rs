@@ -8,6 +8,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
+use crate::buffer::{buffer_len, try_resize};
 use crate::laszip::{LasZipDecompressor, LazVlr};
 
 /// LAS header with only the minimum information
@@ -214,10 +215,10 @@ impl<'a> SimpleReader<'a> {
     pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
         assert!(buf.is_empty());
         let mut num_read = 0usize;
-        buf.resize(
-            self.header.num_points as usize * self.header.point_size as usize,
-            0u8,
-        );
+        try_resize(
+            buf,
+            buffer_len(self.header.num_points, u64::from(self.header.point_size))?,
+        )?;
         let slc = buf.as_mut_slice();
         while let Some(point) = self.read_next() {
             let point = point?;

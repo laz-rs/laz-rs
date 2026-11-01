@@ -1,3 +1,4 @@
+use crate::buffer::{buffer_len, read_exact_into_vec, try_resize};
 use crate::laszip::details::record_decompressor_from_laz_items;
 use crate::laszip::{ChunkTable, CompressorType};
 use crate::{LasZipCompressor, LasZipError, LazCompressor, LazVlr};
@@ -73,9 +74,8 @@ where
             let size_of_chunk = chunk_table[chunk_index].byte_count;
             // In PointWiseChunked, we don't know if the last chunk is complete or not
             // so we read it, rewrite it so the compressor is in the right state to append points
-            let mut chunk_data = vec![0u8; size_of_chunk as usize];
-
-            data.read_exact(&mut chunk_data)?;
+            let mut chunk_data = vec![];
+            read_exact_into_vec(&mut data, &mut chunk_data, size_of_chunk as usize)?;
 
             let mut chunk_data = Cursor::new(chunk_data);
             let mut decompressor =
@@ -83,7 +83,10 @@ where
 
             // Resize the output buffer so that we decompresse data until its either full,
             // or EOF was reached
-            data_to_recompress.resize((points_to_read * vlr.items_size()) as usize, 0);
+            try_resize(
+                &mut data_to_recompress,
+                buffer_len(points_to_read, vlr.items_size())?,
+            )?;
             let byte_len = decompressor.decompress_until_end_of_file(&mut data_to_recompress)?;
             data_to_recompress.resize(byte_len, 0);
         }

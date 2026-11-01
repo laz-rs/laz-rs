@@ -333,6 +333,12 @@ fn read_laz_items_from<R: Read>(mut src: &mut R) -> crate::Result<Vec<LazItem>> 
     for _ in 0..num_items {
         items.push(LazItem::read_from(&mut src)?)
     }
+    // Decompressors allocate memory according to the size of the items,
+    // (and a point cannot be bigger than u16::MAX anyway)
+    let point_size: u64 = items.iter().map(|item| u64::from(item.size)).sum();
+    if point_size > u64::from(u16::MAX) {
+        return Err(LasZipError::PointSizeTooLarge(point_size));
+    }
     Ok(items)
 }
 
@@ -519,20 +525,19 @@ impl LazVlr {
     /// returns how many bytes a decompressed chunk contains
     #[cfg(feature = "parallel")]
     #[inline]
-    pub(crate) fn num_bytes_in_decompressed_chunk(&self) -> DecompressedChunkSize {
+    pub(crate) fn num_bytes_in_decompressed_chunk(&self) -> std::io::Result<DecompressedChunkSize> {
         if self.uses_variable_size_chunks() {
             let num_bytes_per_point = self
                 .items_size()
                 .try_into()
                 .expect("u64 does not fit in a usize");
-            DecompressedChunkSize::Variable {
+            Ok(DecompressedChunkSize::Variable {
                 num_bytes_per_point,
-            }
+            })
         } else {
-            let num_bytes = (self.chunk_size as u64 * self.items_size() as u64)
-                .try_into()
-                .expect("u64 does not fit in a usize");
-            DecompressedChunkSize::Fixed { num_bytes }
+            let num_bytes =
+                crate::buffer::buffer_len(u64::from(self.chunk_size), self.items_size())?;
+            Ok(DecompressedChunkSize::Fixed { num_bytes })
         }
     }
 }
