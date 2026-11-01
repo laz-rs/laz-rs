@@ -297,3 +297,54 @@ loop_test_on_buffer!(
         v1::LasExtraByteDecompressor::new(27)
     ]
 );
+
+/// GPS times are compressed as the difference of their f64 bit patterns
+/// reinterpreted as i64, going from a negative to a positive time
+/// overflows that difference.
+fn gps_times_crossing_zero() -> Vec<GpsTime> {
+    (-20..=20)
+        .map(|i| i as f64 * 0.25)
+        .chain((1..=20).flat_map(|i| [-(i as f64), i as f64]))
+        .map(GpsTime::from)
+        .collect()
+}
+
+fn check_gps_time_roundtrip<C, D>(compressor: C, decompressor: D)
+where
+    C: FieldCompressor<Cursor<Vec<u8>>> + Send + Sync + 'static,
+    D: FieldDecompressor<Cursor<Vec<u8>>> + Send + Sync + 'static,
+{
+    let gps_times = gps_times_crossing_zero();
+    let mut record_compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    record_compressor.add_field_compressor(compressor);
+
+    let mut buf = [0u8; std::mem::size_of::<i64>()];
+    for gps_time in &gps_times {
+        gps_time.pack_into(&mut buf);
+        record_compressor.compress_next(&buf).unwrap();
+    }
+    record_compressor.done().unwrap();
+
+    let compressed_data = record_compressor.into_inner().into_inner();
+    let mut record_decompressor =
+        SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
+    record_decompressor.add_field_decompressor(decompressor);
+
+    for expected in &gps_times {
+        record_decompressor.decompress_next(&mut buf).unwrap();
+        assert_eq!(*expected, GpsTime::unpack_from(&buf));
+    }
+}
+
+#[test]
+fn test_gps_time_v1_crossing_zero() {
+    check_gps_time_roundtrip(
+        v1::LasGpsTimeCompressor::default(),
+        v1::LasGpsTimeDecompressor::default(),
+    );
+}
+
+#[test]
+fn test_gps_time_v2_crossing_zero() {
+    check_gps_time_roundtrip(GpsTimeCompressor::default(), GpsTimeDecompressor::default());
+}

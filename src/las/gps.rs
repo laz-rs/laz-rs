@@ -26,7 +26,7 @@
 //! Defines the different version of compressors and decompressors for the GpsTime
 
 use std::io::Read;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Sub};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -56,6 +56,8 @@ pub trait LasGpsTime {
 /// As the value (f64 as per LAS spec) needs to be reinterpreted
 /// (not simply converted with 'as') to i64 (or u64)
 /// during compression / decompression this struct provides a convenient wrapper
+///
+/// Arithmetic on it wraps, as the reinterpreted values can be anywhere in the i64 range.
 #[derive(Default, Copy, Clone, Debug, PartialEq)]
 pub struct GpsTime {
     pub value: i64,
@@ -85,7 +87,7 @@ impl Add<f64> for GpsTime {
     type Output = Self;
 
     fn add(self, rhs: f64) -> Self::Output {
-        Self::from(self.value + rhs.to_bits() as i64)
+        Self::from(self.value.wrapping_add(rhs.to_bits() as i64))
     }
 }
 
@@ -93,19 +95,27 @@ impl Add<i64> for GpsTime {
     type Output = Self;
 
     fn add(self, rhs: i64) -> Self::Output {
-        Self::from(self.value + rhs)
+        Self::from(self.value.wrapping_add(rhs))
     }
 }
 
 impl AddAssign<f64> for GpsTime {
     fn add_assign(&mut self, rhs: f64) {
-        self.value += rhs.to_bits() as i64;
+        self.value = self.value.wrapping_add(rhs.to_bits() as i64);
     }
 }
 
 impl AddAssign<i64> for GpsTime {
     fn add_assign(&mut self, rhs: i64) {
-        self.value += rhs;
+        self.value = self.value.wrapping_add(rhs);
+    }
+}
+
+impl Sub for GpsTime {
+    type Output = i64;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.value.wrapping_sub(rhs.value)
     }
 }
 
@@ -181,7 +191,6 @@ pub mod v1 {
     use crate::decoders::ArithmeticDecoder;
     use crate::decompressors::{IntegerDecompressor, IntegerDecompressorBuilder};
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::gps::LasGpsTime;
     use crate::las::utils::read_and_unpack;
     use crate::models::{ArithmeticModel, ArithmeticModelBuilder};
     use crate::packers::Packable;
@@ -192,7 +201,7 @@ pub mod v1 {
     const LASZIP_GPS_TIME_MULTI_MAX: u32 = 512;
 
     pub struct LasGpsTimeDecompressor {
-        last_gps: i64,
+        last_gps: GpsTime,
         gps_time_multi_model: ArithmeticModel,
         gps_time_0_diff_model: ArithmeticModel,
         ic_gps_time: IntegerDecompressor,
@@ -203,7 +212,7 @@ pub mod v1 {
     impl Default for LasGpsTimeDecompressor {
         fn default() -> Self {
             Self {
-                last_gps: 0,
+                last_gps: GpsTime::default(),
                 gps_time_multi_model: ArithmeticModelBuilder::new(LASZIP_GPS_TIME_MULTI_MAX)
                     .build(),
                 gps_time_0_diff_model: ArithmeticModelBuilder::new(3).build(),
@@ -218,7 +227,7 @@ pub mod v1 {
     }
 
     pub struct LasGpsTimeCompressor {
-        last_gps: i64,
+        last_gps: GpsTime,
         gps_time_multi_model: ArithmeticModel,
         gps_time_0_diff_model: ArithmeticModel,
         ic_gps_time: IntegerCompressor,
@@ -229,7 +238,7 @@ pub mod v1 {
     impl Default for LasGpsTimeCompressor {
         fn default() -> Self {
             Self {
-                last_gps: 0,
+                last_gps: GpsTime::default(),
                 gps_time_multi_model: ArithmeticModelBuilder::new(LASZIP_GPS_TIME_MULTI_MAX)
                     .build(),
                 gps_time_0_diff_model: ArithmeticModelBuilder::new(3).build(),
@@ -249,7 +258,7 @@ pub mod v1 {
         }
 
         fn compress_first(&mut self, dst: &mut W, buf: &[u8]) -> std::io::Result<()> {
-            self.last_gps = GpsTime::unpack_from(buf).into();
+            self.last_gps = GpsTime::unpack_from(buf);
             dst.write_all(buf)
         }
 
@@ -258,14 +267,13 @@ pub mod v1 {
             mut encoder: &mut ArithmeticEncoder<W>,
             buf: &[u8],
         ) -> std::io::Result<()> {
-            let current_point = GpsTime::unpack_from(buf);
-            let current_gps_time_value = current_point.gps_time().to_bits() as i64;
+            let current_gps_time = GpsTime::unpack_from(buf);
 
             if self.last_gps_time_diff == 0 {
-                if current_gps_time_value == self.last_gps {
+                if current_gps_time == self.last_gps {
                     encoder.encode_symbol(&mut self.gps_time_0_diff_model, 0)?;
                 } else {
-                    let current_gps_time_diff_64 = current_gps_time_value - self.last_gps;
+                    let current_gps_time_diff_64 = current_gps_time - self.last_gps;
                     let current_gps_time_diff_32 = current_gps_time_diff_64 as i32;
 
                     if current_gps_time_diff_64 == i64::from(current_gps_time_diff_32) {
@@ -280,20 +288,20 @@ pub mod v1 {
                         self.last_gps_time_diff = current_gps_time_diff_32;
                     } else {
                         encoder.encode_symbol(&mut self.gps_time_0_diff_model, 2)?; // the difference is huge
-                        encoder.write_int64(current_gps_time_value as u64)?;
+                        encoder.write_int64(current_gps_time.value as u64)?;
                     }
-                    self.last_gps = current_gps_time_value;
+                    self.last_gps = current_gps_time;
                 }
             } else {
                 //difference was not zero
-                if current_gps_time_value == self.last_gps {
+                if current_gps_time == self.last_gps {
                     // if the doubles have not changed use a special symbol
                     encoder.encode_symbol(
                         &mut self.gps_time_multi_model,
                         LASZIP_GPS_TIME_MULTI_MAX - 1,
                     )?;
                 } else {
-                    let current_gps_time_diff_64 = current_gps_time_value - self.last_gps;
+                    let current_gps_time_diff_64 = current_gps_time - self.last_gps;
                     let current_gps_time_diff_32 = current_gps_time_diff_64 as i32;
 
                     if current_gps_time_diff_64 == i64::from(current_gps_time_diff_32) {
@@ -331,21 +339,21 @@ pub mod v1 {
                         } else if multi < 10 {
                             self.ic_gps_time.compress(
                                 &mut encoder,
-                                self.last_gps_time_diff * multi,
+                                self.last_gps_time_diff.wrapping_mul(multi),
                                 current_gps_time_diff_32,
                                 3,
                             )?;
                         } else if multi < 50 {
                             self.ic_gps_time.compress(
                                 &mut encoder,
-                                self.last_gps_time_diff * multi,
+                                self.last_gps_time_diff.wrapping_mul(multi),
                                 current_gps_time_diff_32,
                                 4,
                             )?;
                         } else {
                             self.ic_gps_time.compress(
                                 &mut encoder,
-                                self.last_gps_time_diff * multi,
+                                self.last_gps_time_diff.wrapping_mul(multi),
                                 current_gps_time_diff_32,
                                 5,
                             )?;
@@ -365,11 +373,11 @@ pub mod v1 {
                             &mut self.gps_time_multi_model,
                             LASZIP_GPS_TIME_MULTI_MAX - 2,
                         )?;
-                        encoder.write_int64(current_gps_time_value as u64)?;
+                        encoder.write_int64(current_gps_time.value as u64)?;
                     }
                 }
             }
-            self.last_gps = current_gps_time_value;
+            self.last_gps = current_gps_time;
             Ok(())
         }
     }
@@ -380,7 +388,7 @@ pub mod v1 {
         }
 
         fn decompress_first(&mut self, src: &mut R, first_point: &mut [u8]) -> std::io::Result<()> {
-            self.last_gps = i64::from(read_and_unpack::<_, GpsTime>(src, first_point)?);
+            self.last_gps = read_and_unpack::<_, GpsTime>(src, first_point)?;
             Ok(())
         }
 
@@ -399,7 +407,7 @@ pub mod v1 {
                 } else if multi == 2 {
                     // the difference is huge,
                     // the gps was written as is
-                    self.last_gps = decoder.read_int_64()? as i64;
+                    self.last_gps = GpsTime::from(decoder.read_int_64()? as i64);
                 }
             } else {
                 multi = decoder.decode_symbol(&mut self.gps_time_multi_model)?;
@@ -436,7 +444,7 @@ pub mod v1 {
 
                         gps_time_diff = self.ic_gps_time.decompress(
                             &mut decoder,
-                            self.last_gps_time_diff * multi as i32,
+                            self.last_gps_time_diff.wrapping_mul(multi as i32),
                             context,
                         )?;
 
@@ -450,10 +458,10 @@ pub mod v1 {
                     }
                     self.last_gps += i64::from(gps_time_diff);
                 } else if multi < LASZIP_GPS_TIME_MULTI_MAX - 1 {
-                    self.last_gps = decoder.read_int_64()? as i64;
+                    self.last_gps = GpsTime::from(decoder.read_int_64()? as i64);
                 }
             }
-            GpsTime::from(self.last_gps).pack_into(buf);
+            self.last_gps.pack_into(buf);
             Ok(())
         }
     }
@@ -553,12 +561,8 @@ pub mod v2 {
                         encoder.encode_symbol(&mut self.common.gps_time_0_diff, 0)?;
                     } else {
                         // calculate the difference between the two doubles as an integer
-                        let curr_gps_time_diff_64 = this_val.value.wrapping_sub(
-                            self.common
-                                .last_gps_times
-                                .get_unchecked(self.common.last)
-                                .value,
-                        );
+                        let curr_gps_time_diff_64 =
+                            this_val - *self.common.last_gps_times.get_unchecked(self.common.last);
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         if curr_gps_time_diff_64 == i64::from(curr_gps_time_diff_32) {
@@ -578,12 +582,11 @@ pub mod v2 {
                             // the difference is huge
                             // maybe the double belongs to another time sequence
                             for i in 1..4 {
-                                let other_gps_time_diff_64 = this_val.value
-                                    - self
+                                let other_gps_time_diff_64 = this_val
+                                    - *self
                                         .common
                                         .last_gps_times
-                                        .get_unchecked((self.common.last + i) & 3)
-                                        .value;
+                                        .get_unchecked((self.common.last + i) & 3);
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == i64::from(other_gps_time_diff_32) {
@@ -644,12 +647,8 @@ pub mod v2 {
                         )?;
                     } else {
                         // the last integer difference was *not* zero
-                        let curr_gps_time_diff_64 = this_val.value
-                            - self
-                                .common
-                                .last_gps_times
-                                .get_unchecked(self.common.last)
-                                .value;
+                        let curr_gps_time_diff_64 =
+                            this_val - *self.common.last_gps_times.get_unchecked(self.common.last);
                         let curr_gps_time_diff_32 = curr_gps_time_diff_64 as i32;
 
                         // if the current gps time difference can be represented with 32 bits
@@ -784,8 +783,8 @@ pub mod v2 {
                             // the difference is huge
                             // maybe the double belongs to another time sequence
                             for i in 1..4 {
-                                let other_gps_time_diff_64 = this_val.value
-                                    - self.common.last_gps_times[(self.common.last + i) & 3].value;
+                                let other_gps_time_diff_64 = this_val
+                                    - self.common.last_gps_times[(self.common.last + i) & 3];
                                 let other_gps_time_diff_32 = other_gps_time_diff_64 as i32;
 
                                 if other_gps_time_diff_64 == i64::from(other_gps_time_diff_32) {
@@ -889,10 +888,10 @@ pub mod v2 {
                             .last_gps_time_diffs
                             .get_unchecked_mut(self.common.last) =
                             self.ic_gps_time.decompress(&mut decoder, 0, 0)?;
-                        self.common
+                        *self
+                            .common
                             .last_gps_times
-                            .get_unchecked_mut(self.common.last)
-                            .value += i64::from(
+                            .get_unchecked_mut(self.common.last) += i64::from(
                             *self
                                 .common
                                 .last_gps_time_diffs
@@ -947,10 +946,10 @@ pub mod v2 {
                     multi = decoder.decode_symbol(&mut self.common.gps_time_multi)? as i32;
 
                     if multi == 1 {
-                        self.common
+                        *self
+                            .common
                             .last_gps_times
-                            .get_unchecked_mut(self.common.last)
-                            .value += i64::from(
+                            .get_unchecked_mut(self.common.last) += i64::from(
                             self.ic_gps_time.decompress(
                                 &mut decoder,
                                 *self
@@ -1089,10 +1088,10 @@ pub mod v2 {
                                 }
                             }
                         }
-                        self.common
+                        *self
+                            .common
                             .last_gps_times
-                            .get_unchecked_mut(self.common.last)
-                            .value += i64::from(gps_time_diff);
+                            .get_unchecked_mut(self.common.last) += i64::from(gps_time_diff);
                     } else if multi == LASZIP_GPS_TIME_MULTI_CODE_FULL {
                         self.common.next = (self.common.next + 1) & 3;
                         self.common
