@@ -3,7 +3,6 @@ use std::io::{Read, Seek, SeekFrom};
 use rayon::prelude::*;
 
 use crate::buffer::{buffer_len, read_exact_into_vec, try_resize};
-use crate::byteslice::ChunksIrregularMut;
 use crate::las::selective::DecompressionSelection;
 use crate::laszip::chunk_table::{ChunkTable, ChunkTableEntry};
 use crate::laszip::details::record_decompressor_from_laz_items;
@@ -318,13 +317,7 @@ pub fn par_decompress_buffer(
     let mut cursor = std::io::Cursor::new(compressed_points_data);
     let chunk_table = ChunkTable::read_from(&mut cursor, &laz_vlr)?;
 
-    let num_point_bytes = chunk_table
-        .as_ref()
-        .iter()
-        .map(|entry| entry.byte_count as usize)
-        .sum::<usize>();
-
-    let compressed_points = &compressed_points_data[std::mem::size_of::<i64>()..num_point_bytes];
+    let compressed_points = &compressed_points_data[ChunkTable::OFFSET_SIZE..];
     par_decompress(
         compressed_points,
         decompressed_points,
@@ -346,18 +339,36 @@ pub fn par_decompress_selective(
     chunk_table: &[ChunkTableEntry],
     selection: DecompressionSelection,
 ) -> crate::Result<()> {
-    use crate::byteslice::ChunksIrregular;
-    let sizes = chunk_table.iter().map(|entry| entry.byte_count as usize);
-    let counts = chunk_table
-        .iter()
-        .map(|entry| (entry.point_count * laz_vlr.items_size()) as usize);
-    let input_chunks_iter = ChunksIrregular::new(compressed_points, sizes);
-    let output_chunks_iter = ChunksIrregularMut::new(decompressed_points, counts);
+    // The chunk table may come from the data, so we can't completely trust it
+    let mut compressed_points = compressed_points;
+    let mut decompressed_points = decompressed_points;
+    let mut decompression_jobs: Vec<(&[u8], &mut [u8])> = vec![];
+    for entry in chunk_table {
+        if decompressed_points.is_empty() {
+            break;
+        }
+        let num_compressed_bytes = usize::try_from(entry.byte_count)
+            .ok()
+            .filter(|&n| n <= compressed_points.len())
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "chunk table describes more bytes than there are",
+                )
+            })?;
+        let num_decompressed_bytes = entry
+            .point_count
+            .saturating_mul(laz_vlr.items_size())
+            .min(decompressed_points.len() as u64) as usize;
 
-    // FIXME we collect into a Vec because zip cannot be made 'into_par_iter' by rayon
-    //  (or at least i don't know how)
-    let decompression_jobs: Vec<(&[u8], &mut [u8])> =
-        input_chunks_iter.zip(output_chunks_iter).collect();
+        let (chunk_in, rest_in) = compressed_points.split_at(num_compressed_bytes);
+        let (chunk_out, rest_out) =
+            std::mem::take(&mut decompressed_points).split_at_mut(num_decompressed_bytes);
+        decompression_jobs.push((chunk_in, chunk_out));
+        compressed_points = rest_in;
+        decompressed_points = rest_out;
+    }
+
     decompression_jobs
         .into_par_iter()
         .map(|(chunk_in, chunk_out)| {

@@ -601,3 +601,78 @@ fn test_par_huge_chunk_size() {
     let mut decompressor = ParLasZipDecompressor::new(Cursor::new(data), hostile_vlr).unwrap();
     assert!(is_out_of_memory(decompressor.seek(0)));
 }
+
+/// Returns the vlr (fixed-size chunks of 100 points), the points,
+/// and the compressed data (offset to the chunk table, chunks, chunk table)
+#[cfg(feature = "parallel")]
+fn par_test_data(num_points: usize) -> (crate::LazVlr, Vec<u8>, Vec<u8>) {
+    use crate::laszip::LazVlrBuilder;
+
+    let vlr = LazVlrBuilder::default()
+        .with_point_format(0, 0)
+        .unwrap()
+        .with_fixed_chunk_size(100)
+        .build();
+    let points = (0..num_points * vlr.items_size() as usize)
+        .map(|i| (i * 7 % 251) as u8)
+        .collect::<Vec<u8>>();
+    let mut compressed = Cursor::new(Vec::<u8>::new());
+    crate::par_compress_buffer(&mut compressed, &points, &vlr).unwrap();
+    (vlr, points, compressed.into_inner())
+}
+
+#[cfg(feature = "parallel")]
+#[test]
+fn test_par_decompress_buffer() {
+    // 250 points: the last chunk is not full
+    for num_points in [200, 250] {
+        let (vlr, points, compressed) = par_test_data(num_points);
+        let mut decompressed = vec![0u8; points.len()];
+        crate::par_decompress_buffer(&compressed, &mut decompressed, &vlr).unwrap();
+        assert!(decompressed == points);
+
+        // As many points as the output can hold are decompressed
+        let mut decompressed = vec![0u8; 150 * vlr.items_size() as usize];
+        crate::par_decompress_buffer(&compressed, &mut decompressed, &vlr).unwrap();
+        assert!(decompressed == points[..decompressed.len()]);
+    }
+}
+
+/// The chunk table comes from the data, its counts must be checked against the buffers.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_par_decompress_chunk_table_bigger_than_data() {
+    use crate::laszip::{ChunkTable, ChunkTableEntry};
+    use crate::LasZipError;
+
+    fn is_unexpected_eof(result: crate::Result<()>) -> bool {
+        matches!(result, Err(LasZipError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof)
+    }
+
+    let (vlr, points, compressed) = par_test_data(250);
+    let mut decompressed = vec![0u8; points.len()];
+
+    // Rewrite the chunk table, with a chunk bigger than the data
+    let chunk_table = ChunkTable::read_from(Cursor::new(&compressed), &vlr).unwrap();
+    let offset = i64::from_le_bytes(compressed[..8].try_into().unwrap()) as usize;
+    let mut hostile_table = ChunkTable::default();
+    for (i, entry) in chunk_table.as_ref().iter().enumerate() {
+        let byte_count = if i == 1 { 1 << 30 } else { entry.byte_count };
+        hostile_table.push(ChunkTableEntry {
+            byte_count,
+            ..*entry
+        });
+    }
+    let mut hostile = compressed[..offset].to_vec();
+    hostile_table.write_to(&mut hostile, &vlr).unwrap();
+    let result = crate::par_decompress_buffer(&hostile, &mut decompressed, &vlr);
+    assert!(is_unexpected_eof(result));
+
+    // Chunk table given directly, with counts that overflow
+    let hostile_table = [ChunkTableEntry {
+        point_count: u64::MAX,
+        byte_count: u64::MAX,
+    }];
+    let result = crate::par_decompress(&compressed[8..], &mut decompressed, &vlr, &hostile_table);
+    assert!(is_unexpected_eof(result));
+}
