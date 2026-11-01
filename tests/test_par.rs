@@ -15,8 +15,9 @@ mod tests {
         // Prepare LAZ file decompression
         let mut laz_file = File::open(laz_path).unwrap();
         let laz_header = laz::las::file::QuickHeader::read_from(&mut laz_file).unwrap();
-        let laz_vlr =
-            laz::las::file::read_vlrs_and_get_laszip_vlr(&mut laz_file, &laz_header).unwrap();
+        let laz_vlr = laz::las::file::read_vlrs_and_get_laszip_vlr(&mut laz_file, &laz_header)
+            .unwrap()
+            .unwrap();
         laz_file
             .seek(SeekFrom::Start(laz_header.offset_to_points as u64))
             .unwrap();
@@ -58,8 +59,9 @@ mod tests {
         // Prepare LAZ file decompression
         let mut laz_file = File::open(laz_path).unwrap();
         let laz_header = laz::las::file::QuickHeader::read_from(&mut laz_file).unwrap();
-        let laz_vlr =
-            laz::las::file::read_vlrs_and_get_laszip_vlr(&mut laz_file, &laz_header).unwrap();
+        let laz_vlr = laz::las::file::read_vlrs_and_get_laszip_vlr(&mut laz_file, &laz_header)
+            .unwrap()
+            .unwrap();
         laz_file
             .seek(SeekFrom::Start(laz_header.offset_to_points as u64))
             .unwrap();

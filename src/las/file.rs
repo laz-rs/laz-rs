@@ -57,19 +57,25 @@ impl QuickHeader {
         })
     }
 
-    pub fn num_extra_bytes(&self) -> u16 {
+    /// Returns `None` if the point format is unknown,
+    /// or if the point size is smaller than the size of the point format.
+    pub fn num_extra_bytes(&self) -> Option<u16> {
         let point_size_wo_extra = match self.point_format_id {
             0 => 20,
             1 => 28,
             2 => 26,
             3 => 34,
+            4 => 57,
+            5 => 63,
             6 => 30,
             7 => 36,
             8 => 38,
-            _ => panic!("Unknown fmt id"),
+            9 => 59,
+            10 => 67,
+            _ => return None,
         };
 
-        self.point_size - point_size_wo_extra
+        self.point_size.checked_sub(point_size_wo_extra)
     }
 }
 
@@ -107,26 +113,29 @@ impl Vlr {
     }
 }
 
-pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &QuickHeader) -> Option<LazVlr> {
+pub fn read_vlrs_and_get_laszip_vlr<R: Read>(
+    src: &mut R,
+    header: &QuickHeader,
+) -> crate::Result<Option<LazVlr>> {
     let mut laszip_vlr = None;
     for _i in 0..header.num_vlrs {
-        let vlr = Vlr::read_from(src).unwrap();
+        let vlr = Vlr::read_from(src)?;
         if vlr.record_id == 22204
             && String::from_utf8_lossy(&vlr.user_id).trim_end_matches(|c| c as u8 == 0)
                 == "laszip encoded"
         {
-            laszip_vlr = Some(LazVlr::read_from(vlr.data.as_slice()).unwrap());
+            laszip_vlr = Some(LazVlr::read_from(vlr.data.as_slice())?);
         }
     }
-    laszip_vlr
+    Ok(laszip_vlr)
 }
 
 pub fn read_header_and_vlrs<R: Read + Seek>(
     src: &mut R,
-) -> std::io::Result<(QuickHeader, Option<LazVlr>)> {
+) -> crate::Result<(QuickHeader, Option<LazVlr>)> {
     let hdr = QuickHeader::read_from(src)?;
     src.seek(SeekFrom::Start(hdr.header_size as u64))?;
-    let laz_vlr = read_vlrs_and_get_laszip_vlr(src, &hdr);
+    let laz_vlr = read_vlrs_and_get_laszip_vlr(src, &hdr)?;
     src.seek(SeekFrom::Start(hdr.offset_to_points as u64))?;
     Ok((hdr, laz_vlr))
 }
@@ -172,20 +181,24 @@ pub struct SimpleReader<'a> {
 }
 
 impl<'a> SimpleReader<'a> {
-    pub fn new<R: Read + Seek + Send + Sync + 'a>(mut src: R) -> std::io::Result<Self> {
-        let mut header = QuickHeader::read_from(&mut src)?;
-        src.seek(SeekFrom::Start(header.header_size as u64))?;
-        let laszip_vlr = read_vlrs_and_get_laszip_vlr(&mut src, &header);
-        src.seek(SeekFrom::Start(header.offset_to_points as u64))?;
+    pub fn new<R: Read + Seek + Send + Sync + 'a>(mut src: R) -> crate::Result<Self> {
+        let (mut header, laszip_vlr) = read_header_and_vlrs(&mut src)?;
         let point_reader: Box<dyn LasPointReader> =
             if is_point_format_compressed(header.point_format_id) {
-                Box::new(
-                    LasZipDecompressor::new(
-                        src,
-                        laszip_vlr.expect("Compressed data, but no Laszip Vlr found"),
+                let laszip_vlr = laszip_vlr.ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Compressed data, but no Laszip Vlr found",
                     )
-                    .unwrap(),
-                )
+                })?;
+                if u64::from(header.point_size) != laszip_vlr.items_size() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "The point size of the header does not match the one of the Laszip Vlr",
+                    )
+                    .into());
+                }
+                Box::new(LasZipDecompressor::new(src, laszip_vlr)?)
             } else {
                 Box::new(RawPointReader { src })
             };

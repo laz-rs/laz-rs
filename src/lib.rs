@@ -67,7 +67,7 @@
 //! use laz::{LasZipError, LazVlr, LasZipDecompressor};
 //! use std::fs::File;
 //!
-//! # fn read_first_point(path: &str, out: &mut [u8]) -> std::io::Result<()> {
+//! # fn read_first_point(path: &str, out: &mut [u8]) -> laz::Result<()> {
 //! #    let mut reader = laz::las::file::SimpleReader::new(File::open(path)?)?;
 //! #    out.copy_from_slice(reader.read_next().unwrap()?);
 //! #    Ok(())
