@@ -138,8 +138,10 @@ impl<'a, W: Write + Seek + Send + Sync + 'a> LasZipCompressor<'a, W> {
         if self.chunk_start_pos == 0 {
             self.reserve_offset_to_chunk_table()?;
         }
-        self.record_compressor.done()?;
-        self.update_chunk_table()?;
+        if self.current_chunk_entry.point_count != 0 {
+            self.record_compressor.done()?;
+            self.update_chunk_table()?;
+        }
         let stream = self.record_compressor.get_mut();
         chunk_table::update_chunk_table_offset(stream, SeekFrom::Start(self.start_pos))?;
         self.chunk_table.write_to(stream, &self.vlr)?;

@@ -295,6 +295,9 @@ pub mod v1 {
                 let new_syn_offset_diff = if offset_diff_32 == 0 {
                     0
                 } else if offset_diff_32 == self.last_wavepacket.size as i32 {
+                    // Same as LASzip, even though it is lossy for sizes >= 2^31:
+                    // the decompressor computes `offset + size` with the size as an u64,
+                    // not as the (negative) i32 compared here.
                     1
                 } else {
                     2
