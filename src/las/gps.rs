@@ -41,6 +41,21 @@ const LASZIP_GPS_TIME_MULTI_CODE_FULL: i32 =
 
 const LASZIP_GPS_TIME_MULTI_TOTAL: i32 = LASZIP_GPS_TIME_MULTI - LASZIP_GPS_TIME_MULTI_MINUS + 6;
 
+/// How many "switch to another sequence" codes in a row a GPS time decoder follows.
+///
+/// The encoder only switches to a sequence the time fits in, so the time is
+/// encoded right after the switch: a valid stream never has more than one switch
+/// in a row. We tolerate one switch per other sequence, more means the data is corrupt
+/// (and without a limit, a hostile stream could make us switch forever).
+pub(crate) const MAX_GPS_TIME_SEQUENCE_SWITCHES: usize = 3;
+
+pub(crate) fn too_many_gps_time_sequence_switches() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "GPS time: too many consecutive sequence switches",
+    )
+}
+
 pub trait LasGpsTime {
     fn gps_time(&self) -> f64;
     fn set_gps_time(&mut self, new_value: f64);
@@ -480,8 +495,9 @@ pub mod v2 {
     use crate::record::{FieldCompressor, FieldDecompressor};
 
     use super::{
-        GpsTime, LASZIP_GPS_TIME_MULTI, LASZIP_GPS_TIME_MULTI_CODE_FULL,
-        LASZIP_GPS_TIME_MULTI_MINUS, LASZIP_GPS_TIME_MULTI_TOTAL, LASZIP_GPS_TIME_MULTI_UNCHANGED,
+        too_many_gps_time_sequence_switches, GpsTime, LASZIP_GPS_TIME_MULTI,
+        LASZIP_GPS_TIME_MULTI_CODE_FULL, LASZIP_GPS_TIME_MULTI_MINUS, LASZIP_GPS_TIME_MULTI_TOTAL,
+        LASZIP_GPS_TIME_MULTI_UNCHANGED, MAX_GPS_TIME_SEQUENCE_SWITCHES,
     };
 
     // Common parts for both a compressor and decompressor go here
@@ -866,9 +882,26 @@ pub mod v2 {
 
         fn decompress_with(
             &mut self,
-            mut decoder: &mut ArithmeticDecoder<R>,
+            decoder: &mut ArithmeticDecoder<R>,
             buf: &mut [u8],
         ) -> std::io::Result<()> {
+            for _ in 0..=MAX_GPS_TIME_SEQUENCE_SWITCHES {
+                if !self.decompress_or_switch_sequence(decoder, buf)? {
+                    return Ok(());
+                }
+            }
+            Err(too_many_gps_time_sequence_switches())
+        }
+    }
+
+    impl GpsTimeDecompressor {
+        /// Decompresses either a GPS time or a "switch to another sequence" code,
+        /// returns `true` for the latter, the time then comes next.
+        fn decompress_or_switch_sequence<R: Read>(
+            &mut self,
+            mut decoder: &mut ArithmeticDecoder<R>,
+            buf: &mut [u8],
+        ) -> std::io::Result<bool> {
             let mut multi: i32;
             debug_assert!(self.common.last < 4);
             unsafe {
@@ -940,7 +973,7 @@ pub mod v2 {
                     } else if multi > 2 {
                         // we switch to another sequence
                         self.common.last = (self.common.last + multi as usize - 2) & 3;
-                        self.decompress_with(&mut decoder, buf)?;
+                        return Ok(true);
                     }
                 } else {
                     multi = decoder.decode_symbol(&mut self.common.gps_time_multi)? as i32;
@@ -1130,15 +1163,47 @@ pub mod v2 {
                         self.common.last = (self.common.last + multi as usize
                             - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
                             & 3;
-                        self.decompress_with(&mut decoder, buf)?;
+                        return Ok(true);
                     }
                 }
                 self.common
                     .last_gps_times
                     .get_unchecked(self.common.last)
                     .pack_into_unchecked(buf);
-                Ok(())
+                Ok(false)
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use std::io::Cursor;
+
+        use super::*;
+
+        /// A stream of nothing but "switch to another sequence" codes
+        /// must be an error, not an endless chain of switches.
+        #[test]
+        fn test_endless_sequence_switches() {
+            let mut model = Common::new().gps_time_0_diff;
+            let mut encoder = ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new()));
+            for _ in 0..100 {
+                encoder.encode_symbol(&mut model, 3).unwrap();
+            }
+            encoder.done().unwrap();
+
+            let mut decoder =
+                ArithmeticDecoder::new(Cursor::new(encoder.into_inner().into_inner()));
+            decoder.read_init_bytes().unwrap();
+            let mut decompressor = GpsTimeDecompressor::default();
+            let mut buf = [0u8; 8];
+            decompressor
+                .decompress_first(&mut Cursor::new(vec![0u8; 8]), &mut buf)
+                .unwrap();
+            let err = decompressor
+                .decompress_with(&mut decoder, &mut buf)
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         }
     }
 }

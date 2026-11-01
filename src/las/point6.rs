@@ -332,7 +332,9 @@ mod v3_v4 {
         IntegerDecompressor, IntegerDecompressorBuilder, DEFAULT_DECOMPRESS_CONTEXTS,
     };
     use crate::encoders::ArithmeticEncoder;
-    use crate::las::gps::{GpsTime, LasGpsTime};
+    use crate::las::gps::{
+        too_many_gps_time_sequence_switches, GpsTime, LasGpsTime, MAX_GPS_TIME_SEQUENCE_SWITCHES,
+    };
     use crate::las::point6::{u32_zero_bit_0, LasPoint6, Point6};
     use crate::las::selective::DecompressionSelection;
     use crate::las::utils::{
@@ -687,6 +689,17 @@ mod v3_v4 {
 
     impl<const VERSION: usize> LasPoint6DecompressorImpl<VERSION> {
         fn read_gps_time(&mut self) -> std::io::Result<()> {
+            for _ in 0..=MAX_GPS_TIME_SEQUENCE_SWITCHES {
+                if !self.read_gps_time_or_switch_sequence()? {
+                    return Ok(());
+                }
+            }
+            Err(too_many_gps_time_sequence_switches())
+        }
+
+        /// Reads either a GPS time or a "switch to another sequence" code,
+        /// returns `true` for the latter, the time then comes next.
+        fn read_gps_time_or_switch_sequence(&mut self) -> std::io::Result<bool> {
             let the_context = &mut self.contexts[self.current_context];
 
             let mut multi: i32;
@@ -736,7 +749,7 @@ mod v3_v4 {
                     // We switch to another sequence
                     the_context.gps_sequences.last =
                         (the_context.gps_sequences.last + multi as usize - 1) & 3;
-                    self.read_gps_time()?;
+                    return Ok(true);
                 }
             } else {
                 multi = self
@@ -874,10 +887,10 @@ mod v3_v4 {
                         + multi as usize
                         - LASZIP_GPS_TIME_MULTI_CODE_FULL as usize)
                         & 3;
-                    self.read_gps_time()?;
+                    return Ok(true);
                 }
             }
-            Ok(())
+            Ok(false)
         }
     }
 
@@ -1985,6 +1998,25 @@ mod v3_v4 {
 
             let r_sizes = LayerSizes::read_from(&mut dst).unwrap();
             assert_eq!(r_sizes, sizes);
+        }
+
+        /// A GPS time layer of nothing but "switch to another sequence" codes
+        /// must be an error, not an endless chain of switches.
+        #[test]
+        fn test_endless_gps_time_sequence_switches() {
+            let mut model = Point6Models::default().gps_time_no_diff;
+            let mut encoder = ArithmeticEncoder::new(Cursor::new(Vec::<u8>::new()));
+            for _ in 0..100 {
+                encoder.encode_symbol(&mut model, 2).unwrap();
+            }
+            encoder.done().unwrap();
+
+            let mut decompressor = LasPoint6DecompressorImpl::<4>::default();
+            decompressor.decoders.gps_time =
+                ArithmeticDecoder::new(Cursor::new(encoder.into_inner().into_inner()));
+            decompressor.decoders.gps_time.read_init_bytes().unwrap();
+            let err = decompressor.read_gps_time().unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         }
     }
 }

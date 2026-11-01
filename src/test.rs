@@ -9,8 +9,9 @@ use crate::las::v1;
 use crate::packers::Packable;
 use crate::record::{FieldCompressor, FieldDecompressor};
 use crate::record::{
-    RecordCompressor, RecordDecompressor, SequentialPointRecordCompressor,
-    SequentialPointRecordDecompressor,
+    LayeredFieldCompressor, LayeredFieldDecompressor, LayeredPointRecordCompressor,
+    LayeredPointRecordDecompressor, RecordCompressor, RecordDecompressor,
+    SequentialPointRecordCompressor, SequentialPointRecordDecompressor,
 };
 
 #[test]
@@ -309,17 +310,25 @@ fn gps_times_crossing_zero() -> Vec<GpsTime> {
         .collect()
 }
 
-fn check_gps_time_roundtrip<C, D>(compressor: C, decompressor: D)
+/// GPS times cycling through 4 sequences far apart from each other,
+/// once the 4 sequences exist, every time is encoded as a sequence switch
+/// followed by the time.
+fn gps_times_interleaved_sequences() -> Vec<GpsTime> {
+    (0..200i64)
+        .map(|i| GpsTime::from(((i % 4) << 40) + i * 1000))
+        .collect()
+}
+
+fn check_gps_time_roundtrip<C, D>(compressor: C, decompressor: D, gps_times: &[GpsTime])
 where
     C: FieldCompressor<Cursor<Vec<u8>>> + Send + Sync + 'static,
     D: FieldDecompressor<Cursor<Vec<u8>>> + Send + Sync + 'static,
 {
-    let gps_times = gps_times_crossing_zero();
     let mut record_compressor = SequentialPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
     record_compressor.add_field_compressor(compressor);
 
     let mut buf = [0u8; std::mem::size_of::<i64>()];
-    for gps_time in &gps_times {
+    for gps_time in gps_times {
         gps_time.pack_into(&mut buf);
         record_compressor.compress_next(&buf).unwrap();
     }
@@ -330,7 +339,7 @@ where
         SequentialPointRecordDecompressor::new(Cursor::new(compressed_data));
     record_decompressor.add_field_decompressor(decompressor);
 
-    for expected in &gps_times {
+    for expected in gps_times {
         record_decompressor.decompress_next(&mut buf).unwrap();
         assert_eq!(*expected, GpsTime::unpack_from(&buf));
     }
@@ -341,12 +350,80 @@ fn test_gps_time_v1_crossing_zero() {
     check_gps_time_roundtrip(
         v1::LasGpsTimeCompressor::default(),
         v1::LasGpsTimeDecompressor::default(),
+        &gps_times_crossing_zero(),
     );
 }
 
 #[test]
 fn test_gps_time_v2_crossing_zero() {
-    check_gps_time_roundtrip(GpsTimeCompressor::default(), GpsTimeDecompressor::default());
+    check_gps_time_roundtrip(
+        GpsTimeCompressor::default(),
+        GpsTimeDecompressor::default(),
+        &gps_times_crossing_zero(),
+    );
+}
+
+#[test]
+fn test_gps_time_v2_sequence_switches() {
+    check_gps_time_roundtrip(
+        GpsTimeCompressor::default(),
+        GpsTimeDecompressor::default(),
+        &gps_times_interleaved_sequences(),
+    );
+}
+
+fn check_point6_gps_time_roundtrip<C, D>(compressor: C, decompressor: D, gps_times: &[GpsTime])
+where
+    C: LayeredFieldCompressor<Cursor<Vec<u8>>> + Send + Sync + 'static,
+    D: LayeredFieldDecompressor<Cursor<Vec<u8>>> + Send + Sync + 'static,
+{
+    const POINT_SIZE: usize = 30;
+
+    let points: Vec<[u8; POINT_SIZE]> = gps_times
+        .iter()
+        .map(|gps_time| {
+            let mut point = [0u8; POINT_SIZE];
+            // return 1 of 1
+            point[14] = 0x11;
+            gps_time.pack_into(&mut point[22..]);
+            point
+        })
+        .collect();
+
+    let mut record_compressor = LayeredPointRecordCompressor::new(Cursor::new(Vec::<u8>::new()));
+    record_compressor.add_field_compressor(compressor);
+    for point in &points {
+        record_compressor.compress_next(point).unwrap();
+    }
+    record_compressor.done().unwrap();
+
+    let compressed_data = record_compressor.into_inner().into_inner();
+    let mut record_decompressor = LayeredPointRecordDecompressor::new(Cursor::new(compressed_data));
+    record_decompressor.add_field_decompressor(decompressor);
+
+    let mut point = [0u8; POINT_SIZE];
+    for expected in &points {
+        record_decompressor.decompress_next(&mut point).unwrap();
+        assert_eq!(*expected, point);
+    }
+}
+
+#[test]
+fn test_point6_v3_gps_time_sequence_switches() {
+    check_point6_gps_time_roundtrip(
+        crate::las::v3::LasPoint6Compressor::default(),
+        crate::las::v3::LasPoint6Decompressor::default(),
+        &gps_times_interleaved_sequences(),
+    );
+}
+
+#[test]
+fn test_point6_v4_gps_time_sequence_switches() {
+    check_point6_gps_time_roundtrip(
+        crate::las::v4::LasPoint6Compressor::default(),
+        crate::las::v4::LasPoint6Decompressor::default(),
+        &gps_times_interleaved_sequences(),
+    );
 }
 
 /// A valid arithmetic stream always starts with a value below the
@@ -356,7 +433,6 @@ fn test_gps_time_v2_crossing_zero() {
 #[test]
 fn test_layered_init_bytes_not_below_length() {
     use crate::las::v3::{LasPoint6Compressor, LasPoint6Decompressor};
-    use crate::record::{LayeredPointRecordCompressor, LayeredPointRecordDecompressor};
 
     const POINT_SIZE: usize = 30;
     const NUM_POINTS: usize = 50;
