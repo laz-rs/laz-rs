@@ -80,6 +80,17 @@ pub trait LayeredFieldDecompressor<R: Read> {
     fn read_layers(&mut self, src: &mut R) -> std::io::Result<()>;
 }
 
+/// Returns an error if a buffer of `len` bytes cannot hold a point of `record_size` bytes
+fn check_buffer_size(len: usize, record_size: usize) -> std::io::Result<()> {
+    if len < record_size {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("buffer of {len} bytes is too small for a point of {record_size} bytes"),
+        ));
+    }
+    Ok(())
+}
+
 /// Trait describing the interface needed to _decompress_ a point record.
 ///
 /// A point record consist of one or more field.
@@ -278,6 +289,7 @@ impl<'a, R: Read> RecordDecompressor<R> for SequentialPointRecordDecompressor<'a
     }
 
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        check_buffer_size(out.len(), self.record_size)?;
         let decompressors_and_data =
             self.field_decompressors
                 .iter_mut()
@@ -455,6 +467,7 @@ impl<'a, R: Read + Seek> RecordDecompressor<R> for LayeredPointRecordDecompresso
     }
 
     fn decompress_next(&mut self, out: &mut [u8]) -> std::io::Result<()> {
+        check_buffer_size(out.len(), self.record_size)?;
         let decompressors_and_data =
             self.field_decompressors
                 .iter_mut()
@@ -708,6 +721,7 @@ impl<'a, W: Write> RecordCompressor<W> for SequentialPointRecordCompressor<'a, W
     }
 
     fn compress_next(&mut self, input: &[u8]) -> std::io::Result<()> {
+        check_buffer_size(input.len(), self.record_size)?;
         let field_compressors_and_data = self.field_compressors.iter_mut().zip(
             ChunksIrregular::new(input, self.fields_sizes.iter().copied()),
         );
@@ -857,6 +871,7 @@ impl<'a, W: Write> RecordCompressor<W> for LayeredPointRecordCompressor<'a, W> {
     }
 
     fn compress_next(&mut self, point: &[u8]) -> std::io::Result<()> {
+        check_buffer_size(point.len(), self.record_size)?;
         let mut context = 0usize;
         let compressors_and_data = self.field_compressors.iter_mut().zip(ChunksIrregular::new(
             point,
