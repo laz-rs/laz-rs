@@ -16,17 +16,21 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 /// * If `point_count` is greater than the actual number of points,
 ///   the function will stop at when we know for sure no other points
 ///   could be present
-pub(crate) fn prepare_compressor_for_appending<W, F, F2, Compressor>(
+///
+/// `recompress` is used to compress back the points of the last chunk that are kept.
+pub(crate) fn prepare_compressor_for_appending<W, F, F2, F3, Compressor>(
     mut data: W,
     vlr: LazVlr,
     point_count: u64,
     compressor_creator: F,
     get_mut_dest_of_compressor: F2,
+    recompress: F3,
 ) -> crate::Result<(Compressor, ChunkTable)>
 where
     W: Write + Read + Seek + Sync,
     F: FnOnce(W, LazVlr) -> crate::Result<Compressor>,
     F2: FnOnce(&mut Compressor) -> &mut W,
+    F3: FnOnce(&mut Compressor, &[u8]) -> crate::Result<()>,
     Compressor: LazCompressor,
 {
     // Technically we could support PointWise compressor
@@ -41,9 +45,13 @@ where
     let mut chunk_table = ChunkTable::read_from(&mut data, &vlr)?;
 
     let mut data_to_recompress = vec![];
-    if !chunk_table.is_empty() {
+    if point_count == 0 {
+        // No point is kept, the appended points overwrite all the chunks
+        chunk_table.truncate(0);
+    } else if !chunk_table.is_empty() {
         let (chunk_index, chunk_start_pos) = chunk_table
             .chunk_of_point(point_count - 1)
+            .map(|(chunk_index, chunk_start_pos, _)| (chunk_index, chunk_start_pos))
             .unwrap_or_else(|| {
                 (
                     chunk_table.len() - 1,
@@ -51,7 +59,7 @@ where
                 )
             });
 
-        data.seek(SeekFrom::Current(chunk_start_pos.try_into().unwrap()))?;
+        data.seek(SeekFrom::Current(seek_offset(chunk_start_pos)?))?;
 
         let points_before_chunk = chunk_table[..chunk_index]
             .iter()
@@ -102,13 +110,24 @@ where
     // offset is.
     compressor.reserve_offset_to_chunk_table()?;
     let last_chunk_pos = chunk_table.chunk_position(chunk_table.len()).unwrap();
-    get_mut_dest_of_compressor(&mut compressor).seek(SeekFrom::Current(last_chunk_pos as i64))?;
+    get_mut_dest_of_compressor(&mut compressor)
+        .seek(SeekFrom::Current(seek_offset(last_chunk_pos)?))?;
     // Rewrite the last chunk we read
     if !data_to_recompress.is_empty() {
-        compressor.compress_many(&data_to_recompress)?;
+        recompress(&mut compressor, &data_to_recompress)?;
     }
 
     Ok((compressor, chunk_table))
+}
+
+/// Converts a position computed from the chunk table to an offset to seek to
+fn seek_offset(position: u64) -> std::io::Result<i64> {
+    i64::try_from(position).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "chunk position is too large to seek to",
+        )
+    })
 }
 
 /// Struct that handles appending compressed points to a LAZ file.
@@ -129,6 +148,7 @@ where
             point_count,
             LasZipCompressor::new,
             LasZipCompressor::get_mut,
+            |compressor, points| Ok(compressor.compress_many(points)?),
         )?;
 
         Ok(Self {

@@ -22,6 +22,15 @@ where
             point_count,
             ParLasZipCompressor::new,
             ParLasZipCompressor::get_mut,
+            |compressor, points| {
+                // compress_many is only for fixed-size chunks
+                if compressor.vlr().uses_variable_size_chunks() {
+                    compressor.compress_chunks([points])?;
+                } else {
+                    compressor.compress_many(points)?;
+                }
+                Ok(())
+            },
         )?;
 
         Ok(Self {

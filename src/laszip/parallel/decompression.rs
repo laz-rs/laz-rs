@@ -110,38 +110,35 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 
         // 2. Find out how many chunks we have to decompress
         // and load their compressed bytes in our internal buffer
-        let num_requested_points_left = out_decompress.len() / point_size;
+        let num_requested_points_left = (out_decompress.len() / point_size) as u64;
         let start_index = (self.last_chunk_read + 1) as usize;
-        let mut num_points = 0usize;
+        let mut num_points = 0u64;
         let mut num_chunks_to_decompress = 0;
-        let mut num_bytes_to_read = 0usize;
+        let mut num_bytes_to_read = 0u64;
         for entry in &self.chunk_table[start_index..] {
-            num_points += entry.point_count as usize;
+            num_points += entry.point_count;
             num_chunks_to_decompress += 1;
-            num_bytes_to_read += entry.byte_count as usize;
+            num_bytes_to_read += entry.byte_count;
             if num_points >= num_requested_points_left {
                 break;
             }
         }
         let end_index = start_index + num_chunks_to_decompress;
 
-        if num_chunks_to_decompress == 0 {
+        if num_points < num_requested_points_left {
             return Err(LasZipError::IoError(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
-                "no chunks available in chunk table",
+                "not enough points in the chunk table",
             )));
         }
-
         debug_assert!(num_chunks_to_decompress >= 1);
-        debug_assert!(num_points >= num_requested_points_left);
-        // TODO if num_points >= num_requested_points_left then the user ask to decompress more points
-        //      than there are
 
         // Read the necessary compressed bytes into our internal buffer
         read_exact_into_vec(
             &mut self.source,
             &mut self.internal_buffer,
-            num_bytes_to_read,
+            usize::try_from(num_bytes_to_read)
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::OutOfMemory))?,
         )?;
 
         // 3. Decompress
@@ -153,8 +150,10 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         // and one for the `n` chunk.
         let head_chunks_table = &self.chunk_table[start_index..end_index - 1];
         let tail_chunk_entry = self.chunk_table[end_index - 1];
-        let num_bytes_in_head_chunks = num_bytes_to_read - tail_chunk_entry.byte_count as usize;
-        let num_points_in_head_chunks = num_points - tail_chunk_entry.point_count as usize;
+        // The sums fit in a usize as the bytes were read in memory, and the points are fewer
+        // than the requested ones (which fit in the output)
+        let num_bytes_in_head_chunks = (num_bytes_to_read - tail_chunk_entry.byte_count) as usize;
+        let num_points_in_head_chunks = (num_points - tail_chunk_entry.point_count) as usize;
         let (head_chunks, tail_chunk) = self.internal_buffer.split_at(num_bytes_in_head_chunks);
         let (head_output, tail_output) =
             out_decompress.split_at_mut(num_points_in_head_chunks * point_size);
@@ -215,7 +214,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
 
         let chunk_info = self.chunk_table.chunk_of_point(index);
 
-        let (chunk_of_point, byte_offset) = match chunk_info {
+        let (chunk_of_point, byte_offset, first_point) = match chunk_info {
             Some(v) => v,
             None => {
                 let _ = self.source.seek(SeekFrom::End(0))?;
@@ -251,7 +250,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
             let num_bytes_decompressed =
                 decompressor.decompress_until_end_of_file(self.rest.get_mut())?;
             let num_points_in_last_chunk = num_bytes_decompressed / self.vlr.items_size() as usize;
-            let pos_in_chunk = index % self.vlr.chunk_size() as u64;
+            let pos_in_chunk = index - first_point;
             if pos_in_chunk as usize >= num_points_in_last_chunk as usize {
                 // Make the rest appear as fully consumed to
                 // force EOF error on next decompression
@@ -263,7 +262,7 @@ impl<R: Read + Seek> ParLasZipDecompressor<R> {
         }
         // This effectively discard points that were
         // before the one we just seeked to
-        let pos_in_chunk = index % self.vlr.chunk_size() as u64;
+        let pos_in_chunk = index - first_point;
         self.rest.set_position(pos_in_chunk * self.vlr.items_size());
         self.last_chunk_read = chunk_of_point as isize;
         Ok(())

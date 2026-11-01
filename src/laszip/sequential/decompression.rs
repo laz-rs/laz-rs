@@ -148,20 +148,36 @@ impl<'a, R: Read + Seek + Send + Sync + 'a> LasZipDecompressor<'a, R> {
         self.chunk_points_read += 1;
 
         if self.chunk_points_read == 1 {
-            if self.vlr.uses_variable_size_chunks() {
+            // PointWise has only one chunk, whatever the chunk size says
+            if self.vlr.compressor == CompressorType::PointWise {
+                self.num_points_in_chunk = u64::from(u32::MAX);
+            } else if self.vlr.uses_variable_size_chunks() {
                 self.num_points_in_chunk = match (&self.seek_info, self.vlr.compressor) {
-                    (Some(seek_info), _) => seek_info.chunk_table[self.current_chunk].point_count,
+                    (Some(seek_info), _) => {
+                        seek_info
+                            .chunk_table
+                            .as_ref()
+                            .get(self.current_chunk)
+                            .ok_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::UnexpectedEof,
+                                    "no more chunks in the chunk table",
+                                )
+                            })?
+                            .point_count
+                    }
                     (None, CompressorType::LayeredChunked) => {
                         self.record_decompressor.record_count()
                     }
                     (None, _) => {
                         // This should not be possible, the `new` method should ensure
                         // we have the chunk table if we need one
-                        panic!("Variable-size chunks, but no chunk table");
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Variable-size chunks, but no chunk table",
+                        ));
                     }
                 }
-            } else if self.vlr.compressor == CompressorType::PointWise {
-                self.num_points_in_chunk = u64::from(u32::MAX);
             } else {
                 self.num_points_in_chunk = u64::from(self.vlr.chunk_size());
             }
@@ -198,11 +214,11 @@ impl<'a, R: Read + Seek + Send + Sync + 'a> LasZipDecompressor<'a, R> {
 
         let chunk_info = chunk_table
             .chunk_of_point(point_idx)
-            .map(|(idx, offset)| (idx, offset + data_start));
+            .map(|(idx, offset, first_point)| (idx, offset + data_start, first_point));
 
-        if let Some((chunk_of_point, start_of_chunk)) = chunk_info {
+        if let Some((chunk_of_point, start_of_chunk, first_point)) = chunk_info {
             self.current_chunk = chunk_of_point as usize;
-            let delta = point_idx % chunk_table[self.current_chunk].point_count;
+            let delta = point_idx - first_point;
             let seeked_point_belong_to_last_chunk = chunk_of_point == (chunk_table.len() - 1);
             // When the index of the point belongs to the last chunk
             // we try to be careful as that point may not exist, and there may be a

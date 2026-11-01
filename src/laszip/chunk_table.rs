@@ -160,17 +160,17 @@ impl ChunkTable {
                 byte_count: 0,
             };
             if contains_point_count {
-                current_entry.point_count = u64::from_le(decompressor.decompress(
+                current_entry.point_count = u64::from(decompressor.decompress(
                     &mut decoder,
                     previous_entry.point_count as i32,
                     POINT_COUNT_CONTEXT,
-                )? as u64);
+                )? as u32);
             }
-            current_entry.byte_count = u64::from_le(decompressor.decompress(
+            current_entry.byte_count = u64::from(decompressor.decompress(
                 &mut decoder,
                 previous_entry.byte_count as i32,
                 BYTE_COUNT_CONTEXT,
-            )? as u64);
+            )? as u32);
 
             chunk_table.0.try_reserve(1)?;
             chunk_table.0.push(current_entry);
@@ -182,8 +182,9 @@ impl ChunkTable {
     /// Finds the chunk that the given point index belongs to.
     ///
     /// Returns `None` if the `point_index` does not belong to the chunk table.
-    /// Returns a tuple (chunk_index, byte_offset)
-    /// where byte_offset is the byte offset starting from the first chunk.
+    /// Returns a tuple (chunk_index, byte_offset, first_point_index)
+    /// where byte_offset is the byte offset starting from the first chunk,
+    /// and first_point_index the index of the first point of the chunk.
     ///
     /// # Warning
     ///
@@ -195,9 +196,10 @@ impl ChunkTable {
     /// that the chunk_size is 50_000, we cannot be sure at that point it exists.
     ///
     /// It is the responsibility of the caller to verify / handle that case.
-    pub(crate) fn chunk_of_point(&self, point_idx: u64) -> Option<(usize, u64)> {
+    pub(crate) fn chunk_of_point(&self, point_idx: u64) -> Option<(usize, u64, u64)> {
         let mut chunk_of_point = 0usize;
         let mut start_of_chunk = 0;
+        let mut first_point = 0;
         let mut tmp_count = 0;
         for entry in &self.0 {
             tmp_count += entry.point_count;
@@ -205,13 +207,14 @@ impl ChunkTable {
                 break;
             }
             start_of_chunk += entry.byte_count;
+            first_point = tmp_count;
             chunk_of_point += 1;
         }
 
         if point_idx >= tmp_count {
             None
         } else {
-            Some((chunk_of_point, start_of_chunk))
+            Some((chunk_of_point, start_of_chunk, first_point))
         }
     }
 
