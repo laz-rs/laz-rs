@@ -540,23 +540,53 @@ fn test_layered_huge_layer_size() {
     assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
 }
 
-/// A point is at most `u16::MAX` bytes, decompressors allocate memory
-/// according to the size of the items, so bigger points must be refused.
+/// The items describe the point layout (de)compressors use, they must be consistent:
+/// a point is between 1 and `u16::MAX` bytes (decompressors allocate memory according
+/// to the size of the items), and each item has the size of its type.
 #[test]
-fn test_laz_vlr_point_size_too_large() {
+fn test_laz_vlr_invalid_items() {
     use crate::laszip::{LazItemRecordBuilder, LazItemType, LazVlr};
     use crate::LasZipError;
+
+    let read_back = |items| {
+        let mut data = Vec::<u8>::new();
+        LazVlr::from_laz_items(items).write_to(&mut data).unwrap();
+        LazVlr::read_from(data.as_slice())
+    };
 
     let items = LazItemRecordBuilder::new()
         .add_item(LazItemType::Byte(40_000))
         .add_item(LazItemType::Byte(40_000))
         .build();
-    let mut data = Vec::<u8>::new();
-    LazVlr::from_laz_items(items).write_to(&mut data).unwrap();
+    let result = read_back(items);
+    assert!(
+        matches!(result, Err(LasZipError::InvalidPointSize(80_000))),
+        "{result:?}"
+    );
 
+    // The number of items (u16) is at offset 32, patch it to 0
+    let mut data = Vec::<u8>::new();
+    let items = LazItemRecordBuilder::default_for_point_format_id(0, 0).unwrap();
+    LazVlr::from_laz_items(items).write_to(&mut data).unwrap();
+    data.truncate(34);
+    data[32..34].copy_from_slice(&0u16.to_le_bytes());
     let result = LazVlr::read_from(data.as_slice());
     assert!(
-        matches!(result, Err(LasZipError::PointSizeTooLarge(80_000))),
+        matches!(result, Err(LasZipError::InvalidPointSize(0))),
+        "{result:?}"
+    );
+
+    // Point10 is 20 bytes
+    let mut items = LazItemRecordBuilder::new()
+        .add_item(LazItemType::Point10)
+        .build();
+    items[0].size = 21;
+    let result = read_back(items);
+    assert!(
+        matches!(
+            result,
+            Err(LasZipError::InvalidLazItemSize(LazItemType::Point10, 21))
+        ),
         "{result:?}"
     );
 }

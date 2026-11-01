@@ -23,9 +23,11 @@ pub enum LasZipError {
     /// The chunk table could not be found in the file
     /// and it is required for the operation.
     MissingChunkTable,
-    /// The sum of the sizes of the Laz items is bigger than
-    /// the maximum size of a point (`u16::MAX`).
-    PointSizeTooLarge(u64),
+    /// The size of the Laz item does not match the size of its type.
+    InvalidLazItemSize(LazItemType, u16),
+    /// The sum of the sizes of the Laz items (the point size) is either 0
+    /// or bigger than the maximum size of a point (`u16::MAX`).
+    InvalidPointSize(u64),
 }
 
 impl From<std::io::Error> for LasZipError {
@@ -55,9 +57,14 @@ impl fmt::Display for LasZipError {
                 write!(f, "Point format {} is not supported", id)
             }
             LasZipError::MissingChunkTable => write!(f, "The chunk table could not be found"),
-            LasZipError::PointSizeTooLarge(size) => write!(
+            LasZipError::InvalidLazItemSize(item_type, size) => write!(
                 f,
-                "The point size ({} bytes) is bigger than the maximum of {} bytes",
+                "Item {:?} has a size of {} bytes, which does not match its type",
+                item_type, size
+            ),
+            LasZipError::InvalidPointSize(size) => write!(
+                f,
+                "The point size ({} bytes) must be between 1 and {} bytes",
                 size,
                 u16::MAX
             ),

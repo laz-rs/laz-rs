@@ -176,6 +176,11 @@ impl LazItem {
         let size = src.read_u16::<LittleEndian>()?;
         let item_type = LazItemType::from_u16(item_type, size)
             .ok_or_else(|| LasZipError::UnknownLazItem(item_type))?;
+        // The (de)compressors handle as many bytes as their type says,
+        // a different size would make them disagree with the point size
+        if size != item_type.size() {
+            return Err(LasZipError::InvalidLazItemSize(item_type, size));
+        }
         Ok(Self {
             item_type,
             size,
@@ -336,8 +341,8 @@ fn read_laz_items_from<R: Read>(mut src: &mut R) -> crate::Result<Vec<LazItem>> 
     // Decompressors allocate memory according to the size of the items,
     // (and a point cannot be bigger than u16::MAX anyway)
     let point_size: u64 = items.iter().map(|item| u64::from(item.size)).sum();
-    if point_size > u64::from(u16::MAX) {
-        return Err(LasZipError::PointSizeTooLarge(point_size));
+    if point_size == 0 || point_size > u64::from(u16::MAX) {
+        return Err(LasZipError::InvalidPointSize(point_size));
     }
     Ok(items)
 }
@@ -519,7 +524,7 @@ impl LazVlr {
     /// expected size of points (uncompressed).
     #[inline]
     pub fn items_size(&self) -> u64 {
-        u64::from(self.items.iter().map(|item| item.size).sum::<u16>())
+        self.items.iter().map(|item| u64::from(item.size)).sum()
     }
 
     /// returns how many bytes a decompressed chunk contains
