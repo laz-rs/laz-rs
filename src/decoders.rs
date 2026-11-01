@@ -275,7 +275,13 @@ impl<T: Read> ArithmeticDecoder<T> {
         if self.length < AC_MIN_LENGTH {
             self.renorm_dec_interval()?;
         }
-        debug_assert!(sym < (1 << 8));
+        // Only corrupted data can lead to a bigger symbol
+        if sym >= (1 << 8) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "ArithmeticDecoder decoded a symbol that does not fit in 8 bits",
+            ));
+        }
         Ok(sym as u8)
     }
 
@@ -288,7 +294,13 @@ impl<T: Read> ArithmeticDecoder<T> {
         if self.length < AC_MIN_LENGTH {
             self.renorm_dec_interval()?;
         }
-        debug_assert!(sym < (1 << 16));
+        // Only corrupted data can lead to a bigger symbol
+        if sym >= (1 << 16) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "ArithmeticDecoder decoded a symbol that does not fit in 16 bits",
+            ));
+        }
         Ok(sym as u16)
     }
 
